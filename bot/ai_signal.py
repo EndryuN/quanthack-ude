@@ -23,6 +23,15 @@ from .indicators import ema, ret_vol, momentum_z
 
 MODEL = "claude-opus-4-8"
 
+# Claude Opus pricing (USD per token): $5 / 1M input, $25 / 1M output
+_USD_PER_IN = 5 / 1e6
+_USD_PER_OUT = 25 / 1e6
+
+
+def cost_usd(in_tokens: int, out_tokens: int) -> float:
+    """Approximate USD cost of a Claude Opus call from token counts."""
+    return in_tokens * _USD_PER_IN + out_tokens * _USD_PER_OUT
+
 
 class InstrumentView(BaseModel):
     symbol: str
@@ -111,13 +120,14 @@ barometers). Return a view for every instrument provided."""
 
 
 def get_ai_views(client: MT5Client, symbols, model: str = MODEL,
-                 effort: str = "high") -> tuple[dict, MarketView]:
-    """Returns ({symbol: (direction_int, confidence)}, raw MarketView)."""
+                 effort: str = "high", context: str | None = None) -> tuple[dict, MarketView, dict]:
+    """Returns ({symbol: (direction_int, confidence)}, raw MarketView, usage)."""
     import anthropic
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY not set")
 
-    context = build_context(client, symbols)
+    if context is None:
+        context = build_context(client, symbols)
     anthropic_client = anthropic.Anthropic()
     user = (f"Instruments and recent action (competition universe = exactly "
             f"these {len(symbols)} symbols):\n\n{context}\n\n"
@@ -138,8 +148,11 @@ def get_ai_views(client: MT5Client, symbols, model: str = MODEL,
 
     # surface stop reason + token usage for cost/health visibility
     u = resp.usage
-    print(f"        [api] stop={resp.stop_reason} in={u.input_tokens} "
-          f"out={u.output_tokens} (~${(u.input_tokens*5 + u.output_tokens*25)/1e6:.3f})")
+    usage = {"stop_reason": resp.stop_reason, "in_tokens": u.input_tokens,
+             "out_tokens": u.output_tokens,
+             "usd": cost_usd(u.input_tokens, u.output_tokens)}
+    print(f"        [api] stop={usage['stop_reason']} in={usage['in_tokens']} "
+          f"out={usage['out_tokens']} (~${usage['usd']:.3f})")
     if resp.stop_reason == "refusal":
         raise RuntimeError(f"AI refused: {getattr(resp, 'stop_details', None)}")
 
@@ -155,4 +168,4 @@ def get_ai_views(client: MT5Client, symbols, model: str = MODEL,
     # any symbol Claude omitted -> flat
     for s in symbols:
         views.setdefault(s, (0, 0.0))
-    return views, mv
+    return views, mv, usage

@@ -87,5 +87,15 @@ class EngineConfig:
     use_broker_sl: bool = True                # attach broker-side SL failsafe
     use_trailing_stop: bool = True            # ratchet SL into profit on winners
 
+    # --- AI decision logging ---
+    log_decisions: bool = True                # write per-day decision logs
+    log_dir: str = "logs"                     # directory for ai_decisions_*.{jsonl,md}
+
+    # --- Nemotron second opinion (NVIDIA hosted, OpenAI-compatible API) ---
+    use_second_opinion: bool = True           # master switch (auto-off if no key)
+    nemotron_model: str = "nvidia/nemotron-3-super-120b-a12b"
+    nemotron_consensus_gain: float = 0.5      # agreement boost strength, [0,1]
+    second_opinion_timeout: float = 30.0      # seconds; failure -> Claude-only
+
 
 CONFIG = EngineConfig()

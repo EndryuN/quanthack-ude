@@ -11,6 +11,7 @@ nothing until you pass --live.
 from __future__ import annotations
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -22,6 +23,7 @@ from .state import StateTracker
 from .strategy import HybridStrategy
 from .sizer import build_targets, SizerConfig
 from .config import CONFIG, INITIAL_EQUITY, sl_pct_for, trail_pct_for
+from .decision_log import DecisionLogger
 
 
 def _round_to_step(symbol, lots):
@@ -45,11 +47,16 @@ class Engine:
         self._regime = ""
         self._last_ai_attempt = 0.0 # epoch of last refresh attempt (any outcome)
         self._ai_backoff = 0.0      # grows on failure so we don't hammer a down API
+        self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
+        self._pending_log = None
+        self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
 
     def start(self):
         self.client.connect()
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
+        if self.cfg.use_second_opinion and self._second_opinion_off:
+            print("[engine] NVIDIA_API_KEY not set — second opinion disabled (Claude-only).")
         if not self.dry_run and not self.client.algo_allowed():
             raise RuntimeError("Algo Trading is OFF in the terminal — enable it.")
         try:
@@ -75,30 +82,32 @@ class Engine:
         # 2. state / metrics
         m = self.state.update(acct.equity)
 
-        # 3. refresh AI views on cadence (no-op between 15-min refreshes).
-        #    On failure we back off instead of retrying every 5s loop — a
-        #    transient API outage (e.g. 529 Overloaded) must not turn into a
-        #    hammer that wastes quota and risks rate-limiting.
+        # 3. refresh AI views on cadence
+        views_ts_before = self._views_ts
         if self.cfg.signal_source == "ai":
             now = time.time()
             due = self._views is None or (now - self._views_ts) > self.cfg.ai_refresh_seconds
             if due and (now - self._last_ai_attempt) >= self._ai_backoff:
                 self._refresh_ai_views()
+        refreshed = self._views_ts != views_ts_before
 
-        # 4. reconcile ONLY when the signal set has changed. Targets are stable
-        #    between AI refreshes, so reconciling every loop just churns spread
-        #    (this was the SOL-churn bug). Risk + trailing still run every loop.
-        n_orders = 0
+        # 4. reconcile ONLY when the signal set has changed
+        orders = []
         if self._signal_changed():
             targets = self._build_targets(acct)
             if not snap.allow_new_risk:
                 targets = self._derisk_only(targets)
-            n_orders = self._reconcile(targets)
+            orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
+        n_orders = len(orders)
 
         # 5. trail stops into profit on meaningful winners (every loop)
         if self.cfg.use_trailing_stop:
             self._update_trailing_stops()
+
+        # 6. write the decision record for this refresh (after reconcile)
+        if refreshed and self.logger and self._pending_log:
+            self._write_decision_record(acct, snap, m, orders)
 
         self._print_status(acct, snap, m, n_orders)
 
@@ -122,16 +131,50 @@ class Engine:
     _AI_BACKOFF_MAX = 300.0
 
     def _refresh_ai_views(self):
-        from .ai_signal import get_ai_views
+        from .ai_signal import get_ai_views, build_context
+        from .second_opinion import apply_consensus
         self._last_ai_attempt = time.time()
         try:
-            views, mv = get_ai_views(self.client, self.cfg.symbols,
-                                     effort=self.cfg.ai_effort)
-            self._views = views
+            context = build_context(self.client, self.cfg.symbols)
+            claude_views, mv, claude_usage = get_ai_views(
+                self.client, self.cfg.symbols, effort=self.cfg.ai_effort,
+                context=context)
+            claude_rationale = {v.symbol: v.rationale for v in mv.views}
+
+            nemo_views, nemo_regime, nemo_usage = {}, None, None
+            if self.cfg.use_second_opinion and not self._second_opinion_off:
+                from .second_opinion import get_second_opinion
+                try:
+                    nemo_views, nemo_regime, nemo_usage = get_second_opinion(
+                        context, self.cfg.symbols, self.cfg.nemotron_model,
+                        timeout=self.cfg.second_opinion_timeout)
+                except Exception as e:
+                    print(f"        [2nd] Nemotron second opinion failed: {e}")
+                    nemo_views, nemo_regime, nemo_usage = {}, None, None
+
+            sizer_views, view_records = apply_consensus(
+                claude_views, claude_rationale, nemo_views,
+                gain=self.cfg.nemotron_consensus_gain)
+
+            self._views = sizer_views
             self._views_ts = time.time()
             self._regime = mv.regime
-            self._ai_backoff = 0.0          # recovered — back to normal cadence
-            active = {s: v for s, v in views.items() if v[0] != 0 and v[1] > 0}
+            self._ai_backoff = 0.0
+            self._pending_log = {
+                "models": {"primary": "claude-opus-4-8",
+                           "second_opinion": (self.cfg.nemotron_model
+                                              if nemo_usage else None)},
+                "regime": {"claude": mv.regime, "nemotron": nemo_regime},
+                "cost": {"claude": {"in": claude_usage["in_tokens"],
+                                    "out": claude_usage["out_tokens"],
+                                    "usd": claude_usage["usd"]},
+                         "nemotron": ({"in": nemo_usage["in"],
+                                       "out": nemo_usage["out"],
+                                       "usd": nemo_usage["usd"]}
+                                      if nemo_usage else None)},
+                "views": view_records,
+            }
+            active = {s: v for s, v in sizer_views.items() if v[0] != 0 and v[1] > 0}
             print(f"[{_ts()}] AI views refreshed | regime: {mv.regime}")
             for s, (d, c) in sorted(active.items(), key=lambda x: -x[1][1]):
                 side = "LONG" if d > 0 else "SHORT"
@@ -142,6 +185,9 @@ class Engine:
             age = time.time() - self._views_ts if self._views_ts else -1
             print(f"[{_ts()}] AI refresh FAILED: {e} | retry in "
                   f"{self._ai_backoff:.0f}s (views age={age:.0f}s)")
+            if self.logger:
+                self.logger.log_decision({"ts": _iso(), "event": "refresh_failed",
+                                          "error": str(e)})
             if self._views is None:
                 self._views = {}
 
@@ -163,7 +209,7 @@ class Engine:
         return out
 
     def _reconcile(self, targets):
-        n = 0
+        orders = []
         for s, target in targets.items():
             pos = self.client.position_for(s)
             cur = pos.signed_lots if pos else 0.0
@@ -173,17 +219,46 @@ class Engine:
             info = mt5.symbol_info(s)
             vmin = info.volume_min if info else 0.01
             if abs(delta) < vmin:
-                # delta too small to trade; but if target is 0 force a close
                 if target == 0 and cur != 0:
                     self._do_close(s)
-                    n += 1
+                    orders.append({"symbol": s, "side": "close",
+                                   "lots": round(abs(cur), 4), "cur": cur,
+                                   "target": 0.0, "sl": 0.0})
                 continue
             if target == 0 and cur != 0:
                 self._do_close(s)
+                orders.append({"symbol": s, "side": "close",
+                               "lots": round(abs(cur), 4), "cur": cur,
+                               "target": 0.0, "sl": 0.0})
             else:
-                self._do_order(s, abs(delta), delta > 0, cur, target)
-            n += 1
-        return n
+                sl = self._do_order(s, abs(delta), delta > 0, cur, target)
+                orders.append({"symbol": s, "side": "buy" if delta > 0 else "sell",
+                               "lots": abs(delta), "cur": cur, "target": target,
+                               "sl": sl})
+        return orders
+
+    def _write_decision_record(self, acct, snap, m, orders):
+        parts = self._pending_log
+        record = {
+            "ts": _iso(),
+            "mode": "live" if not self.dry_run else "dry-run",
+            "models": parts["models"],
+            "regime": parts["regime"],
+            "account": {
+                "equity": round(acct.equity, 2),
+                "gross_leverage": round(snap.gross_leverage, 2),
+                "margin_usage": round(snap.margin_usage, 4),
+                "margin_level": round(acct.margin_level, 1),
+                "return_pct": round(m.return_pct, 4) if m else 0.0,
+                "drawdown": round(m.max_drawdown, 4) if m else 0.0,
+                "sharpe": round(m.sharpe_15m, 3) if m else 0.0,
+            },
+            "cost": parts["cost"],
+            "views": parts["views"],
+            "orders": orders,
+        }
+        self.logger.log_decision(record)
+        self._pending_log = None
 
     def _update_trailing_stops(self):
         """Ratchet each position's broker SL toward profit once it's a meaningful
@@ -233,10 +308,11 @@ class Engine:
         if self.dry_run:
             slstr = f" SL={sl}" if sl else ""
             print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f}){slstr}")
-            return
+            return sl
         ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
         rc = getattr(res, "retcode", res)
         print(f"   [LIVE] {side} {lots} {symbol} SL={sl} -> ok={ok} ret={rc}")
+        return sl
 
     def _do_close(self, symbol):
         if self.dry_run:
@@ -261,6 +337,10 @@ class Engine:
 
 def _ts():
     return time.strftime("%H:%M:%S")
+
+
+def _iso():
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 if __name__ == "__main__":
