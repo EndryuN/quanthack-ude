@@ -107,6 +107,11 @@ def get_second_opinion(context: str, symbols, model: str, *, timeout: float = 30
         "temperature": 0.2,
         "max_tokens": 4000,
         "response_format": {"type": "json_object"},
+        # Nemotron-3-Super is a reasoning model. Disable extended thinking so it
+        # returns the JSON directly: a 15-min signal call must be fast, fit in
+        # max_tokens, and not blow the timeout. (NVIDIA NIM reads this the same
+        # way the OpenAI SDK's extra_body does.)
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     with httpx.Client(timeout=timeout) as c:
         r = c.post(f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions",
