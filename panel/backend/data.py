@@ -95,3 +95,58 @@ def heatmap_matrix(records: list[dict]) -> dict:
                 "agreement": v["agreement"], "boosted": v.get("boosted", False),
             }
     return {"symbols": symbols, "timestamps": timestamps, "cells": cells}
+
+
+from bot.config import RiskLimits  # read-only import of the limit constants
+
+_LIM = RiskLimits()
+_GREEN, _AMBER, _RED = "#2ECC71", "#F5A623", "#FF4D4D"
+
+
+def risk_gauges(account: dict) -> list[dict]:
+    """Gauge specs (value + colored bands + hard threshold marks) for the four
+    risk dials. Thresholds come from bot.config.RiskLimits (read-only)."""
+    ml = account["margin_level"]
+    lev = account["gross_leverage"]
+    mu = account["margin_usage"] * 100.0
+    dd = account["drawdown"] * 100.0
+    return [
+        {"key": "margin_level", "label": "Margin Level", "value": ml, "unit": "%",
+         "max": 1000,
+         "bands": [{"to": _LIM.kill_switch_margin_level, "color": _RED},
+                   {"to": _LIM.warn_margin_level, "color": _AMBER},
+                   {"to": 1000, "color": _GREEN}],
+         "hard": [{"at": _LIM.kill_switch_margin_level, "label": "KILL"},
+                  {"at": _LIM.warn_margin_level, "label": "no-new-risk"}]},
+        {"key": "gross_leverage", "label": "Gross Leverage", "value": lev, "unit": "x",
+         "max": 30,
+         "bands": [{"to": _LIM.target_gross_leverage, "color": _GREEN},
+                   {"to": _LIM.max_gross_leverage, "color": _AMBER},
+                   {"to": 30, "color": _RED}],
+         "hard": [{"at": _LIM.max_gross_leverage, "label": "cap"}, {"at": 28, "label": "penalty"}]},
+        {"key": "margin_usage", "label": "Margin Usage", "value": mu, "unit": "%",
+         "max": 100,
+         "bands": [{"to": _LIM.max_margin_usage * 100 * 0.83, "color": _GREEN},
+                   {"to": _LIM.max_margin_usage * 100, "color": _AMBER},
+                   {"to": 100, "color": _RED}],
+         "hard": [{"at": _LIM.max_margin_usage * 100, "label": "cap"}, {"at": 90, "label": "penalty"}]},
+        {"key": "drawdown", "label": "Drawdown", "value": dd, "unit": "%",
+         "max": 30,
+         "bands": [{"to": 10, "color": _GREEN},
+                   {"to": _LIM.daily_max_drawdown * 100, "color": _AMBER},
+                   {"to": 30, "color": _RED}],
+         "hard": [{"at": _LIM.daily_max_drawdown * 100, "label": "KILL"}]},
+    ]
+
+
+def tripwire_status(account: dict) -> list[dict]:
+    """Competition tripwire flags from the account snapshot (concentration is
+    added by the API layer when live positions are available)."""
+    lev = account["gross_leverage"]
+    mu = account["margin_usage"]
+    return [
+        {"key": "leverage", "label": "Leverage > 25x", "value": lev,
+         "active": lev > 25, "warn": 25, "penalty": 28},
+        {"key": "margin", "label": "Margin > 85%", "value": mu,
+         "active": mu > 0.85, "warn": 0.85, "penalty": 0.90},
+    ]
