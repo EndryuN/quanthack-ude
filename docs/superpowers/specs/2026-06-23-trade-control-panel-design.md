@@ -151,6 +151,15 @@ rationale), JetBrains Mono (all numeric data, orders).
 - **Equity curve:** step-line in chartreuse with the **risk-floor lines drawn
   on it** — the 20% drawdown kill level and the 12x leverage cap — as
   ever-present references you never cross. Drawdown as a shaded band.
+- **Per-symbol price + model projection cones:** recent price (line/candles)
+  with a **forward directional projection per model** — Claude (violet),
+  Nemotron (teal), and the consensus/final (chartreuse). Each is a forward
+  vector from the current price whose **slope is scaled by that model's
+  confidence** and whose **cone width is scaled by the instrument's volatility**
+  (already computed by the sizer via `ret_vol`). This honestly renders
+  conviction + uncertainty — NOT a price forecast (the models output
+  direction+confidence, not target levels). A human override (amber) draws its
+  own cone. Entry/exit/SL markers overlaid from the order history.
 - **Risk gauges:** arc dials for Margin Level, Gross Leverage, Margin Usage,
   Drawdown, with threshold bands at the real limits (150/250% ML, 12x lev, 60%
   margin, 20% DD) and **30-min tripwire countdown clocks** (lev>25x, margin>85%,
@@ -163,6 +172,9 @@ rationale), JetBrains Mono (all numeric data, orders).
   regime (teal), account KPIs.
 - Equity curve with risk-floor lines; risk gauges + tripwire clocks.
 - Consensus dumbbell (latest decision) + consensus heatmap (the run).
+- Per-symbol price chart with **forward projection cones per model** (slope =
+  confidence, width = volatility); pulls recent bars from live MT5
+  (`client.bars`), degrading to the historical cache when MT5 is absent.
 - Current positions table (symbol, side, lots, live P&L, SL, % of gross).
 - Order activity feed; AI cost meter (Claude + Nemotron).
 - "Next refresh in m:ss" countdown.
