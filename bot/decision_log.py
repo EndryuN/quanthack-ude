@@ -29,7 +29,7 @@ class DecisionLogger:
                 if new_md:
                     f.write(f"# AI decisions — {day}\n\n")
                 f.write(self._render_md(record))
-        except OSError as e:
+        except Exception as e:
             print(f"   [log] decision-log write failed: {e}")
 
     def _render_md(self, record: dict) -> str:
