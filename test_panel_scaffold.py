@@ -4,7 +4,7 @@ import os
 
 import panel.backend  # noqa: F401  -- package importable
 
-fixture = os.path.join("panel", "backend", "_fixtures", "sample_decisions.jsonl")
+fixture = os.path.join("panel", "backend", "_fixtures", "ai_decisions_2026-06-23.jsonl")
 assert os.path.exists(fixture), "fixture jsonl exists"
 rows = [json.loads(l) for l in open(fixture, encoding="utf-8") if l.strip()]
 assert len(rows) >= 3, "fixture has >=3 records"

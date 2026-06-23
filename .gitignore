@@ -20,3 +20,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# ...but DO track committed test fixtures
+!panel/backend/_fixtures/*.jsonl

@@ -41,7 +41,8 @@ def equity_series(state_dir: str) -> list[dict]:
     path = os.path.join(state_dir, "equity_samples.json")
     if not os.path.exists(path):
         return []
-    obj = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as fh:
+        obj = json.load(fh)
     out = []
     for item in obj.get("samples", []):
         epoch, eq = item[0], item[1]
