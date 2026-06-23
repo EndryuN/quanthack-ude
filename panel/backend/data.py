@@ -102,6 +102,11 @@ from bot.config import RiskLimits  # read-only import of the limit constants
 _LIM = RiskLimits()
 _GREEN, _AMBER, _RED = "#2ECC71", "#F5A623", "#FF4D4D"
 
+# Competition tripwire penalty thresholds — fixed contest rules, not in RiskLimits.
+_LEV_PENALTY = 28        # gross-leverage penalty level (x)
+_MARGIN_PENALTY = 0.90   # margin-usage penalty level (fraction)
+_DD_WARN_PCT = 10.0      # drawdown green->amber boundary (%)
+
 
 def risk_gauges(account: dict) -> list[dict]:
     """Gauge specs (value + colored bands + hard threshold marks) for the four
@@ -123,16 +128,16 @@ def risk_gauges(account: dict) -> list[dict]:
          "bands": [{"to": _LIM.target_gross_leverage, "color": _GREEN},
                    {"to": _LIM.max_gross_leverage, "color": _AMBER},
                    {"to": 30, "color": _RED}],
-         "hard": [{"at": _LIM.max_gross_leverage, "label": "cap"}, {"at": 28, "label": "penalty"}]},
+         "hard": [{"at": _LIM.max_gross_leverage, "label": "cap"}, {"at": _LEV_PENALTY, "label": "penalty"}]},
         {"key": "margin_usage", "label": "Margin Usage", "value": mu, "unit": "%",
          "max": 100,
          "bands": [{"to": _LIM.max_margin_usage * 100 * 0.83, "color": _GREEN},
                    {"to": _LIM.max_margin_usage * 100, "color": _AMBER},
                    {"to": 100, "color": _RED}],
-         "hard": [{"at": _LIM.max_margin_usage * 100, "label": "cap"}, {"at": 90, "label": "penalty"}]},
+         "hard": [{"at": _LIM.max_margin_usage * 100, "label": "cap"}, {"at": _MARGIN_PENALTY * 100, "label": "penalty"}]},
         {"key": "drawdown", "label": "Drawdown", "value": dd, "unit": "%",
          "max": 30,
-         "bands": [{"to": 10, "color": _GREEN},
+         "bands": [{"to": _DD_WARN_PCT, "color": _GREEN},
                    {"to": _LIM.daily_max_drawdown * 100, "color": _AMBER},
                    {"to": 30, "color": _RED}],
          "hard": [{"at": _LIM.daily_max_drawdown * 100, "label": "KILL"}]},
@@ -146,7 +151,7 @@ def tripwire_status(account: dict) -> list[dict]:
     mu = account["margin_usage"]
     return [
         {"key": "leverage", "label": "Leverage > 25x", "value": lev,
-         "active": lev > 25, "warn": 25, "penalty": 28},
+         "active": lev > 25, "warn": 25, "penalty": _LEV_PENALTY},
         {"key": "margin", "label": "Margin > 85%", "value": mu,
-         "active": mu > 0.85, "warn": 0.85, "penalty": 0.90},
+         "active": mu > 0.85, "warn": 0.85, "penalty": _MARGIN_PENALTY},
     ]
