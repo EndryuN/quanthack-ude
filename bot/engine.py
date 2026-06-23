@@ -43,6 +43,8 @@ class Engine:
         self._views_ts = 0.0
         self._last_acted_ts = -1.0  # views_ts last reconciled (anti-churn gate)
         self._regime = ""
+        self._last_ai_attempt = 0.0 # epoch of last refresh attempt (any outcome)
+        self._ai_backoff = 0.0      # grows on failure so we don't hammer a down API
 
     def start(self):
         self.client.connect()
@@ -73,10 +75,14 @@ class Engine:
         # 2. state / metrics
         m = self.state.update(acct.equity)
 
-        # 3. refresh AI views on cadence (no-op between 15-min refreshes)
+        # 3. refresh AI views on cadence (no-op between 15-min refreshes).
+        #    On failure we back off instead of retrying every 5s loop — a
+        #    transient API outage (e.g. 529 Overloaded) must not turn into a
+        #    hammer that wastes quota and risks rate-limiting.
         if self.cfg.signal_source == "ai":
             now = time.time()
-            if self._views is None or (now - self._views_ts) > self.cfg.ai_refresh_seconds:
+            due = self._views is None or (now - self._views_ts) > self.cfg.ai_refresh_seconds
+            if due and (now - self._last_ai_attempt) >= self._ai_backoff:
                 self._refresh_ai_views()
 
         # 4. reconcile ONLY when the signal set has changed. Targets are stable
@@ -111,21 +117,31 @@ class Engine:
         return build_targets(self.client, self._views, acct.equity,
                              self.cfg.aggression, self.sizer_cfg)
 
+    # failure backoff: 30s, then doubling up to a 5-min cap between retries
+    _AI_BACKOFF_MIN = 30.0
+    _AI_BACKOFF_MAX = 300.0
+
     def _refresh_ai_views(self):
         from .ai_signal import get_ai_views
+        self._last_ai_attempt = time.time()
         try:
             views, mv = get_ai_views(self.client, self.cfg.symbols,
                                      effort=self.cfg.ai_effort)
             self._views = views
             self._views_ts = time.time()
             self._regime = mv.regime
+            self._ai_backoff = 0.0          # recovered — back to normal cadence
             active = {s: v for s, v in views.items() if v[0] != 0 and v[1] > 0}
             print(f"[{_ts()}] AI views refreshed | regime: {mv.regime}")
             for s, (d, c) in sorted(active.items(), key=lambda x: -x[1][1]):
                 side = "LONG" if d > 0 else "SHORT"
                 print(f"        {s:7s} {side:5s} conf={c:.2f}")
         except Exception as e:
-            print(f"[{_ts()}] AI refresh FAILED: {e}")
+            self._ai_backoff = min(max(self._ai_backoff * 2, self._AI_BACKOFF_MIN),
+                                   self._AI_BACKOFF_MAX)
+            age = time.time() - self._views_ts if self._views_ts else -1
+            print(f"[{_ts()}] AI refresh FAILED: {e} | retry in "
+                  f"{self._ai_backoff:.0f}s (views age={age:.0f}s)")
             if self._views is None:
                 self._views = {}
 
