@@ -125,8 +125,8 @@ class Engine:
         from .ai_signal import get_ai_views
         self._last_ai_attempt = time.time()
         try:
-            views, mv = get_ai_views(self.client, self.cfg.symbols,
-                                     effort=self.cfg.ai_effort)
+            views, mv, _usage = get_ai_views(self.client, self.cfg.symbols,
+                                              effort=self.cfg.ai_effort)
             self._views = views
             self._views_ts = time.time()
             self._regime = mv.regime

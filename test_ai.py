@@ -19,7 +19,7 @@ print("=== MARKET CONTEXT SENT TO CLAUDE ===")
 print(build_context(c, ALL_SYMBOLS))
 
 print("\n=== CALLING CLAUDE (claude-opus-4-8) ... ===")
-views, mv = get_ai_views(c, ALL_SYMBOLS, effort=CONFIG.ai_effort)
+views, mv, _usage = get_ai_views(c, ALL_SYMBOLS, effort=CONFIG.ai_effort)
 print(f"\nREGIME: {mv.regime}\n")
 for v in sorted(mv.views, key=lambda x: -x.confidence):
     print(f"  {v.symbol:7s} {v.direction:5s} conf={v.confidence:.2f}  {v.rationale}")
