@@ -49,3 +49,49 @@ def equity_series(state_dir: str) -> list[dict]:
         ts = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         out.append({"ts": ts, "equity": float(eq)})
     return out
+
+
+def _slim(side: dict | None) -> dict | None:
+    if side is None:
+        return None
+    return {"direction": side["direction"], "confidence": side["confidence"]}
+
+
+def consensus_rows(record: dict) -> list[dict]:
+    """Per-view rows for the snapshot dumbbell, non-flat only, sorted by final
+    confidence descending."""
+    rows = []
+    for v in record.get("views", []):
+        if v["direction"] == "flat":
+            continue
+        rows.append({
+            "symbol": v["symbol"],
+            "direction": v["direction"],
+            "confidence": v["confidence"],
+            "claude": _slim(v.get("claude")),
+            "nemotron": _slim(v.get("nemotron")),
+            "agreement": v["agreement"],
+            "boosted": v.get("boosted", False),
+        })
+    rows.sort(key=lambda r: -r["confidence"])
+    return rows
+
+
+def heatmap_matrix(records: list[dict]) -> dict:
+    """instruments x timesteps grid. cells[r][c] is the view dict or None."""
+    decisions = [r for r in records if r.get("event") != "refresh_failed"]
+    symbols: list[str] = []
+    for rec in decisions:
+        for v in rec.get("views", []):
+            if v["symbol"] not in symbols:
+                symbols.append(v["symbol"])
+    timestamps = [rec["ts"] for rec in decisions]
+    cells = [[None] * len(decisions) for _ in symbols]
+    sidx = {s: i for i, s in enumerate(symbols)}
+    for c, rec in enumerate(decisions):
+        for v in rec.get("views", []):
+            cells[sidx[v["symbol"]]][c] = {
+                "direction": v["direction"], "confidence": v["confidence"],
+                "agreement": v["agreement"], "boosted": v.get("boosted", False),
+            }
+    return {"symbols": symbols, "timestamps": timestamps, "cells": cells}
