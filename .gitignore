@@ -8,6 +8,7 @@ cache/
 
 # runtime state
 state/
+logs/
 *.log
 
 # AI-backtest artifacts (batch request/result files, cached views)
