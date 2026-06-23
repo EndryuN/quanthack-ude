@@ -88,3 +88,71 @@ async function tick(){
 }
 tick();
 setInterval(tick, 15000);
+
+const dirColor = d => d==="long"? C.long : d==="short"? C.short : C.flat;
+
+function plotDumbbell(rows){
+  // one row per instrument: Claude (violet, left) — Nemotron (teal, right) confidences,
+  // x sign encodes direction so opposing calls point opposite ways.
+  const ys = rows.map(r=>r.symbol);
+  const sgn = d => d==="long"?1 : d==="short"?-1 : 0;
+  const cx = rows.map(r=> r.claude? sgn(r.claude.direction)*r.claude.confidence : 0);
+  const nx = rows.map(r=> r.nemotron? sgn(r.nemotron.direction)*r.nemotron.confidence : null);
+  const lines = rows.map((r,i)=>({x:[cx[i], nx[i]??cx[i]], y:[r.symbol,r.symbol], type:"scatter", mode:"lines",
+    line:{color: r.agreement==="agree"? C.chartreuse : r.agreement==="disagree"? C.short : C.muted,
+      width:2, dash: r.boosted? "solid":"dot"}, showlegend:false, hoverinfo:"skip"}));
+  const claudePts = {x:cx, y:ys, type:"scatter", mode:"markers", name:"Claude",
+    marker:{color:C.claude, size:11}, text:rows.map(r=>r.claude?.confidence?.toFixed(2)||""), hovertemplate:"Claude %{y}: %{x:.2f}<extra></extra>"};
+  const nemoPts = {x:nx, y:ys, type:"scatter", mode:"markers", name:"Nemotron",
+    marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
+  Plotly.react("dumbbell", [...lines, claudePts, nemoPts],
+    {...PLOT_BG, height: Math.max(120, ys.length*30+40), xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
+     showlegend:false}, {displayModeBar:false});
+}
+
+function plotHeatmap(hm){
+  const lum = c => c==null? 0 : c.confidence;             // 0..1
+  const sign = c => c==null? 0 : (c.direction==="long"?1 : c.direction==="short"?-1 : 0);
+  // z = signed confidence (-1..1): red short, green long, dark flat
+  const z = hm.cells.map(row=> row.map(c=> c==null? null : sign(c)*Math.max(lum(c),0.05)));
+  const text = hm.cells.map(row=> row.map(c=> c==null? "" :
+    `${c.direction} ${c.confidence.toFixed(2)}${c.boosted?" ★":""}`));
+  Plotly.react("heatmap", [{z, x:hm.timestamps.map(t=>t.slice(11,16)), y:hm.symbols,
+    type:"heatmap", text, hovertemplate:"%{y} %{x}: %{text}<extra></extra>",
+    colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
+    {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24}}, {displayModeBar:false});
+}
+
+async function plotSymbol(symbol){
+  const b = await getJSON("/api/bars/"+symbol);
+  const el = document.getElementById("symbol-chart");
+  if(!b.available){ el.innerHTML = '<div style="color:var(--muted);padding:20px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
+  const n = b.closes.length;
+  const xhist = b.closes.map((_,i)=>i);
+  const price = [{x:xhist, y:b.closes, type:"scatter", mode:"lines", line:{color:C.muted,width:1}, name:symbol, hoverinfo:"skip"}];
+  const coneTrace=(cone,color,name)=> cone? [
+    {x:cone.upper.map(p=>n-1+p[0]), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
+    {x:cone.lower.map(p=>n-1+p[0]), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
+      fillcolor:color+"22", showlegend:false, hoverinfo:"skip"},
+    {x:cone.mid.map(p=>n-1+p[0]), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2}, name:name},
+  ] : [];
+  const traces = [...price,
+    ...coneTrace(b.cones.claude, C.claude, "Claude"),
+    ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
+    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus")];
+  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:220, showlegend:true,
+    legend:{font:{size:9}, orientation:"h"}}, {displayModeBar:false});
+}
+
+window.renderConsensus = async function(s){
+  plotDumbbell(s.consensus || []);
+  const hm = await getJSON("/api/heatmap");
+  plotHeatmap(hm);
+  const sel = document.getElementById("symbol-select");
+  if(!sel.dataset.init && (s.consensus||[]).length){
+    sel.innerHTML = s.consensus.map(r=>`<option>${r.symbol}</option>`).join("");
+    sel.dataset.init = "1";
+    sel.onchange = ()=>plotSymbol(sel.value);
+    plotSymbol(sel.value);
+  }
+};
