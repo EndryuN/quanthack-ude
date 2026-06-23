@@ -19,6 +19,26 @@ The panel is also the demo artifact for the NVIDIA "Best Technology Project"
 prize: it makes the dual-AI (Claude + Nemotron) consensus and the survival-first
 risk discipline visible and interactive.
 
+## 1a. Hard constraints — DO NOT DISRUPT THE LIVE COMPETITION BOT (binding)
+
+The engine is running live in the competition *while this panel is being built.*
+These bind every task and override anything else in this spec on conflict:
+
+- **Default-off.** A new `EngineConfig.use_control_panel: bool = False` gates ALL
+  engine integration. With it False (the competing default), the engine reads no
+  control files and behaves **byte-for-byte as today**. The panel is invisible to
+  the running bot until the operator opts in.
+- **Read-only Phase 1.** Phase 1 (the dashboard) makes **zero** engine changes — it
+  only reads `logs/`, `state/`, and live-MT5 read-only methods. Safe to build and
+  run against the live bot immediately.
+- **Isolated development.** All code lands on a feature branch (`feat/control-panel`),
+  never on the branch the operator runs. Engine changes take effect only when the
+  operator pulls AND restarts AND enables the flag.
+- **Additive & backward-compatible.** Missing/partial control files → current
+  behavior. No control input may weaken the risk floor (Resolution C2).
+- **The risk floor is never gated.** The kill-switch, `flatten_all`, and the soft
+  de-risk path run BEFORE and INDEPENDENT of every control/override (Resolution C2).
+
 ## 2. Scope
 
 Built in three phases; **each phase is usable on its own**.
@@ -206,6 +226,11 @@ rationale), JetBrains Mono (all numeric data, orders).
 
 ## 7. Engine integration contract
 
+> **Refined by §9a Review Resolutions — those govern on any conflict** (control-read
+> cadence, single-writer/ack protocol, pin-freezes-trailing, block=de-risk-clamp,
+> `set_sltp`, human-override layer). All of this is gated by `use_control_panel`
+> (default off); with it off the engine reads nothing here.
+
 The engine reads two files at the **decide→execute seam** (between producing
 views and reconciling). The risk floor / kill-switch run **before** any of this
 and are never affected.
@@ -284,6 +309,69 @@ below and cannot be overridden by the panel.
   value with zero engine risk.
 - **Demo without live data:** Mitigation: a small replay mode that walks a
   day's JSONL (Phase 1 nice-to-have).
+
+## 9a. Review resolutions (2026-06-24) — these GOVERN §7 on conflict
+
+A code-grounded review found seams that would otherwise force guesswork or risk
+the live bot. Resolutions (binding):
+
+**Control-read cadence (was C3/I3).** Split control evaluation:
+- **Every tick, right after the kill-switch, independent of `_signal_changed()`:**
+  `flatten_now`, `pause`, and block/allow de-risk. These are safety/emergency
+  controls and must act within one 5s loop, not wait for the 15-min refresh.
+- **At the next AI refresh (in `_build_targets`/`_refresh_ai_views`):**
+  `aggression` and per-symbol human `view` overrides. A control change MAY set a
+  `force_refresh` flag so the operator isn't waiting up to 15 min, but these never
+  need to be intra-tick.
+
+**Single-writer + one-shot commands (was C4).** The app is the **sole writer** of
+`controls.json` and `overrides.json`; the engine **never writes them**. One-shot
+commands (`flatten_now`) carry a monotonic `seq`; the engine acts and records the
+processed `seq` in an engine-owned `state/control_ack.json`. The app clears the
+command after seeing the ack. All writes use the atomic `.tmp`+`os.replace`
+pattern from `state.py`. This removes the two-writer lost-update hazard.
+
+**Pin = full freeze (was C1).** A pinned symbol is skipped in `_reconcile` **and**
+in `_update_trailing_stops` (no rebalance, no close, no SL ratchet). Pin is read
+only in those strategy-layer paths.
+
+**Risk floor ignores all overrides — tested invariant (was C2).** `risk.assess`/
+`enforce`/`flatten_all` and the soft `_derisk_only` path run before and independent
+of every control/override. A pinned or human-overridden position **is still
+flattened by the kill-switch**. Required test: with a position pinned, drive margin
+level below the kill threshold and assert `flatten_all` closes it anyway.
+
+**Human override layer (was I2).** Add `apply_human_override(sizer_views, records,
+overrides)` (in `bot/second_opinion.py`), called **after** `apply_consensus` in
+`_refresh_ai_views`. It maps `"long"/"short"/"flat" → 1/-1/0`, overwrites
+`sizer_views[sym]`, and rewrites that record entry: adds a `"human": {direction,
+confidence}` field, sets `agreement:"human_override"`, `boosted:false`. The
+decision-log MD renderer already falls through to the raw `agreement` string, so
+the new value renders without change.
+
+**Block/allow = de-risk clamp, NOT close (was I4).** Block does **not** set target
+0 (that would actively close the position). It clamps the target toward flat with
+the same semantics as `_derisk_only`: forbid increasing/opening, allow reduction.
+`allow` (if set) clamps every symbol not listed the same way. The `controls.json`
+comment is corrected accordingly. A separate explicit "close X now" is out of
+scope (use Flatten or set a human flat view).
+
+**`set_sltp` preserves both legs (was I1).** Replace the proposed `set_tp` with
+`client.set_sltp(symbol, sl, tp)` that reads the position's current SL/TP and
+preserves the leg not being changed (the existing `set_sl` zeroes TP — a naive
+`set_tp` and the trailing stop would clobber each other every loop). Add `sl`/`tp`
+to the `Position` dataclass. The backend validates a user TP is on the profitable
+side of current price before writing it.
+
+**Live per-ticker P&L from MT5, not the log (was I5).** Phase-1 live per-ticker
+P&L comes from the backend reading live MT5 `positions()[].profit` directly. Drop
+the proposed `unrealized_pnl` log field (it would be 15-min stale and misleading).
+
+**Phasing (data-gap fixes are an optional sub-track).** Phase 1's value (charts,
+gauges, consensus viz, projection cones) does **not** depend on any engine change.
+The data-gap fixes (fill confirmation, SL-hit capture) are a clearly-separate,
+optional low-risk engine sub-track, each behind the default-off posture, never a
+prerequisite for the read-only dashboard.
 
 ## 10. Open items / future
 - Replay/scrubber mode for demos (seed dramatic moments).
