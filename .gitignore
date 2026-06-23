@@ -1,0 +1,21 @@
+# secrets (.env.example is a committed placeholder template; .env holds the real key)
+.env
+
+# competition data (huge / proprietary)
+pricer-output-*/
+*.zip
+cache/
+
+# runtime state
+state/
+*.log
+
+# AI-backtest artifacts (batch request/result files, cached views)
+*.jsonl
+views*.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
