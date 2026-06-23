@@ -1,7 +1,7 @@
 import os, glob, re
 import pyarrow.parquet as pq
 
-ROOT = r"C:\Users\ipode\Desktop\quanthack\pricer-output-2026-05-11_2026-06-10"
+from bot.dataloader import DATA_ROOT as ROOT
 from bot.config import ALL_SYMBOLS
 
 files = glob.glob(os.path.join(ROOT, "*.parquet"))

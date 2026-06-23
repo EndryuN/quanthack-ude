@@ -11,8 +11,16 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-DATA_ROOT = r"C:\Users\ipode\Desktop\quanthack\pricer-output-2026-05-11_2026-06-10"
-CACHE_DIR = r"C:\Users\ipode\Desktop\quanthack\cache"
+# Paths are resolved relative to the project root (the parent of this `bot/`
+# package) so the backtester works on any machine without editing source.
+# Override either with an env var if the data lives elsewhere.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_ROOT = os.environ.get(
+    "QUANTHACK_DATA_ROOT",
+    os.path.join(_PROJECT_ROOT, "pricer-output-2026-05-11_2026-06-10"))
+CACHE_DIR = os.environ.get(
+    "QUANTHACK_CACHE_DIR",
+    os.path.join(_PROJECT_ROOT, "cache"))
 
 # competition instruments that actually exist in the dataset (no crypto)
 BACKTEST_SYMBOLS = ["AUDUSD", "EURCHF", "EURGBP", "EURUSD", "GBPUSD",
