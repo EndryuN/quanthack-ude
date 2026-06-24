@@ -50,7 +50,7 @@ def _rc(ok, res) -> str:
         return ""
     rc = getattr(res, "retcode", res)
     name = _RETCODES.get(rc)
-    return f"  ⚠ FAILED ret={rc}" + (f" ({name})" if name else "")
+    return f"  !! FAILED ret={rc}" + (f" ({name})" if name else "")
 
 
 class Engine:
@@ -425,7 +425,7 @@ class Engine:
         for tk, prev in self._last_positions.items():
             if tk in current or prev["symbol"] in engine_closed:
                 continue
-            print(f"[{_ts()}]    ⚑ STOP HIT {prev['symbol']}  "
+            print(f"[{_ts()}]    ** STOP HIT {prev['symbol']}  "
                   f"{prev['profit']:+,.0f}  (broker SL/TP)")
         self._last_positions = {tk: {"symbol": p.symbol,
                                      "profit": getattr(p, "profit", 0.0)}
@@ -475,7 +475,7 @@ class Engine:
             if rec:
                 rat = (rec.get("claude") or {}).get("rationale", "") or ""
         if vd == 0:
-            base = "AI view → flat"
+            base = "AI view -> flat"
         elif cur_dir and vd != cur_dir:
             base = f"AI flipped {'long' if vd > 0 else 'short'}"
         else:
