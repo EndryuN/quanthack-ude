@@ -1,4 +1,5 @@
 """Central configuration. Edit values here; everything reads from this."""
+import os
 from dataclasses import dataclass, field
 
 # The 15 competition instruments, by category. Names confirmed against the
@@ -120,7 +121,10 @@ class EngineConfig:
     use_trailing_stop: bool = True            # ratchet SL into profit on winners
 
     # --- operator control panel (Phase 2; OFF by default = identical to today) ---
-    use_control_panel: bool = False           # read state/controls.json each tick
+    # Default reads the QUANTHACK_PANEL env var (set by the launcher's "with panel"
+    # choice); unset/"0" -> False -> byte-for-byte identical to no panel.
+    use_control_panel: bool = field(
+        default_factory=lambda: os.environ.get("QUANTHACK_PANEL") == "1")
 
     # --- AI decision logging ---
     log_decisions: bool = True                # write per-day decision logs
