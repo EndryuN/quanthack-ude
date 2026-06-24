@@ -119,6 +119,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .card-head h2{margin:0}
 .dir-legend{display:flex;gap:12px;font-family:"JetBrains Mono";font-size:10px}
 .dl.long{color:var(--long)} .dl.short{color:var(--short)}
+.ot-legend{justify-content:flex-start;margin-bottom:6px}
 
 /* Consensus Latest/Over-time tabs */
 .con-tabs{display:flex;gap:4px}
