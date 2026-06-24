@@ -139,6 +139,10 @@ class Engine:
         if self.cfg.use_trailing_stop:
             self._update_trailing_stops()
 
+        # operator take-profit (gated): honor per-position TP overrides
+        if self._overrides:
+            self._apply_take_profits()
+
         # 6. write the decision record for this refresh (after reconcile)
         if refreshed and self.logger and self._pending_log:
             self._write_decision_record(acct, snap, m, orders)
@@ -359,9 +363,28 @@ class Engine:
             if self.dry_run:
                 print(f"   [DRY] TRAIL {p.symbol} SL -> {cand}")
                 continue
-            ok, res = self.client.set_sl(p.symbol, cand)
+            if self.cfg.use_control_panel:
+                ok, res = self.client.set_sltp(p.symbol, cand, getattr(p, "tp", 0.0))
+            else:
+                ok, res = self.client.set_sl(p.symbol, cand)
             rc = getattr(res, "retcode", res)
             print(f"   [LIVE] TRAIL {p.symbol} SL -> {cand} ok={ok} ret={rc}")
+
+    def _apply_take_profits(self):
+        """For each symbol with a take_profit override, set a broker-side TP via
+        set_sltp (preserving the current SL). Idempotent: skip if already set."""
+        from .overrides import take_profits
+        tps = take_profits(self._overrides)
+        if not tps:
+            return
+        for p in self.client.positions():
+            tp = tps.get(p.symbol)
+            if tp is None or abs(getattr(p, "tp", 0.0) - tp) < 1e-9:
+                continue
+            if self.dry_run:
+                print(f"   [DRY] TP {p.symbol} -> {tp}")
+                continue
+            self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
 
     def _pos_sl(self, p):
         import MetaTrader5 as _mt5
