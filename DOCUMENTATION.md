@@ -16,7 +16,7 @@ Most algorithmic trading bots are *rule machines*: "if the 50-day average crosse
 
 Quanthack is different. It separates **judgment** from **execution**:
 
-1. **Judgment** — A large language model is shown a compact, multi-timeframe snapshot of 14 instruments (forex, metals, crypto) and asked, like a trading desk analyst, for a directional view and a *calibrated confidence* on each. It reasons about cross-asset stories ("broad USD strength, risk-off") rather than blindly following one indicator.
+1. **Judgment** — A frontier LLM (Claude) is shown a compact, multi-timeframe snapshot of 14 instruments (forex, metals, crypto) and asked, like a trading desk analyst, for a directional view and a *calibrated confidence* on each. It reasons about cross-asset stories ("broad USD strength, risk-off") rather than blindly following one indicator. A **second model — NVIDIA Nemotron — gives an independent, blind second opinion**, and a consensus rule boosts conviction where the two agree.
 2. **Execution** — A deterministic, math-driven engine takes those views and converts them into actual position sizes, places the orders, manages stops, and enforces hard risk limits that the AI **cannot override**.
 
 This split is the core idea: *the AI is smart but fallible, so it is wrapped in a safety cage of classical quant risk management.* You get the adaptability of AI reasoning with the discipline of a rules-based risk system.
@@ -50,13 +50,18 @@ The engine runs a continuous loop, every 5 seconds. The **order of authority eac
    │  2. METRICS  ──── update equity curve, drawdown, Sharpe    │
    │       │                                                    │
    │       ▼                                                    │
-   │  3. AI VIEWS  ─── refresh Claude's market read (every      │
-   │       │            15 min, not every tick)                 │
+   │  3. AI VIEWS  ─── refresh Claude + a blind Nemotron        │
+   │       │            second opinion, merged by consensus     │
+   │       │            (every 15 min, not every tick)          │
    │       ▼                                                    │
    │  4. SIZE & TRADE ─ convert views → target positions →      │
    │       │            reconcile live positions toward them    │
    │       ▼                                                    │
    │  5. TRAIL STOPS ── ratchet stops into profit on winners    │
+   │       │                                                    │
+   │       ▼                                                    │
+   │  6. LOG ───────── persist the decision (both models'       │
+   │                   views + rationale, orders, cost) to disk │
    └──────────────────────────────────────────────────────────┘
 ```
 
@@ -77,6 +82,8 @@ For each instrument, the engine builds a compact snapshot containing:
 Claude is explicitly instructed to **weight setups higher when timeframes agree** (15m + 1h + 4h all trending up = high conviction) and **lower when they conflict**, and to be wary of chasing a move already stretched to a range extreme. Crucially, it must return a **calibrated confidence in [0,1]** — the system asks it to assign *low* confidence to efficient, hard-to-predict markets and reserve *high* confidence for coherent cross-asset macro stories. It is told to prefer saying "flat" over guessing.
 
 This is the difference between "an AI that picks stocks" and "an AI that knows what it doesn't know." The output is validated against a strict schema (Pydantic), so a malformed or hallucinated response can never reach the trading logic.
+
+**A second model, as a disagreement-aware second opinion.** The same market snapshot is sent — *blind*, with no sight of Claude's answer — to an **NVIDIA Nemotron** model (via the OpenAI-compatible NIM endpoint). A consensus rule then merges the two: Claude always sets the direction, and where Nemotron *independently agrees*, conviction is boosted toward 1.0 (so high-agreement trades are sized larger); where they disagree, Claude's view stands — Nemotron never vetoes. The intent is a Sharpe-improving conviction amplifier rather than a raw ensemble average. It's **strictly additive**: with no `NVIDIA_API_KEY`, a timeout, or any failure, the engine degrades to Claude-only with identical behavior. Every refresh — both models' views and rationale, the agreement verdict, the orders, and the token cost — is written to a per-day decision log (`logs/ai_decisions_*.jsonl` / `.md`), which doubles as a Claude-vs-Nemotron audit trail.
 
 ### 2. Confidence is turned into size by a *variance-aware sizer* with one dial
 
@@ -119,27 +126,41 @@ The result: even at maximum aggression, the system stays comfortably inside ever
 
 ---
 
+## The operator control panel (opt-in)
+
+A separate web app — **SIGNAL//LAYER** — turns the decision log into a live monitoring and control surface, without ever being able to compromise the engine. It is built in three layers, all **off by default** (`use_control_panel=False`); with the flag off the engine is byte-for-byte unchanged.
+
+- **Watch (read-only):** the Claude×Nemotron consensus as a dumbbell + an over-time heatmap, the equity curve with the risk-floor lines drawn on it, risk gauges + 30-minute tripwire clocks, a rolling orders feed, and per-symbol price with per-model forward **projection cones** (an honest rendering of direction×confidence, not a fabricated price target). It runs as a *separate process* that only reads `logs/`, `state/`, and live MT5 — it cannot place an order.
+- **Steer (global):** aggression, pause, panic-flatten, and per-symbol allow/block, saved as named **presets** (`Default` / `Survival` / `Finals` along the existing aggression axis) — written to a one-way control file the engine reads each tick.
+- **Weigh in (per-position):** pin/lock a position, **override the AI's view** for a symbol (a deciding "third opinion" that can flip direction), or set a per-position take-profit, plus per-ticker objective notes.
+
+The control channel is deliberately constrained: the panel is the *sole writer* of the control files; the engine only reads them and acknowledges one-shot commands; and **the kill-switch and risk floor run before — and are never gated by — any operator control** (a pinned position is still flattened by the kill-switch). A malformed control file can never crash the trading loop. Full reference: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
+
+---
+
 ## Technology stack
 
 | Layer | Technology |
 |---|---|
 | **Reasoning / signal (live)** | Claude Opus 4.8 with adaptive extended thinking, via the Anthropic API |
+| **Second opinion** | NVIDIA Nemotron via the OpenAI-compatible NIM endpoint (consensus gate, optional) |
 | **Reasoning / signal (backtest)** | Doubleword tiered inference (batch/async) via the Pydantic AI Gateway, OpenAI-compatible |
 | **Structured output** | Pydantic schema validation (no free-text parsing of trade instructions) |
 | **Market data & execution** | MetaTrader 5 (live tick data, order placement, position management) |
 | **Sizing & risk math** | NumPy (inverse-volatility weighting, concentration capping) |
-| **Language / runtime** | Python 3.14 |
+| **Control panel** | FastAPI backend + Plotly.js frontend (opt-in, read-only by default) |
+| **Language / runtime** | Python 3.13+ |
 
-The codebase is cleanly separated into single-responsibility modules: `ai_signal` (the AI brain), `sizer` (confidence → size), `risk` (the safety cage), `engine` (the loop that orchestrates them), `state` (metrics & persistence), and `client` (the broker interface).
+The codebase is cleanly separated into single-responsibility modules: `ai_signal` (the AI brain), `second_opinion` (the Nemotron consensus), `sizer` (confidence → size), `risk` (the safety cage), `engine` (the loop that orchestrates them), `decision_log` (the audit trail), `controls`/`overrides` (the gated operator channel), `state` (metrics & persistence), and `client` (the broker interface).
 
 ---
 
 ## Why this deserves the Technology Award
 
-1. **It applies a frontier LLM to a hard, real-time decision problem** — not as a chatbot, but as a calibrated, schema-constrained reasoning component inside a live control loop.
+1. **It applies frontier LLMs to a hard, real-time decision problem** — not as chatbots, but as calibrated, schema-constrained reasoning components inside a live control loop, with **two independent models (Claude + NVIDIA Nemotron) merged by a disagreement-aware consensus**.
 2. **It pairs that AI with classical quant discipline** instead of trusting it blindly. The architecture's central insight — *separate fallible judgment from deterministic, un-overridable risk control* — is exactly how you make AI safe to put in charge of money.
 3. **Every design decision is traceable to the incentive it optimizes** (return rank vs. survival), and to evidence (backtests that killed the strategies that didn't work).
-4. **It actually runs, live and autonomously**, reasoning across multiple timeframes and managing its own risk, right now.
+4. **It actually runs, live and autonomously** — and ships with an **opt-in control panel** that makes the dual-AI reasoning visible and lets an operator steer it, all without any path to weaken the risk floor.
 
 In short: it's a working demonstration of how to combine the *adaptability of AI reasoning* with the *guarantees of engineered risk management* — which is, increasingly, the central question in deploying AI for high-stakes decisions.
 

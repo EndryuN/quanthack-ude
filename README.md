@@ -22,14 +22,30 @@ The result: the adaptability of AI reasoning, wrapped in the discipline of a cla
 ## The loop (every 5 seconds)
 
 ```
-1. RISK FIRST   → kill-switch & guardrails (can flatten everything)
-2. METRICS      → equity curve, drawdown, 15-min Sharpe
-3. AI VIEWS     → refresh Claude's market read (every 15 min)
-4. SIZE & TRADE → views → target positions → reconcile
-5. TRAIL STOPS  → ratchet stops into profit on winners
+1. RISK FIRST    → kill-switch & guardrails (can flatten everything)
+2. METRICS       → equity curve, drawdown, 15-min Sharpe
+3. AI VIEWS      → refresh Claude's read + a blind Nemotron second opinion,
+                   merged by consensus (every 15 min)
+4. SIZE & TRADE  → views → target positions → reconcile
+5. TRAIL STOPS   → ratchet stops into profit on winners
+6. LOG           → write the decision (views, rationale, orders, cost) to disk
 ```
 
 Risk runs first by design: the strategy can never talk the system out of protecting itself.
+
+---
+
+## Dual-AI consensus (Claude + Nemotron)
+
+Claude sets the **direction**; an NVIDIA **Nemotron** model gives an independent, *blind* second opinion on the same market snapshot. A consensus rule merges them: when they **agree**, conviction is boosted (sizing up the high-agreement trades); when they don't, Claude's view stands — Nemotron never vetoes. This is a disagreement-aware conviction amplifier aimed at improving Sharpe, and it's strictly additive: with no `NVIDIA_API_KEY` (or on any failure) the engine runs Claude-only, unchanged. See [`bot/second_opinion.py`](bot/second_opinion.py).
+
+## Decision log
+
+Every 15-min refresh is persisted to per-day files — `logs/ai_decisions_YYYY-MM-DD.jsonl` (machine-readable) and `.md` (human-readable): the regime, **per-symbol rationale from both models**, the consensus verdict, the orders placed, token cost, and account state. It doubles as a Claude-vs-Nemotron audit trail. See [`bot/decision_log.py`](bot/decision_log.py).
+
+## Operator control panel
+
+A separate, opt-in web dashboard (**SIGNAL//LAYER**) reads the logs + live MT5 and lets you watch — and optionally steer — the engine: the consensus dumbbell/heatmap, equity vs the risk floor, risk gauges, per-symbol projection cones, global knobs + presets, and per-position pin / human-override / take-profit. It's **off by default** (`use_control_panel=False`); the engine is byte-for-byte unchanged until you enable it. Full details: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
 
 ---
 
@@ -37,19 +53,25 @@ Risk runs first by design: the strategy can never talk the system out of protect
 
 ```
 bot/
-  ai_signal.py    # builds the multi-timeframe snapshot, queries Claude, validates output
-  sizer.py        # turns (direction, confidence) into target lots; one `aggression` dial
-  risk.py         # kill-switch + leverage/margin/concentration/drawdown guardrails
-  engine.py       # the main loop that orchestrates everything
-  state.py        # equity history, drawdown, Sharpe; crash-resilient persistence
-  client.py       # MetaTrader 5 broker interface (data + orders)
-  strategy.py     # alternative "hybrid" signal source (the AI path is default)
-  indicators.py   # EMA, volatility, momentum helpers
-  config.py       # all tunables: symbols, risk limits, sizer dial, cadence
-  gateway.py      # OpenAI-compatible client for the Pydantic AI Gateway -> Doubleword
-  ai_signal_gw.py # gateway variant of the signal (reuses the live prompt + schema)
-  ai_backtest.py  # backtests the AI signal over history using Doubleword inference
-run_ai_backtest.py  # CLI for the AI-signal backtester
+  ai_signal.py     # builds the multi-timeframe snapshot, queries Claude, validates output
+  second_opinion.py# blind Nemotron (NVIDIA) second opinion + the consensus merge rule
+  sizer.py         # turns (direction, confidence) into target lots; one `aggression` dial
+  risk.py          # kill-switch + leverage/margin/concentration/drawdown guardrails
+  engine.py        # the main loop that orchestrates everything
+  decision_log.py  # per-day JSONL + Markdown log of every AI decision
+  controls.py      # operator control channel (knobs/presets) — gated, default off
+  overrides.py     # per-position overrides (pin / human view / take-profit) — gated
+  state.py         # equity history, drawdown, Sharpe; crash-resilient persistence
+  client.py        # MetaTrader 5 broker interface (data + orders)
+  strategy.py      # alternative "hybrid" signal source (the AI path is default)
+  indicators.py    # EMA, volatility, momentum helpers
+  config.py        # all tunables: symbols, risk limits, sizer dial, cadence
+  gateway.py       # OpenAI-compatible client for the Pydantic AI Gateway -> Doubleword
+  ai_signal_gw.py  # gateway variant of the signal (reuses the live prompt + schema)
+  ai_backtest.py   # backtests the AI signal over history using Doubleword inference
+panel/             # opt-in operator dashboard (FastAPI backend + Plotly frontend)
+  run_panel.ps1    # launch the dashboard (reads logs/state/MT5; never touches the engine)
+run_ai_backtest.py # CLI for the AI-signal backtester
 ```
 
 The repository also includes the research/probe scripts and backtests used to validate the approach (and to rule out momentum, mean-reversion, stat-arb, and order-flow strategies that showed no durable edge).
@@ -76,23 +98,26 @@ Running it on Doubleword was **~98.7% cheaper** than the live model: the first f
 
 ## Quickstart
 
-**Requirements:** Python 3.14, a running [MetaTrader 5](https://www.metatrader5.com/) terminal with Algo Trading enabled, and an Anthropic API key.
+**Requirements:** Python 3.13+, a running [MetaTrader 5](https://www.metatrader5.com/) terminal with Algo Trading enabled, and an Anthropic API key. An NVIDIA `nvapi-…` key (free from [build.nvidia.com](https://build.nvidia.com)) enables the Nemotron second opinion but is **optional** — without it the engine runs Claude-only.
 
 ```bash
 # 1. install dependencies
-pip install MetaTrader5 anthropic pydantic numpy
+pip install -r requirements.txt
 
-# 2. configure your key
-cp .env.example .env        # then edit .env and paste your real ANTHROPIC_API_KEY
+# 2. configure your keys
+cp .env.example .env        # then edit .env: ANTHROPIC_API_KEY (required),
+                            # NVIDIA_API_KEY (optional, enables the second opinion)
 
 # 3. run in dry-run (computes & logs intended trades, sends NO orders)
-python -m bot.engine
+python -m bot.engine        # or:  .\run_live.ps1
 
 # 4. run live (actually places orders)
-python -m bot.engine --live
+python -m bot.engine --live #     .\run_live.ps1 -Live
 ```
 
-Each loop prints a one-line health summary (equity, leverage, margin, return, drawdown, Sharpe). Every 15 minutes it prints the AI's fresh market read with per-instrument direction and confidence, plus the API token cost of that call.
+Each loop prints a one-line health summary (equity, leverage, margin, return, drawdown, Sharpe). Every 15 minutes it prints the fresh market read with per-instrument direction and confidence (Claude + the Nemotron consensus), plus the API token cost, and writes the full decision to `logs/`.
+
+**Watch it live (optional):** `.\panel\run_panel.ps1` → open `http://127.0.0.1:8800`. The dashboard is read-only by default; see [docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md) to enable operator controls.
 
 ---
 
@@ -127,4 +152,4 @@ Everything lives in [`bot/config.py`](bot/config.py). The two dials you'll touch
 
 ## Tech stack
 
-Claude Opus 4.8 (adaptive extended thinking) · Anthropic API · Pydantic (structured-output validation) · MetaTrader 5 · NumPy · Python 3.14
+Claude Opus 4.8 (adaptive extended thinking) · NVIDIA Nemotron (second opinion, OpenAI-compatible NIM) · Anthropic API · Pydantic (structured-output validation) · MetaTrader 5 · NumPy · FastAPI + Plotly (control panel) · Python 3.13+
