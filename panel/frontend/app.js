@@ -5,7 +5,10 @@ const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };
 
-async function getJSON(u){ const r = await fetch(u); return r.json(); }
+async function getJSON(u){
+  try { const r = await fetch(u); if(!r.ok) return null; return await r.json(); }
+  catch(e){ return null; }
+}
 const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 
 function renderStrip(s){
@@ -74,7 +77,7 @@ function renderOrders(orders){
 
 window.renderCharts = async function(s){
   const eq = await getJSON("/api/equity");
-  plotEquity(eq.series || []);
+  plotEquity((eq && eq.series) || []);
   plotGauges(s.gauges || []);
   renderTripwires(s.tripwires || []);
   renderOrders(s.orders || []);
@@ -83,6 +86,7 @@ window.renderCharts = async function(s){
 
 async function tick(){
   const s = await getJSON("/api/state");
+  if(!s){ return; }
   renderStrip(s);
   if (window.renderCharts) await window.renderCharts(s);  // added in Tasks 8-9
 }
@@ -126,7 +130,7 @@ function plotHeatmap(hm){
 async function plotSymbol(symbol){
   const b = await getJSON("/api/bars/"+symbol);
   const el = document.getElementById("symbol-chart");
-  if(!b.available){ el.innerHTML = '<div style="color:var(--muted);padding:20px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
+  if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:20px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
   const n = b.closes.length;
   const xhist = b.closes.map((_,i)=>i);
   const price = [{x:xhist, y:b.closes, type:"scatter", mode:"lines", line:{color:C.muted,width:1}, name:symbol, hoverinfo:"skip"}];
@@ -147,8 +151,9 @@ async function plotSymbol(symbol){
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   const hm = await getJSON("/api/heatmap");
-  plotHeatmap(hm);
+  if(hm) plotHeatmap(hm);
   const sel = document.getElementById("symbol-select");
+  if(!sel) return;
   if(!sel.dataset.init && (s.consensus||[]).length){
     sel.innerHTML = s.consensus.map(r=>`<option>${r.symbol}</option>`).join("");
     sel.dataset.init = "1";

@@ -23,7 +23,7 @@ def projection_cone(price: float, direction: str, confidence: float,
     drift = d * confidence * _SLOPE_VOL_UNITS * vol * price
     mid, upper, lower = [], [], []
     for i in range(horizon_bars + 1):
-        frac = i / horizon_bars
+        frac = i / horizon_bars if horizon_bars else 1.0
         m = price + drift * frac
         half = price * vol * math.sqrt(i)   # band widens with sqrt(time)
         mid.append([i, round(m, 8)])
