@@ -2274,3 +2274,259 @@
 - (none)
 
 ---
+## 14:49:02 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off tone; equities-proxy assets (crypto, metals) selling off, but many moves are stretched to range extremes raising mean-reversion risk.
+**Regime (Nemotron):** Broad USD strength and risk-off sentiment driving consistent downtrends in non-USD pairs and risk assets, while USD pairs show aligned uptrends.
+**Account:** eq=1,032,148 · lev=3.0x · margin=10% · ML=986% · sharpe=0.13
+**Cost:** Claude in=2494 out=1561 ~$0.051 · Nemotron in=1718 out=878 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.66 | long 0.45 | long 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.65 | short 0.42 | short 0.80 | ✅ agree → boosted |
+| USDJPY | LONG 0.64 | long 0.40 | long 0.80 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.64 | short 0.42 | short 0.75 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.62 | short 0.42 | short 0.70 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.61 | short 0.38 | short 0.75 | ✅ agree → boosted |
+| USDCAD | LONG 0.61 | long 0.40 | long 0.70 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.59 | short 0.40 | short 0.65 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.58 | short 0.35 | short 0.70 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.56 | short 0.35 | short 0.65 | ✅ agree → boosted |
+| EURCHF | SHORT 0.46 | short 0.20 | short 0.65 | ✅ agree → boosted |
+
+**Orders placed:**
+- SELL 3.32 EURCHF  (+0.00 → -3.32)  SL=0.96751
+
+---
+## 15:12:05 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off: dollar bid across FX, metals and crypto selling off hard, though many moves are stretched to range extremes.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in EUR, GBP, AUD, metals, and crypto, while USD pairs show aligned bullish trends.
+**Account:** eq=1,029,592 · lev=3.3x · margin=11% · ML=896% · sharpe=0.11
+**Cost:** Claude in=2494 out=1552 ~$0.051 · Nemotron in=1718 out=909 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.66 | long 0.45 | long 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.64 | short 0.40 | short 0.80 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.63 | short 0.40 | short 0.78 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.62 | short 0.40 | short 0.72 | ✅ agree → boosted |
+| USDCAD | LONG 0.61 | long 0.40 | long 0.70 | ✅ agree → boosted |
+| USDJPY | LONG 0.60 | long 0.40 | long 0.68 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.58 | short 0.35 | short 0.70 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.56 | short 0.35 | short 0.65 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.55 | short 0.35 | short 0.63 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.55 | short 0.35 | short 0.62 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.51 | short 0.30 | short 0.60 | ✅ agree → boosted |
+
+**Orders placed:**
+- CLOSE EURCHF
+- SELL 0.25 XAGUSD  (+0.00 → -0.25)  SL=63.7834
+
+---
+## 15:27:52 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off tone: crypto and metals selling off, commodity/risk FX weak; many moves stretched to range extremes.
+**Account:** eq=1,030,387 · lev=3.0x · margin=10% · ML=982% · sharpe=0.12
+**Cost:** Claude in=2494 out=1382 ~$0.047 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURUSD | SHORT 0.52 | short 0.52 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.50 | short 0.50 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.48 | short 0.48 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.44 | short 0.44 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| EURCHF | SHORT 0.25 | short 0.25 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- SELL 1.92 AUDUSD  (-3.73 → -5.65)  SL=0.72403
+- SELL 2.29 EURCHF  (+0.00 → -2.29)  SL=0.96807
+
+---
+## 15:32:58 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off tone — metals and crypto selling off hard, defensive USD pairs (CAD/CHF/JPY) bid.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving downside in most pairs and commodities, while USD pairs show aligned bullish trends.
+**Account:** eq=1,029,788 · lev=3.4x · margin=11% · ML=873% · sharpe=0.12
+**Cost:** Claude in=2491 out=1491 ~$0.050 · Nemotron in=1725 out=758 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.68 | long 0.45 | long 0.85 | ✅ agree → boosted |
+| EURUSD | SHORT 0.67 | short 0.45 | short 0.80 | ✅ agree → boosted |
+| USDCAD | LONG 0.67 | long 0.42 | long 0.85 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.66 | short 0.45 | short 0.75 | ✅ agree → boosted |
+| USDJPY | LONG 0.64 | long 0.40 | long 0.80 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.62 | short 0.42 | short 0.70 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.61 | short 0.40 | short 0.70 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.59 | short 0.40 | short 0.65 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.58 | short 0.38 | short 0.65 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.51 | short 0.30 | short 0.60 | ✅ agree → boosted |
+| EURCHF | SHORT 0.46 | short 0.20 | short 0.65 | ✅ agree → boosted |
+
+**Orders placed:**
+- (none)
+
+---
+## 15:35:14 · LIVE
+**Regime (Claude):** Broad USD strength with clear risk-off: metals and crypto selling hard, commodity/risk-FX weak, but USD pairs already stretched to range extremes.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in most non-USD pairs and risk assets, while USD pairs show aligned bullish momentum.
+**Account:** eq=1,029,499 · lev=3.4x · margin=11% · ML=873% · sharpe=0.12
+**Cost:** Claude in=2494 out=1295 ~$0.045 · Nemotron in=1729 out=762 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.66 | long 0.45 | long 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.65 | short 0.42 | short 0.80 | ✅ agree → boosted |
+| USDCAD | LONG 0.64 | long 0.45 | long 0.70 | ✅ agree → boosted |
+| USDJPY | LONG 0.63 | long 0.38 | long 0.80 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.61 | short 0.38 | short 0.75 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.60 | short 0.38 | short 0.70 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.59 | short 0.40 | short 0.65 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.58 | short 0.35 | short 0.70 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.51 | short 0.30 | short 0.60 | ✅ agree → boosted |
+
+**Orders placed:**
+- CLOSE EURCHF
+
+---
+## 15:37:37 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off: USD up against all majors, metals and crypto selling off hard — coherent macro de-risking, though many moves are stretched to range extremes.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in most FX pairs, metals, and crypto, while USD pairs show aligned bullish trends.
+**Account:** eq=1,030,393 · lev=4.9x · margin=16% · ML=609% · sharpe=0.12
+**Cost:** Claude in=2494 out=1404 ~$0.048 · Nemotron in=1727 out=819 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.70 | long 0.50 | long 0.80 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.69 | short 0.50 | short 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.68 | short 0.50 | short 0.70 | ✅ agree → boosted |
+| USDCAD | LONG 0.67 | long 0.45 | long 0.80 | ✅ agree → boosted |
+| USDJPY | LONG 0.66 | long 0.48 | long 0.70 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.66 | short 0.45 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.66 | short 0.45 | short 0.75 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.64 | short 0.45 | short 0.70 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.62 | short 0.40 | short 0.75 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.62 | short 0.42 | short 0.70 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.55 | short 0.33 | short 0.65 | ✅ agree → boosted |
+| EURCHF | SHORT 0.51 | short 0.28 | short 0.65 | ✅ agree → boosted |
+
+**Orders placed:**
+- SELL 2.98 EURCHF  (+0.00 → -2.98)  SL=0.96816
+
+---
+## 15:46:44 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off; metals and crypto selling off hard, FX coherently bid for the dollar.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in commodities and crypto, while USD pairs show aligned bullish trends.
+**Account:** eq=1,036,553 · lev=2.5x · margin=8% · ML=1195% · sharpe=0.16
+**Cost:** Claude in=2490 out=1482 ~$0.050 · Nemotron in=1722 out=768 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.69 | short 0.50 | short 0.75 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.69 | short 0.50 | short 0.75 | ✅ agree → boosted |
+| USDCAD | LONG 0.67 | long 0.45 | long 0.80 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.67 | short 0.45 | short 0.80 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.66 | short 0.45 | short 0.75 | ✅ agree → boosted |
+| USDCHF | LONG 0.66 | long 0.45 | long 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.64 | short 0.45 | short 0.70 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.61 | short 0.40 | short 0.70 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.58 | short 0.40 | short 0.60 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.56 | short 0.35 | short 0.65 | ✅ agree → boosted |
+| USDJPY | LONG 0.55 | long 0.35 | long 0.60 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.49 | short 0.30 | short 0.55 | ✅ agree → boosted |
+| EURCHF | SHORT 0.20 | short 0.20 | flat 0.20 | ⚪ no boost |
+
+**Orders placed:**
+- BUY 1.8 EURCHF  (-2.98 → -1.18)
+
+---
+## 16:02:21 · LIVE
+**Regime (Claude):** Broad USD strength with risk-off tone; FX consistently bid for USD, metals and crypto under heavy selling pressure though several moves are stretched/oversold.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in metals and crypto, while USD pairs show aligned bullish trends except where counter-currency momentum opposes.
+**Account:** eq=1,037,317 · lev=4.2x · margin=14% · ML=716% · sharpe=0.17
+**Cost:** Claude in=2492 out=1474 ~$0.049 · Nemotron in=1722 out=835 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCHF | LONG 0.73 | long 0.55 | long 0.82 | ✅ agree → boosted |
+| USDJPY | LONG 0.73 | long 0.55 | long 0.78 | ✅ agree → boosted |
+| USDCAD | LONG 0.70 | long 0.50 | long 0.80 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.69 | short 0.50 | short 0.75 | ✅ agree → boosted |
+| EURUSD | SHORT 0.68 | short 0.50 | short 0.70 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.67 | short 0.50 | short 0.68 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.65 | short 0.45 | short 0.72 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.64 | short 0.45 | short 0.70 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.63 | short 0.45 | short 0.65 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.62 | short 0.45 | short 0.62 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.60 | short 0.40 | short 0.66 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.57 | short 0.40 | short 0.58 | ✅ agree → boosted |
+
+**Orders placed:**
+- CLOSE EURCHF
+
+---
+## 16:17:47 · LIVE
+**Regime (Claude):** Broad USD strength with clear risk-off: metals and crypto selling off hard, commodity/risk FX weak, defensive USD pairs trending up.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving declines in metals, crypto, and most non-USD pairs; USD pairs aligned long, others conflicted or weak.
+**Account:** eq=1,037,836 · lev=4.1x · margin=14% · ML=736% · sharpe=0.17
+**Cost:** Claude in=2490 out=1509 ~$0.050 · Nemotron in=1715 out=963 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDJPY | LONG 0.70 | long 0.50 | long 0.80 | ✅ agree → boosted |
+| USDCAD | LONG 0.66 | long 0.45 | long 0.75 | ✅ agree → boosted |
+| USDCHF | LONG 0.64 | long 0.45 | long 0.70 | ✅ agree → boosted |
+| AUDUSD | SHORT 0.63 | short 0.45 | short 0.65 | ✅ agree → boosted |
+| EURUSD | SHORT 0.62 | short 0.42 | short 0.70 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.61 | short 0.35 | short 0.80 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.59 | short 0.42 | short 0.60 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.59 | short 0.35 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.56 | short 0.33 | short 0.70 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.56 | short 0.35 | short 0.65 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.55 | short 0.33 | short 0.65 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.53 | short 0.33 | short 0.60 | ✅ agree → boosted |
+
+**Orders placed:**
+- (none)
+
+---
+## 16:33:19 · LIVE
+**Regime (Claude):** Broad risk-off with USD strength: crypto and precious metals selling off hard, JPY/CHF/CAD gaining vs USD; momentum favors USD longs but risk assets are deeply oversold.
+**Regime (Nemotron):** Broad USD strength with risk-off sentiment driving downside in commodities and crypto, while USD pairs show aligned bullish trends.
+**Account:** eq=1,036,599 · lev=4.1x · margin=14% · ML=735% · sharpe=0.14
+**Cost:** Claude in=2492 out=1557 ~$0.051 · Nemotron in=1721 out=830 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.69 | short 0.50 | short 0.75 | ✅ agree → boosted |
+| USDJPY | LONG 0.68 | long 0.50 | long 0.70 | ✅ agree → boosted |
+| EURUSD | SHORT 0.66 | short 0.48 | short 0.70 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.66 | short 0.45 | short 0.75 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.66 | short 0.40 | short 0.85 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.65 | short 0.42 | short 0.80 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.65 | short 0.42 | short 0.80 | ✅ agree → boosted |
+| USDCAD | LONG 0.64 | long 0.40 | long 0.80 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.64 | short 0.40 | short 0.80 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.64 | short 0.42 | short 0.75 | ✅ agree → boosted |
+| GBPUSD | SHORT 0.64 | short 0.46 | short 0.65 | ✅ agree → boosted |
+| USDCHF | LONG 0.62 | long 0.40 | long 0.75 | ✅ agree → boosted |
+
+**Orders placed:**
+- (none)
+
+---

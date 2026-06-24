@@ -1,6 +1,7 @@
 """API smoke via FastAPI TestClient against the fixture log dir. No live MT5
 needed — MT5 routes must degrade, not crash."""
 import os
+os.environ["PANEL_NO_LIVE"] = "1"   # deterministic: don't overlay live MT5 over the fixture account
 from fastapi.testclient import TestClient
 from panel.backend import app as appmod
 

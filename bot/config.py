@@ -1,4 +1,5 @@
 """Central configuration. Edit values here; everything reads from this."""
+import os
 from dataclasses import dataclass, field
 
 # The 15 competition instruments, by category. Names confirmed against the
@@ -68,6 +69,38 @@ class RiskLimits:
 
 
 @dataclass
+class ScalperConfig:
+    """Separate mean-reversion scalper (own process, own magic). OFF by default.
+    Its `symbols` are EXCLUSIVE: when enabled they are removed from the AI
+    engine's universe so the two never net into each other on this netting
+    account. Signal params are starting values, refined by the backtest gate."""
+    enabled: bool = False
+    symbols: list = field(default_factory=lambda: ["EURUSD"])
+    lots: dict = field(default_factory=lambda: {"EURUSD": 0.5})
+    ema_period: int = 20
+    entry_bps: float = 5.0
+    exit_bps: float = 1.0
+    tp_bps: float = 4.0
+    stop_bps: float = 8.0
+    time_stop_bars: int = 10
+    poll_secs: float = 2.0
+    max_concurrent: int = 2
+    daily_loss_limit: float = 2000.0     # account currency
+    magic: int = 990624
+
+
+SCALPER = ScalperConfig()
+
+
+def engine_symbols(scalper_enabled: bool, scalper_symbols) -> list:
+    """The AI engine's tradable universe: all symbols minus BARUSD, and minus
+    the scalper's symbols ONLY when the scalper is enabled (so flag-off behavior
+    is identical to before the scalper existed)."""
+    ceded = set(scalper_symbols) if scalper_enabled else set()
+    return [s for s in ALL_SYMBOLS if s != "BARUSD" and s not in ceded]
+
+
+@dataclass
 class EngineConfig:
     dry_run: bool = True                      # True = compute & log, send NO orders
     loop_seconds: float = 5.0                 # main loop cadence
@@ -75,7 +108,7 @@ class EngineConfig:
     magic: int = 990623                       # our order tag
     # BARUSD excluded: max notional ~$786 (tiny contract + 100-lot cap) makes it
     # untradeable in size — pure spread cost. Still in ALL_SYMBOLS for data.
-    symbols: list = field(default_factory=lambda: [s for s in ALL_SYMBOLS if s != "BARUSD"])
+    symbols: list = field(default_factory=lambda: engine_symbols(SCALPER.enabled, SCALPER.symbols))
     risk: RiskLimits = field(default_factory=RiskLimits)
     state_dir: str = "state"
 
@@ -88,7 +121,10 @@ class EngineConfig:
     use_trailing_stop: bool = True            # ratchet SL into profit on winners
 
     # --- operator control panel (Phase 2; OFF by default = identical to today) ---
-    use_control_panel: bool = False           # read state/controls.json each tick
+    # Default reads the QUANTHACK_PANEL env var (set by the launcher's "with panel"
+    # choice); unset/"0" -> False -> byte-for-byte identical to no panel.
+    use_control_panel: bool = field(
+        default_factory=lambda: os.environ.get("QUANTHACK_PANEL") == "1")
 
     # --- AI decision logging ---
     log_decisions: bool = True                # write per-day decision logs

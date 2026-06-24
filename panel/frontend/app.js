@@ -12,8 +12,25 @@ async function getJSON(u){
 const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 
 function renderStrip(s){
-  document.getElementById("regime-claude").textContent = s.regime?.claude || "—";
-  document.getElementById("regime-nemo").textContent = s.regime?.nemotron || "— unavailable";
+  // currency-strength ribbon: aggregate each currency across ALL its pairs
+  // (base +, quote -, weighted by confidence) into one net up/down. Click for reasoning.
+  const _sgn = d => d==="long"?1 : d==="short"?-1 : 0;
+  const _acc = {};
+  for(const r of (s.consensus || [])){
+    if(!r.symbol || r.symbol.length < 6) continue;
+    const _b = r.symbol.slice(0,3), _q = r.symbol.slice(3,6);
+    const _v = _sgn(r.direction) * (r.confidence || 0);
+    (_acc[_b] = _acc[_b] || {s:0,n:0}); _acc[_b].s += _v; _acc[_b].n++;
+    (_acc[_q] = _acc[_q] || {s:0,n:0}); _acc[_q].s -= _v; _acc[_q].n++;
+  }
+  const _ccys = Object.keys(_acc).map(c=>({c, str:_acc[c].s/Math.max(_acc[c].n,1)})).sort((a,b)=>b.str-a.str);
+  const _chips = _ccys.map(({c,str})=>{
+    const cls = str > 0.02 ? "long" : str < -0.02 ? "short" : "flat";
+    const ar = str > 0.02 ? "▲" : str < -0.02 ? "▼" : "·";
+    return `<span class="rchip ${cls}" title="net strength ${str.toFixed(2)} across its pairs">${c} ${ar}</span>`;
+  }).join("");
+  const _reg = document.getElementById("regimes");
+  if(_reg) _reg.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
   const a = s.account || {};
   const kpis = [
     ["EQUITY", fmt(a.equity)], ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—"],
@@ -24,6 +41,13 @@ function renderStrip(s){
   ];
   document.getElementById("kpis").innerHTML = kpis.map(([k,v])=>
     `<div class="kpi"><label>${k}</label><b>${v}</b></div>`).join("");
+  const _age = s.views_age_secs, _va = document.getElementById("views-age");
+  if(_va){
+    if(_age == null){ _va.textContent = ""; }
+    else { const _m = Math.floor(_age/60);
+      _va.textContent = "views " + (_m < 1 ? "<1m" : _m + "m") + (_age > 1200 ? " ⚠" : "");
+      _va.classList.toggle("stale", _age > 1200); }
+  }
 }
 
 function plotEquity(series){
@@ -43,12 +67,13 @@ function plotEquity(series){
   const lo = ys.length? Math.min(...ys) : start;
   const hi = ys.length? Math.max(...ys) : start;
   const pad = (hi - lo) * 0.18 || 2000;
-  Plotly.react("equity-chart", traces, {...PLOT_BG, height:210, showlegend:false,
+  Plotly.react("equity-chart", traces, {...PLOT_BG, height:210, showlegend:true,
+    legend:{orientation:"h", x:0, y:1.14, font:{size:9}, bgcolor:"rgba(0,0,0,0)"},
     uirevision:"equity",
     xaxis:{gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted},
     yaxis:{side:"right", tickprefix:"$", tickformat:",.0f", color:C.muted,
       gridcolor:"rgba(255,255,255,0.06)", range:[lo - pad, hi + pad]},
-    margin:{l:6, r:74, t:8, b:26}}, {displayModeBar:false});
+    margin:{l:6, r:74, t:22, b:26}}, {displayModeBar:false});
 }
 
 let _lastGauges = [], _stagedPreset = null, _presets = {};
@@ -69,7 +94,8 @@ function plotGauges(gauges){        // horizontal risk bars (replaces the doughn
       const last = g.bands[g.bands.length - 1].color;
       stops.push(`${last} ${from}%`, `${last} 100%`);
     }
-    const bg = stops.length ? `linear-gradient(90deg,${stops.join(",")})` : "var(--lift)";
+    const rev = g.key === "margin_level";   // low margin = danger -> red on the RIGHT, like the others
+    const bg = stops.length ? `linear-gradient(${rev?270:90}deg,${stops.join(",")})` : "var(--lift)";
     const thr = (g.hard && g.hard[0] && g.hard[0].at != null) ? clamp(g.hard[0].at) : null;
     const v = g.value;
     const valTxt = (v == null ? "—"
@@ -79,13 +105,22 @@ function plotGauges(gauges){        // horizontal risk bars (replaces the doughn
       preset = `<div class="rbar-preset" style="left:${clamp(_impliedLev(_stagedPreset.aggression))}%" `+
         `title="${_stagedPreset.name} preset target"></div>`;
     }
+    // tick row: 0 (start), each band threshold, max (end) — mirrored when reversed
+    const fmtT = x => (Math.abs(x) >= 1000 ? (x/1000)+"k" : Math.round(x)) + (g.unit || "");
+    const tickVals = [0, ...(g.bands||[]).slice(0,-1).map(b=>b.to), max];
+    const axisHTML = tickVals.map(val=>{
+      let p = clamp(val); if(rev) p = 100 - p;
+      const st = p <= 1 ? "left:0" : p >= 99 ? "right:0" : `left:${p}%;transform:translateX(-50%)`;
+      return `<span class="rbar-tick" style="${st}">${fmtT(val)}</span>`;
+    }).join("");
     return `<div class="rbar">`+
       `<div class="rbar-head"><span class="rbar-label">${g.label}</span><span class="rbar-val">${valTxt}</span></div>`+
       `<div class="rbar-track" style="background:${bg}">`+
-        `<div class="rbar-needle" style="left:${clamp(v)}%"></div>`+
-        (thr != null ? `<div class="rbar-thr" style="left:${thr}%"></div>` : "")+
+        `<div class="rbar-needle" style="left:${rev ? 100-clamp(v) : clamp(v)}%"></div>`+
+        (thr != null ? `<div class="rbar-thr" style="left:${rev ? 100-thr : thr}%"></div>` : "")+
         preset+
-      `</div></div>`;
+      `</div>`+
+      `<div class="rbar-axis">${axisHTML}</div></div>`;
   }).join("");
 }
 
@@ -107,12 +142,30 @@ function renderOrders(list){
   }).join("");
 }
 
+function renderPositions(pos){
+  const el = document.getElementById("positions");
+  if(!el) return;
+  if(!pos || !pos.available){ el.innerHTML = '<div style="color:var(--muted)">(MT5 unavailable)</div>'; return; }
+  const list = pos.positions || [];
+  if(!list.length){ el.innerHTML = '<div style="color:var(--muted)">(flat)</div>'; return; }
+  el.innerHTML = list.map(p=>{
+    const long = p.lots > 0, col = long ? C.long : C.short;
+    const prof = (p.profit == null) ? null : p.profit;
+    const pl = prof==null ? "" : (prof>=0?"+$":"-$")+Math.abs(Math.round(prof)).toLocaleString();
+    const plcol = (prof||0) >= 0 ? C.long : C.short;
+    return `<div style="display:flex;justify-content:space-between;gap:6px">`+
+      `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}</span>`+
+      `<span style="color:${plcol}">${pl}</span></div>`;
+  }).join("");
+}
+
 window.renderCharts = async function(s){
   const eq = await getJSON("/api/equity");
   plotEquity((eq && eq.series) || []);
   plotGauges(s.gauges || []);
   renderTripwires(s.tripwires || []);
   renderOrders(s.recent_orders || s.orders || []);
+  renderPositions(await getJSON("/api/positions"));
   if (window.renderConsensus) await window.renderConsensus(s);  // Task 9
 };
 
@@ -159,22 +212,27 @@ function plotDumbbell(allRows){
   const nemoPts = {x:nx, y:ys, type:"scatter", mode:"markers", name:"Nemotron",
     marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
   Plotly.react("dumbbell", [...lines, claudePts, nemoPts],
-    {...PLOT_BG, height: Math.max(120, ys.length*30+40), xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
+    {...PLOT_BG, height: Math.max(120, ys.length*30+40),
+     margin:{l:66, r:14, t:8, b:30}, yaxis:{automargin:true, color:C.muted},
+     xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
      showlegend:false}, {displayModeBar:false});
 }
 
+let _lastHm = null, _conWired = false;
 function plotHeatmap(hm){
+  _lastHm = hm;
   const lum = c => c==null? 0 : c.confidence;             // 0..1
   const sign = c => c==null? 0 : (c.direction==="long"?1 : c.direction==="short"?-1 : 0);
   // z = signed confidence (-1..1): red short, green long, dark flat
   const z = hm.cells.map(row=> row.map(c=> c==null? null : sign(c)*Math.max(lum(c),0.05)));
   const text = hm.cells.map(row=> row.map(c=> c==null? "" :
     `${c.direction} ${c.confidence.toFixed(2)}${c.boosted?" ★":""}`));
-  Plotly.react("heatmap", [{z, x:hm.timestamps.map(t=>t.slice(11,16)), y:hm.symbols,
-    type:"heatmap", text, hovertemplate:"%{y} %{x}: %{text}<extra></extra>",
+  Plotly.react("heatmap", [{z, x:hm.timestamps, y:hm.symbols,
+    type:"heatmap", text, hovertemplate:"%{y} %{x|%b %d %H:%M}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
     {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24},
-     uirevision:"heatmap"},
+     xaxis:{type:"date", tickangle:-45, tickformat:"%H:%M", color:C.muted, automargin:true},
+     dragmode:"pan", uirevision:"heatmap"},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
@@ -189,23 +247,33 @@ async function plotSymbol(symbol, tf){
   const el = document.getElementById("symbol-chart");
   if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:24px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
   const n = b.closes.length;
-  const xhist = b.closes.map((_,i)=>i);
-  const price = [{x:xhist, y:b.closes, type:"scatter", mode:"lines", line:{color:C.muted,width:1}, name:curSymbol, hoverinfo:"skip"}];
+  // real timestamps for the x-axis (epoch seconds -> ms). The cones project
+  // forward in BAR units, so convert their offset to time via the bar interval dt.
+  const tms = (b.times || []).map(t => t * 1000);
+  const lastT = tms.length ? tms[tms.length - 1] : 0;
+  const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
+  const price = [{x:tms, y:b.closes, type:"scatter", mode:"lines", line:{color:C.ink,width:1.5}, name:curSymbol, hovertemplate:"%{y:,.6g}<extra></extra>"}];
   const coneTrace=(cone,color,name)=> cone? [
-    {x:cone.upper.map(p=>n-1+p[0]), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
-    {x:cone.lower.map(p=>n-1+p[0]), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
+    {x:cone.upper.map(p=>lastT+p[0]*dt), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
+    {x:cone.lower.map(p=>lastT+p[0]*dt), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
       fillcolor:color+"22", showlegend:false, hoverinfo:"skip"},
-    {x:cone.mid.map(p=>n-1+p[0]), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2}, name:name},
+    {x:cone.mid.map(p=>lastT+p[0]*dt), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2}, name:name, hovertemplate:"%{y:,.6g}<extra></extra>"},
   ] : [];
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus")];
-  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:300, showlegend:true,
-    legend:{font:{size:9}, orientation:"h"},
+  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
+    hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
+    hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
+    legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
     uirevision: curSymbol + "|" + curTF,   // keep the user's zoom across refreshes; reset on switch
-    xaxis:{title:{text:`${curSymbol} · ${curTF} bars`, font:{size:9}}, color:C.muted},
-    yaxis:{color:C.muted}},
+    margin:{l:10, r:58, t:22, b:26},       // fill the card edge-to-edge; price axis on the right
+    xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M",
+      gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
+      showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
+      title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
+    yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false}},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
@@ -255,9 +323,24 @@ function buildSymbolList(symbols){
   }
 }
 
+function wireConsensusTabs(){
+  if(_conWired) return;
+  const tabs = document.querySelectorAll(".con-tabs .contab");
+  if(!tabs.length) return;
+  tabs.forEach(btn=> btn.onclick = ()=>{
+    const which = btn.dataset.con;
+    tabs.forEach(b=>b.classList.toggle("active", b===btn));
+    const lt = document.getElementById("con-latest"), ot = document.getElementById("con-overtime");
+    if(lt) lt.hidden = which !== "latest";
+    if(ot) ot.hidden = which !== "overtime";
+    if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
+  });
+  _conWired = true;
+}
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   wireDumbTabs();
+  wireConsensusTabs();
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
   const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols
@@ -344,7 +427,88 @@ function wireControls(){
 // hook controls into the existing 15s loop
 const _origTick = tick;
 tick = async function(){ await _origTick(); wireControls(); await loadControls(); await loadPresets(); };
-loadControls(); loadPresets(); wireControls();
+function openRegimeModal(){
+  const r = (window._lastState && window._lastState.regime) || {};
+  const c = document.getElementById("rm-claude"); if(c) c.textContent = r.claude || "(no market read logged yet)";
+  const nm = document.getElementById("rm-nemo"); if(nm) nm.textContent = r.nemotron || "(Nemotron unavailable — Claude-only)";
+  const m = document.getElementById("regime-modal"); if(m) m.hidden = false;
+}
+function wireRegimeModal(){
+  const reg = document.getElementById("regimes");
+  if(reg && !reg.dataset.w){ reg.dataset.w="1"; reg.title="click for full reasoning"; reg.onclick = openRegimeModal; }
+  const m = document.getElementById("regime-modal");
+  if(m && !m.dataset.w){ m.dataset.w="1";
+    m.onclick = (e)=>{ if(e.target===m || e.target.id==="regime-close") m.hidden=true; };
+    document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") m.hidden=true; });
+  }
+}
+let _histSym = null, _navWired = false;
+function showView(name){
+  ["dashboard","history","scalper"].forEach(v=>{
+    const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
+  const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
+  document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
+  if(name === "history") initHistory();
+}
+function wireNav(){
+  if(_navWired) return;
+  const h = document.getElementById("hamburger");
+  if(h) h.onclick = (e)=>{ e.stopPropagation(); const nm=document.getElementById("navmenu"); if(nm) nm.hidden = !nm.hidden; };
+  document.querySelectorAll(".navitem").forEach(b=> b.onclick = ()=> showView(b.dataset.view));
+  const more = document.getElementById("orders-more"); if(more) more.onclick = ()=> showView("history");
+  const back = document.getElementById("hist-back"); if(back) back.onclick = ()=> showView("dashboard");
+  const sel = document.getElementById("hist-symbol"); if(sel) sel.onchange = ()=>{ _histSym = sel.value; renderHistory(_histSym); };
+  document.addEventListener("click", (e)=>{ const nm=document.getElementById("navmenu");
+    if(nm && !nm.hidden && e.target.id!=="hamburger" && !nm.contains(e.target)) nm.hidden = true; });
+  _navWired = true;
+}
+async function initHistory(){
+  const d = await getJSON("/api/decisions");
+  const recs = (d && d.records) || [];
+  const syms = [];
+  for(const rec of recs) for(const v of (rec.views||[])) if(!syms.includes(v.symbol)) syms.push(v.symbol);
+  const sel = document.getElementById("hist-symbol");
+  if(sel){ const cur = _histSym || syms[0] || "";
+    sel.innerHTML = syms.map(s=>`<option${s===cur?" selected":""}>${s}</option>`).join("");
+    _histSym = cur; }
+  if(_histSym) renderHistory(_histSym);
+}
+async function renderHistory(sym){
+  if(!sym) return;
+  const d = await getJSON("/api/decisions");
+  const recs = ((d && d.records) || []).filter(r=>r.event!=="refresh_failed");
+  const sgn = dir => dir==="long"?1:dir==="short"?-1:0;
+  const xs=[], ys=[], oX=[], oY=[], oT=[];
+  for(const rec of recs){
+    const v = (rec.views||[]).find(x=>x.symbol===sym);
+    if(v){ xs.push(rec.ts); ys.push(sgn(v.direction)*(v.confidence||0)); }
+    for(const o of (rec.orders||[])) if(o.symbol===sym){ oX.push(rec.ts); oY.push(0); oT.push((o.side||"").toUpperCase()+" "+(o.lots||"")); }
+  }
+  const traces=[
+    {x:xs, y:ys, type:"scatter", mode:"lines+markers", line:{color:C.chartreuse,width:2}, marker:{size:5},
+     name:"stance", hovertemplate:"%{x|%b %d %H:%M}<br>%{y:.2f}<extra></extra>"},
+    {x:oX, y:oY, type:"scatter", mode:"markers", marker:{color:C.human,size:11,symbol:"diamond"},
+     text:oT, name:"orders", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+  ];
+  Plotly.react("hist-chart", traces, {...PLOT_BG, height:440, hovermode:"x unified", showlegend:false,
+    yaxis:{range:[-1.05,1.05], color:C.muted, gridcolor:"rgba(255,255,255,0.06)", zeroline:true, zerolinecolor:C.muted,
+      title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
+    xaxis:{type:"date", color:C.muted, gridcolor:"rgba(255,255,255,0.04)", tickangle:-30, automargin:true}},
+    {displayModeBar:true, displaylogo:false, scrollZoom:true, modeBarButtonsToRemove:["select2d","lasso2d"]});
+  const el = document.getElementById("hist-orders"); if(!el) return;
+  const items=[];
+  for(const rec of [...recs].reverse()){
+    for(const o of (rec.orders||[])) if(o.symbol===sym){
+      const t = rec.ts ? rec.ts.slice(5,16).replace("T"," ") : "";
+      const side=(o.side||"").toUpperCase();
+      const col = o.side==="close"?C.muted:(o.side==="buy"?C.long:C.short);
+      items.push(`<div><span style="color:var(--muted)">${t}</span> <span style="color:${col}">${side}</span> ${o.lots||""} ${o.symbol}</div>`);
+    }
+    if(items.length>=40) break;
+  }
+  el.innerHTML = items.length ? items.join("") : '<div style="color:var(--muted)">(no orders for '+sym+' yet)</div>';
+}
+loadControls(); loadPresets(); wireControls(); wireRegimeModal(); wireNav();
 
 let _ov = {};   // last-known overrides {sym:{pinned,view,take_profit,note}}
 
@@ -401,3 +565,10 @@ renderStrip = function(s){ window._lastState = s; _origRenderStrip(s); };
 const _tick2 = tick;
 tick = async function(){ await _tick2(); await loadOverrides(); wireOverride(); };
 loadOverrides(); wireOverride();
+
+// Positions refresh on a fast ~1s cadence (live P&L), independent of the 15s
+// tick. Self-scheduling (waits for each fetch) so requests never pile up.
+(async function pollPositions(){
+  try { renderPositions(await getJSON("/api/positions")); } catch(e){}
+  setTimeout(pollPositions, 1000);
+})();
