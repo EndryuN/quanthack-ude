@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import data, projection
 from bot import controls as ctrl
+from bot import overrides as ov_mod
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FRONTEND = os.path.join(_HERE, "..", "frontend")
@@ -206,6 +207,28 @@ def save_preset(body: dict):
                      "block": list(c.get("block") or []), "allow": c.get("allow")}
     ctrl.atomic_write_json(_presets_path(), presets)
     return {"presets": presets, "active": c.get("active_preset", "Default")}
+
+
+def _overrides_path():
+    return os.path.join(STATE_DIR, "overrides.json")
+
+
+@app.get("/api/overrides")
+def get_overrides():
+    return ov_mod.load_overrides(STATE_DIR)
+
+
+@app.post("/api/overrides/{symbol}")
+def post_override(symbol: str, body: dict):
+    o = ov_mod.load_overrides(STATE_DIR)
+    entry = dict(o.get(symbol) or {"pinned": False, "view": None,
+                                   "take_profit": None, "note": ""})
+    for k in ("pinned", "view", "take_profit", "note"):
+        if k in body:
+            entry[k] = body[k]
+    o[symbol] = entry
+    ctrl.atomic_write_json(_overrides_path(), o)
+    return o
 
 
 @app.get("/")
