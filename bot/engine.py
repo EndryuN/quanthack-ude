@@ -384,7 +384,9 @@ class Engine:
             if self.dry_run:
                 print(f"   [DRY] TP {p.symbol} -> {tp}")
                 continue
-            self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
+            ok, res = self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
+            rc = getattr(res, "retcode", res)
+            print(f"   [LIVE] TP {p.symbol} -> {tp} ok={ok} ret={rc}")
 
     def _pos_sl(self, p):
         import MetaTrader5 as _mt5

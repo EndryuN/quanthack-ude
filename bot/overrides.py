@@ -37,5 +37,8 @@ def take_profits(overrides: dict) -> dict:
     out = {}
     for s, o in overrides.items():
         if isinstance(o, dict) and o.get("take_profit") is not None:
-            out[s] = float(o["take_profit"])
+            try:
+                out[s] = float(o["take_profit"])
+            except (TypeError, ValueError):
+                continue   # skip malformed entry; never crash the engine loop
     return out

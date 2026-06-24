@@ -24,4 +24,8 @@ assert take_profits(o) == {"USDJPY": 153.5}
 with open(os.path.join(d, "overrides.json"), "w") as f:
     f.write("{not json")
 assert load_overrides(d) == {}
+
+# malformed take_profit -> skipped, never raises
+assert take_profits({"EURUSD": {"take_profit": "not-a-number"}}) == {}
+assert take_profits({"EURUSD": {"take_profit": 153.5}, "X": {"take_profit": None}}) == {"EURUSD": 153.5}
 print("OK")
