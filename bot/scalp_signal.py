@@ -49,11 +49,12 @@ def scalp_decision(closes, position: int, entry_price: float,
         return 0, "flat"
 
     # in a position -> check exits. move_bps>0 means the trade is in profit.
-    move_bps = (price - entry_price) / entry_price * 1e4 * position
-    if move_bps >= p.tp_bps:
-        return 0, f"take-profit {move_bps:.1f}bps"
-    if move_bps <= -p.stop_bps:
-        return 0, f"stop {move_bps:.1f}bps"
+    if entry_price > 0:                       # guard /0 (callers should pass a real entry)
+        move_bps = (price - entry_price) / entry_price * 1e4 * position
+        if move_bps >= p.tp_bps:
+            return 0, f"take-profit {move_bps:.1f}bps"
+        if move_bps <= -p.stop_bps:
+            return 0, f"stop {move_bps:.1f}bps"
     if bars_held >= p.time_stop_bars:
         return 0, f"time stop {bars_held}b"
     if position == -1 and dev_bps <= p.exit_bps:

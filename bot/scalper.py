@@ -76,8 +76,10 @@ class Scalper:
                 cur = self._signed(pos)
                 entry_price, bars_held = self._entry.get(sym, (0.0, 0))
                 if cur != 0:
+                    if not entry_price:        # recover after a restart; avoids /0 in scalp_decision
+                        entry_price = closes[-1]
                     bars_held += 1
-                    self._entry[sym] = (entry_price or closes[-1], bars_held)
+                    self._entry[sym] = (entry_price, bars_held)
                 target, reason = scalp_decision(closes, cur, entry_price, bars_held, self._params)
                 if target == cur:
                     continue
