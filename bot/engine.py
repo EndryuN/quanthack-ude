@@ -51,6 +51,7 @@ class Engine:
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
         self._controls = None   # last-read operator controls (None when gated off)
+        self._overrides = None   # last-read per-symbol overrides (None when gated off)
 
     def start(self):
         self.client.connect()
@@ -84,9 +85,12 @@ class Engine:
         # NOTE: this sits AFTER the kill-switch on purpose — the risk floor is
         # never gated by any control.
         self._controls = None
+        self._overrides = None
         if self.cfg.use_control_panel:
             from .controls import load_controls, load_ack, atomic_write_json
             self._controls = load_controls(self.cfg.state_dir)
+            from .overrides import load_overrides
+            self._overrides = load_overrides(self.cfg.state_dir)
             ack = load_ack(self.cfg.state_dir)
             ack_path = os.path.join(self.cfg.state_dir, "control_ack.json")
             if self._controls["flatten_seq"] > ack["flatten_seq_done"]:
@@ -123,6 +127,10 @@ class Engine:
                 targets = self._derisk_only(targets)
             if self._controls:
                 targets = self._clamp_blocked(targets)
+            if self._overrides:
+                from .overrides import pinned_set
+                _pinned = pinned_set(self._overrides)
+                targets = {s: t for s, t in targets.items() if s not in _pinned}
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
@@ -184,6 +192,12 @@ class Engine:
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
                 gain=self.cfg.nemotron_consensus_gain)
+
+            if self._overrides:
+                from .overrides import human_views
+                from .second_opinion import apply_human_override
+                sizer_views, view_records = apply_human_override(
+                    sizer_views, view_records, human_views(self._overrides))
 
             self._views = sizer_views
             self._views_ts = time.time()
@@ -317,7 +331,11 @@ class Engine:
         """Ratchet each position's broker SL toward profit once it's a meaningful
         winner. Never loosens a stop; only locks gains behind the peak."""
         import MetaTrader5 as _mt5
+        from .overrides import pinned_set as _pinned_set
+        _pinned = _pinned_set(self._overrides) if self._overrides else set()
         for p in self.client.positions():
+            if p.symbol in _pinned:
+                continue
             tick = self.client.tick(p.symbol)
             if not tick:
                 continue
