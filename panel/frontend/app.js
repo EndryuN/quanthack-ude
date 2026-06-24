@@ -175,17 +175,28 @@ async function plotSymbol(symbol, tf){
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
 
+// asset-class grouping for the symbol list (crypto kept separate from FX/metals)
+const _CRYPTO = new Set(["BTCUSD","ETHUSD","SOLUSD","XRPUSD","BARUSD"]);
+const _METALS = new Set(["XAGUSD","XAUUSD"]);
+const _grpOf = s => _CRYPTO.has(s) ? "crypto" : _METALS.has(s) ? "metals" : "fx";
+const _GRP_ORDER = {fx:0, metals:1, crypto:2};
+
 function buildSymbolList(symbols){
   const el = document.getElementById("symbol-list");
   const sig = symbols.join(",") + "|" + ((_ctl && _ctl.block) || []).join(",");
   if(el && el.dataset.sig !== sig){
     el.dataset.sig = sig;
     const blocked = new Set((_ctl && _ctl.block) || []);
-    el.innerHTML = symbols.map(s=>
-      `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
-      `<span class="sym-name">${s}</span>`+
-      `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`
-    ).join("");
+    const sorted = [...symbols].sort((a,b)=> _GRP_ORDER[_grpOf(a)] - _GRP_ORDER[_grpOf(b)]); // stable within group
+    let html = "", lastG = null;
+    for(const s of sorted){
+      const g = _grpOf(s);
+      if(g !== lastG){ html += `<div class="sym-group">${g.toUpperCase()}</div>`; lastG = g; }
+      html += `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
+        `<span class="sym-name">${s}</span>`+
+        `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`;
+    }
+    el.innerHTML = html;
     el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
       if(ev.target.classList.contains("sym-block")){
         const sym = ev.target.dataset.block;
