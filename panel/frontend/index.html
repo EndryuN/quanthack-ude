@@ -27,6 +27,17 @@
   </nav>
   <main id="view-dashboard" class="view">
     <section class="col-left">
+      <div class="card" id="equity-card"><h2>Equity Trend</h2><div id="equity-chart"></div></div>
+      <div class="card" id="orders-card">
+        <div class="oc-split">
+          <div class="oc-col">
+            <div class="oc-colhead"><h2>Positions</h2><span class="refresh-tag">&#8635; 1s</span></div>
+            <div id="positions"></div></div>
+          <div class="oc-col">
+            <div class="oc-colhead"><h2>History</h2><button id="orders-more" class="more-btn">more &rarr;</button></div>
+            <div id="orders"></div></div>
+        </div>
+      </div>
       <div class="card" id="controls-card"><h2>Controls</h2>
         <div class="ctl-row"><label>Preset</label>
           <select id="preset-select"></select>
@@ -40,18 +51,7 @@
           <button id="flatten-btn" class="ctl-btn danger">Flatten now</button></div>
         <div id="ctl-status" class="ctl-status"></div>
       </div>
-      <div class="card" id="equity-card"><h2>Equity Trend</h2><div id="equity-chart"></div></div>
       <div class="card" id="gauges-card"><h2>Risk</h2><div id="gauges"></div><div id="tripwires"></div></div>
-      <div class="card" id="orders-card">
-        <div class="oc-split">
-          <div class="oc-col">
-            <div class="oc-colhead"><h2>Positions</h2><span class="refresh-tag">&#8635; 1s</span></div>
-            <div id="positions"></div></div>
-          <div class="oc-col">
-            <div class="oc-colhead"><h2>History</h2><button id="orders-more" class="more-btn">more &rarr;</button></div>
-            <div id="orders"></div></div>
-        </div>
-      </div>
     </section>
     <section class="col-main">
       <div class="card" id="symbol-card"><h2>Instrument &amp; projection</h2>
