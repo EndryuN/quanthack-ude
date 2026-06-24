@@ -50,6 +50,7 @@ class Engine:
         self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
+        self._controls = None   # last-read operator controls (None when gated off)
 
     def start(self):
         self.client.connect()
@@ -79,6 +80,28 @@ class Engine:
             self._print_status(acct, snap)
             return
 
+        # --- operator control channel (Phase 2; gated, default off) ---
+        # NOTE: this sits AFTER the kill-switch on purpose — the risk floor is
+        # never gated by any control.
+        self._controls = None
+        if self.cfg.use_control_panel:
+            from .controls import load_controls, load_ack, atomic_write_json
+            self._controls = load_controls(self.cfg.state_dir)
+            ack = load_ack(self.cfg.state_dir)
+            ack_path = os.path.join(self.cfg.state_dir, "control_ack.json")
+            if self._controls["flatten_seq"] > ack["flatten_seq_done"]:
+                self._operator_flatten()
+                ack["flatten_seq_done"] = self._controls["flatten_seq"]
+                atomic_write_json(ack_path, ack)
+                self._print_status(acct, snap)
+                return
+            if self._controls["apply_seq"] > ack["apply_seq_done"]:
+                self._last_acted_ts = -1.0   # force a reconcile next tick
+                ack["apply_seq_done"] = self._controls["apply_seq"]
+                atomic_write_json(ack_path, ack)
+                self._print_status(acct, snap)
+                return
+
         # 2. state / metrics
         m = self.state.update(acct.equity)
 
@@ -95,8 +118,11 @@ class Engine:
         orders = []
         if self._signal_changed():
             targets = self._build_targets(acct)
-            if not snap.allow_new_risk:
+            paused = bool(self._controls and self._controls["paused"])
+            if paused or not snap.allow_new_risk:
                 targets = self._derisk_only(targets)
+            if self._controls:
+                targets = self._clamp_blocked(targets)
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
@@ -123,8 +149,11 @@ class Engine:
                 self.client, self.cfg.symbols, acct.equity, held=held)
         if not self._views:
             return {s: 0.0 for s in self.cfg.symbols}
-        return build_targets(self.client, self._views, acct.equity,
-                             self.cfg.aggression, self.sizer_cfg)
+        agg = self.cfg.aggression
+        if self._controls is not None:
+            from .controls import effective_aggression
+            agg = effective_aggression(self._controls, self.cfg.aggression)
+        return build_targets(self.client, self._views, acct.equity, agg, self.sizer_cfg)
 
     # failure backoff: 30s, then doubling up to a 5-min cap between retries
     _AI_BACKOFF_MIN = 30.0
@@ -207,6 +236,31 @@ class Engine:
             else:
                 out[s] = tgt                              # reduction allowed
         return out
+
+    def _clamp_blocked(self, targets):
+        """Clamp blocked / not-allowed symbols toward flat (de-risk only).
+        Never closes a position outright — just forbids new/increased risk."""
+        from .controls import blocked_set, derisk_clamp
+        blocked = blocked_set(self._controls, self.cfg.symbols)
+        if not blocked:
+            return targets
+        out = dict(targets)
+        for s in blocked:
+            if s in out:
+                pos = self.client.position_for(s)
+                cur = pos.signed_lots if pos else 0.0
+                out[s] = derisk_clamp(out[s], cur)
+        return out
+
+    def _operator_flatten(self):
+        """Operator-initiated flatten-all (panel 'Flatten now'). Additive to the
+        kill-switch — never weakens it."""
+        if self.dry_run:
+            print(f"[{_ts()}] [DRY] OPERATOR FLATTEN ALL")
+            self.client.flatten_all(comment="PANEL")
+            return
+        results = self.client.flatten_all(comment="PANEL")
+        print(f"[{_ts()}] OPERATOR FLATTEN ALL ({len(results)} positions)")
 
     def _reconcile(self, targets):
         orders = []
