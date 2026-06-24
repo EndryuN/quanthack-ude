@@ -155,3 +155,19 @@ def tripwire_status(account: dict) -> list[dict]:
         {"key": "margin", "label": "Margin > 85%", "value": mu,
          "active": mu > 0.85, "warn": 0.85, "penalty": _MARGIN_PENALTY},
     ]
+
+
+def recent_orders(records: list[dict], limit: int = 12) -> list[dict]:
+    """Most-recent orders across ALL decision records (newest first), each tagged
+    with the `ts` of the refresh that placed it. The per-refresh `orders` field
+    is usually empty (orders fire only when the signal changes), so this rolling
+    feed is what the panel's Orders pane shows."""
+    out = []
+    for rec in reversed(records):
+        if rec.get("event") == "refresh_failed":
+            continue
+        for o in rec.get("orders", []):
+            out.append({**o, "ts": rec.get("ts")})
+            if len(out) >= limit:
+                return out
+    return out

@@ -58,16 +58,17 @@ function bandSteps(bands){           // [{to,color}] -> Plotly gauge steps
 function plotGauges(gauges){
   const data = gauges.map((g,i)=>({
     type:"indicator", mode:"gauge+number", value:g.value,
-    number:{suffix:g.unit, font:{size:16}},
+    number:{suffix:g.unit, font:{size:17, color:C.ink}},
     title:{text:g.label, font:{size:10, color:C.muted}},
     domain:{row:Math.floor(i/2), column:i%2},
-    gauge:{axis:{range:[0,g.max], tickcolor:C.muted},
-      bar:{color:C.ink, thickness:0.18},
+    gauge:{axis:{range:[0,g.max], tickcolor:C.muted, tickfont:{size:8, color:C.muted}, nticks:5},
+      bar:{color:C.ink, thickness:0.2},
       steps: bandSteps(g.bands),
       threshold:{line:{color:C.ink,width:2}, value: (g.hard[0] && g.hard[0].at) || g.max}},
   }));
-  Plotly.react("gauges", data, {...PLOT_BG, height:220,
-    grid:{rows:2, columns:2, pattern:"independent"}, margin:{l:10,r:10,t:24,b:10}}, {displayModeBar:false});
+  // taller grid so each gauge's title clears the gauge in the row above
+  Plotly.react("gauges", data, {...PLOT_BG, height:360,
+    grid:{rows:2, columns:2, pattern:"independent"}, margin:{l:6,r:6,t:14,b:6}}, {displayModeBar:false});
 }
 
 function renderTripwires(tw){
@@ -76,15 +77,15 @@ function renderTripwires(tw){
     `<span>${t.active? "⚠ ACTIVE (penalty "+t.penalty+")":"ok"}</span></div>`).join("");
 }
 
-function renderOrders(orders){
+function renderOrders(list){
   const el = document.getElementById("orders");
-  if(!orders || !orders.length){ el.innerHTML = '<div style="color:var(--muted)">(none this refresh)</div>'; return; }
-  el.innerHTML = orders.map(o=>{
-    if(o.side==="close") return `<div>CLOSE ${o.symbol}</div>`;
+  if(!list || !list.length){ el.innerHTML = '<div style="color:var(--muted)">(no orders yet)</div>'; return; }
+  el.innerHTML = list.map(o=>{
+    const t = o.ts ? o.ts.slice(11,16) : "";
+    const ts = `<span style="color:${C.muted}">${t}</span> `;
+    if(o.side==="close") return `<div>${ts}<span style="color:${C.muted}">CLOSE</span> ${o.symbol}</div>`;
     const col = o.side==="buy"? C.long : C.short;
-    const sl = o.sl? `  SL=${o.sl}`:"";
-    return `<div><span style="color:${col}">${o.side.toUpperCase()}</span> ${o.lots} ${o.symbol}  `+
-      `(${o.cur.toFixed(2)}→${o.target.toFixed(2)})${sl}</div>`;
+    return `<div>${ts}<span style="color:${col}">${o.side.toUpperCase()}</span> ${o.lots} ${o.symbol}</div>`;
   }).join("");
 }
 
@@ -93,7 +94,7 @@ window.renderCharts = async function(s){
   plotEquity((eq && eq.series) || []);
   plotGauges(s.gauges || []);
   renderTripwires(s.tripwires || []);
-  renderOrders(s.orders || []);
+  renderOrders(s.recent_orders || s.orders || []);
   if (window.renderConsensus) await window.renderConsensus(s);  // Task 9
 };
 

@@ -12,12 +12,14 @@ from fastapi.staticfiles import StaticFiles
 
 from . import data, projection
 
-# overridable in tests; default to the repo's live dirs
-LOG_DIR = os.environ.get("PANEL_LOG_DIR", "logs")
-STATE_DIR = os.environ.get("PANEL_STATE_DIR", "state")
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FRONTEND = os.path.join(_HERE, "..", "frontend")
+# Resolve the engine dirs relative to the REPO ROOT (parent of panel/) so the
+# dashboard works no matter which directory uvicorn was launched from.
+# Overridable in tests / via env.
+_ROOT = os.path.dirname(os.path.dirname(_HERE))
+LOG_DIR = os.environ.get("PANEL_LOG_DIR", os.path.join(_ROOT, "logs"))
+STATE_DIR = os.environ.get("PANEL_STATE_DIR", os.path.join(_ROOT, "state"))
 
 app = FastAPI(title="SIGNAL//LAYER")
 
@@ -52,6 +54,7 @@ def state():
         "models": last.get("models", {}),
         "cost": last.get("cost", {}),
         "orders": last.get("orders", []),
+        "recent_orders": data.recent_orders(recs),
     }
 
 
