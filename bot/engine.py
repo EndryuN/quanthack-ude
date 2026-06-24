@@ -80,9 +80,9 @@ class Engine:
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
         if self.cfg.use_second_opinion and self._second_opinion_off:
-            print("[engine] NVIDIA_API_KEY not set — second opinion disabled (Claude-only).")
+            print("[engine] NVIDIA_API_KEY not set - second opinion disabled (Claude-only).")
         if not self.dry_run and not self.client.algo_allowed():
-            raise RuntimeError("Algo Trading is OFF in the terminal — enable it.")
+            raise RuntimeError("Algo Trading is OFF in the terminal - enable it.")
         try:
             while True:
                 self.tick()
@@ -480,7 +480,7 @@ class Engine:
             base = f"AI flipped {'long' if vd > 0 else 'short'}"
         else:
             base = "de-risked"
-        return base + (f" — {rat}" if rat else "")
+        return base + (f" - {rat}" if rat else "")
 
     def _print_status(self, acct, snap, m=None, n_orders=0):
         line = (f"[{_ts()}] eq={acct.equity:,.0f} "
