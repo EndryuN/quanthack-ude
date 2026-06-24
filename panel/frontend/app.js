@@ -12,12 +12,23 @@ async function getJSON(u){
 const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 
 function renderStrip(s){
-  // directional ribbon: ticker + up/down icon for each active (non-flat) view,
-  // by the bot's traded direction (Claude sets direction). Click it for full reasoning.
-  const _dir = r => (r.claude && r.claude.direction) || (r.nemotron && r.nemotron.direction) || "flat";
-  const _active = (s.consensus || []).filter(r => _dir(r) !== "flat");
-  const _chips = _active.map(r => { const d = _dir(r);
-    return `<span class="rchip ${d}">${r.symbol} ${d==="long"?"▲":"▼"}</span>`; }).join("");
+  // currency-strength ribbon: aggregate each currency across ALL its pairs
+  // (base +, quote -, weighted by confidence) into one net up/down. Click for reasoning.
+  const _sgn = d => d==="long"?1 : d==="short"?-1 : 0;
+  const _acc = {};
+  for(const r of (s.consensus || [])){
+    if(!r.symbol || r.symbol.length < 6) continue;
+    const _b = r.symbol.slice(0,3), _q = r.symbol.slice(3,6);
+    const _v = _sgn(r.direction) * (r.confidence || 0);
+    (_acc[_b] = _acc[_b] || {s:0,n:0}); _acc[_b].s += _v; _acc[_b].n++;
+    (_acc[_q] = _acc[_q] || {s:0,n:0}); _acc[_q].s -= _v; _acc[_q].n++;
+  }
+  const _ccys = Object.keys(_acc).map(c=>({c, str:_acc[c].s/Math.max(_acc[c].n,1)})).sort((a,b)=>b.str-a.str);
+  const _chips = _ccys.map(({c,str})=>{
+    const cls = str > 0.02 ? "long" : str < -0.02 ? "short" : "flat";
+    const ar = str > 0.02 ? "▲" : str < -0.02 ? "▼" : "·";
+    return `<span class="rchip ${cls}" title="net strength ${str.toFixed(2)} across its pairs">${c} ${ar}</span>`;
+  }).join("");
   const _reg = document.getElementById("regimes");
   if(_reg) _reg.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
   const a = s.account || {};
