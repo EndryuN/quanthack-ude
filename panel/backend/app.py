@@ -51,7 +51,7 @@ def state():
     # logged values if MT5 is unavailable. (margin_level / margin_usage / gross
     # leverage track the market each poll; drawdown stays the engine's round
     # figure from the log since it needs the equity-peak history.)
-    c = _mt5()
+    c = None if os.environ.get("PANEL_NO_LIVE") == "1" else _mt5()
     if c is not None:
         try:
             a = c.account()
