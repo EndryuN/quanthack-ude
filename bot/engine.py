@@ -32,6 +32,27 @@ def _round_to_step(symbol, lots):
     return round(round(lots / step) * step, 4)
 
 
+# Human names for the MT5 trade retcodes we might actually hit on failure.
+# (10009 = TRADE_RETCODE_DONE = success, so it never appears here.)
+_RETCODES = {
+    10004: "requote", 10006: "request rejected", 10007: "cancelled by trader",
+    10010: "only partially filled", 10013: "invalid request", 10014: "invalid volume",
+    10015: "invalid price", 10016: "invalid stops", 10018: "market closed",
+    10019: "not enough money", 10020: "prices changed", 10021: "no quotes",
+    10027: "autotrading disabled (client)", 10026: "autotrading disabled (server)",
+}
+
+
+def _rc(ok, res) -> str:
+    """Format a trade result for the log. Empty on success (the bare success
+    code 10009 is just noise); on failure, the code + a human name."""
+    if ok:
+        return ""
+    rc = getattr(res, "retcode", res)
+    name = _RETCODES.get(rc)
+    return f"  !! FAILED ret={rc}" + (f" ({name})" if name else "")
+
+
 class Engine:
     def __init__(self, cfg=CONFIG, dry_run=True):
         self.cfg = cfg
@@ -52,15 +73,16 @@ class Engine:
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
         self._controls = None   # last-read operator controls (None when gated off)
         self._overrides = None   # last-read per-symbol overrides (None when gated off)
+        self._last_positions = {}   # ticket -> {symbol, profit}; for stop-hit detection
 
     def start(self):
         self.client.connect()
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
         if self.cfg.use_second_opinion and self._second_opinion_off:
-            print("[engine] NVIDIA_API_KEY not set — second opinion disabled (Claude-only).")
+            print("[engine] NVIDIA_API_KEY not set - second opinion disabled (Claude-only).")
         if not self.dry_run and not self.client.algo_allowed():
-            raise RuntimeError("Algo Trading is OFF in the terminal — enable it.")
+            raise RuntimeError("Algo Trading is OFF in the terminal - enable it.")
         try:
             while True:
                 self.tick()
@@ -146,6 +168,10 @@ class Engine:
         # 6. write the decision record for this refresh (after reconcile)
         if refreshed and self.logger and self._pending_log:
             self._write_decision_record(acct, snap, m, orders)
+
+        # report any broker-side stop/TP fills (positions that vanished without
+        # an engine close this tick)
+        self._report_stop_hits({o["symbol"] for o in orders if o.get("side") == "close"})
 
         self._print_status(acct, snap, m, n_orders)
 
@@ -291,13 +317,15 @@ class Engine:
             vmin = info.volume_min if info else 0.01
             if abs(delta) < vmin:
                 if target == 0 and cur != 0:
-                    self._do_close(s)
+                    self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                                   reason=self._close_reason(s, cur))
                     orders.append({"symbol": s, "side": "close",
                                    "lots": round(abs(cur), 4), "cur": cur,
                                    "target": 0.0, "sl": 0.0})
                 continue
             if target == 0 and cur != 0:
-                self._do_close(s)
+                self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                               reason=self._close_reason(s, cur))
                 orders.append({"symbol": s, "side": "close",
                                "lots": round(abs(cur), 4), "cur": cur,
                                "target": 0.0, "sl": 0.0})
@@ -367,8 +395,7 @@ class Engine:
                 ok, res = self.client.set_sltp(p.symbol, cand, getattr(p, "tp", 0.0))
             else:
                 ok, res = self.client.set_sl(p.symbol, cand)
-            rc = getattr(res, "retcode", res)
-            print(f"   [LIVE] TRAIL {p.symbol} SL -> {cand} ok={ok} ret={rc}")
+            print(f"   [LIVE] TRAIL {p.symbol} SL -> {cand}{_rc(ok, res)}")
 
     def _apply_take_profits(self):
         """For each symbol with a take_profit override, set a broker-side TP via
@@ -385,8 +412,24 @@ class Engine:
                 print(f"   [DRY] TP {p.symbol} -> {tp}")
                 continue
             ok, res = self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
-            rc = getattr(res, "retcode", res)
-            print(f"   [LIVE] TP {p.symbol} -> {tp} ok={ok} ret={rc}")
+            print(f"   [LIVE] TP {p.symbol} -> {tp}{_rc(ok, res)}")
+
+    def _report_stop_hits(self, engine_closed):
+        """Detect positions that vanished since the last tick WITHOUT the engine
+        closing them — i.e. a broker-side stop-loss or take-profit fired — and
+        report them with the last-observed P&L. Read-only; never raises."""
+        try:
+            current = {p.ticket: p for p in self.client.positions()}
+        except Exception:
+            return
+        for tk, prev in self._last_positions.items():
+            if tk in current or prev["symbol"] in engine_closed:
+                continue
+            print(f"[{_ts()}]    ** STOP HIT {prev['symbol']}  "
+                  f"{prev['profit']:+,.0f}  (broker SL/TP)")
+        self._last_positions = {tk: {"symbol": p.symbol,
+                                     "profit": getattr(p, "profit", 0.0)}
+                                for tk, p in current.items()}
 
     def _pos_sl(self, p):
         import MetaTrader5 as _mt5
@@ -406,17 +449,38 @@ class Engine:
             print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f}){slstr}")
             return sl
         ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
-        rc = getattr(res, "retcode", res)
-        print(f"   [LIVE] {side} {lots} {symbol} SL={sl} -> ok={ok} ret={rc}")
+        slstr = f" SL={sl}" if sl else ""
+        print(f"   [LIVE] {side} {lots} {symbol}{slstr}{_rc(ok, res)}")
         return sl
 
-    def _do_close(self, symbol):
+    def _do_close(self, symbol, profit=0.0, reason=""):
+        pstr = f"  {profit:+,.0f}" if profit else ""
+        rstr = f"  ({reason})" if reason else ""
         if self.dry_run:
-            print(f"   [DRY] CLOSE {symbol}")
+            print(f"   [DRY] CLOSE {symbol}{pstr}{rstr}")
             return
         ok, res = self.client.close_symbol(symbol)
-        rc = getattr(res, "retcode", res)
-        print(f"   [LIVE] CLOSE {symbol} -> ok={ok} ret={rc}")
+        print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{_rc(ok, res)}")
+
+    def _close_reason(self, symbol, cur):
+        """Why is this position being closed? Derived from the current AI view
+        + the latest decision rationale. cur = current signed lots."""
+        v = (self._views or {}).get(symbol)
+        vd = v[0] if v else 0
+        cur_dir = (1 if cur > 0 else -1) if cur else 0
+        rat = ""
+        if self._pending_log:
+            rec = next((r for r in self._pending_log.get("views", [])
+                        if r.get("symbol") == symbol), None)
+            if rec:
+                rat = (rec.get("claude") or {}).get("rationale", "") or ""
+        if vd == 0:
+            base = "AI view -> flat"
+        elif cur_dir and vd != cur_dir:
+            base = f"AI flipped {'long' if vd > 0 else 'short'}"
+        else:
+            base = "de-risked"
+        return base + (f" - {rat}" if rat else "")
 
     def _print_status(self, acct, snap, m=None, n_orders=0):
         line = (f"[{_ts()}] eq={acct.equity:,.0f} "
