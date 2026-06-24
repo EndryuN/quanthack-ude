@@ -276,9 +276,13 @@ function wireControls(){
     await fetch("/api/flatten", {method:"POST"}); setStatus("FLATTEN sent · "+new Date().toLocaleTimeString());
   }; }
   const ps = document.getElementById("preset-select");
-  if(ps && !ps.dataset.w){ ps.dataset.w="1"; ps.onchange = async ()=>{
+  if(ps && !ps.dataset.w){ ps.dataset.w="1"; ps.onchange = ()=>{
+    setStatus("preset "+ps.value+" staged — press Apply"); }; }
+  const pa = document.getElementById("preset-apply");
+  if(pa && !pa.dataset.w){ pa.dataset.w="1"; pa.onclick = async ()=>{
+    const ps2 = document.getElementById("preset-select");
     await fetch("/api/presets/apply", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({name: ps.value})}); await loadControls(); setStatus("preset "+ps.value+" applied"); }; }
+      body: JSON.stringify({name: ps2.value})}); await loadControls(); setStatus("preset "+ps2.value+" applied"); }; }
   const sv = document.getElementById("preset-save");
   if(sv && !sv.dataset.w){ sv.dataset.w="1"; sv.onclick = async ()=>{
     const name = prompt("Save current knobs as preset:"); if(!name) return;
