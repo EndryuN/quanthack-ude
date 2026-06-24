@@ -315,14 +315,19 @@ below and cannot be overridden by the panel.
 A code-grounded review found seams that would otherwise force guesswork or risk
 the live bot. Resolutions (binding):
 
-**Control-read cadence (was C3/I3).** Split control evaluation:
-- **Every tick, right after the kill-switch, independent of `_signal_changed()`:**
-  `flatten_now`, `pause`, and block/allow de-risk. These are safety/emergency
-  controls and must act within one 5s loop, not wait for the 15-min refresh.
-- **At the next AI refresh (in `_build_targets`/`_refresh_ai_views`):**
-  `aggression` and per-symbol human `view` overrides. A control change MAY set a
-  `force_refresh` flag so the operator isn't waiting up to 15 min, but these never
-  need to be intra-tick.
+**Control-read cadence (was C3/I3; REFINED 2026-06-24 after implementation).**
+- **Intra-tick, right after the kill-switch, independent of `_signal_changed()`:**
+  `flatten_seq` (one-shot panic flatten) acts within one 5s loop.
+- **On the apply-forced reconcile, NOT literally every tick:** `pause`, `block`/
+  `allow` de-risk, and `aggression`. The panel bumps `apply_seq` on every control
+  change; the engine sees the new `apply_seq`, forces a reconcile on the next tick
+  (`_last_acted_ts = -1`), and the reconcile re-reads the current controls and
+  applies the pause/block clamp + aggression. So a control change takes effect
+  within ~2 ticks (~10s). **It must NOT be applied literally every tick:** forcing
+  a reconcile every 5s while a symbol is merely *blocked* (not paused) would
+  re-evaluate all non-blocked targets every tick and defeat the anti-churn gate
+  (spread bleed). `pause` is also re-read on every subsequent AI-refresh reconcile,
+  so the engine never opens new risk while paused regardless of cadence.
 
 **Single-writer + one-shot commands (was C4).** The app is the **sole writer** of
 `controls.json` and `overrides.json`; the engine **never writes them**. One-shot
