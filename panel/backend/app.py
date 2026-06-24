@@ -179,6 +179,8 @@ def get_presets():
 @app.post("/api/presets/apply")
 def apply_preset(body: dict):
     name = body.get("name")
+    if not name:
+        return {"error": "preset name required"}
     presets = _load_presets()
     if name not in presets:
         return {"error": f"unknown preset {name}"}
@@ -196,6 +198,8 @@ def apply_preset(body: dict):
 @app.post("/api/presets/save")
 def save_preset(body: dict):
     name = body.get("name")
+    if not name:
+        return {"error": "preset name required"}
     c = ctrl.load_controls(STATE_DIR)
     presets = _load_presets()
     presets[name] = {"aggression": c.get("aggression"),

@@ -81,4 +81,32 @@ d = tempfile.mkdtemp(); _write(d, paused=True, flatten_seq=9)
 e = _engine(d); e.cfg.use_control_panel = False; e.tick()
 assert e._controls is None and e.client.flattened == 0, "flag off = no control reads"
 
+# E) PAUSE applies via apply_seq -> forced reconcile: a target that wants to OPEN
+#    new risk is de-risk-clamped to 0 when paused. We stub _build_targets to return
+#    a known opening target and capture what _reconcile receives.
+d = tempfile.mkdtemp(); _write(d, paused=True, apply_seq=1)
+e = _engine(d)
+e._build_targets = lambda acct: {"AUDUSD": 5.0}     # wants to open +5 lots
+captured = {}
+e._reconcile = lambda targets: (captured.update(targets) or [])
+e.tick()   # apply_seq>ack -> sets _last_acted_ts=-1, acks, returns (no reconcile yet)
+e.tick()   # signal now "changed" -> reconcile runs with the pause clamp
+assert captured.get("AUDUSD") == 0.0, "paused clamps an opening target to flat (de-risk)"
+
+# F) AGGRESSION override flows into the sizer. Stub the sizer fn to capture the
+#    aggression arg the engine passes.
+import bot.engine as _eng
+_orig_bt = _eng.build_targets
+captured_agg = []
+_eng.build_targets = lambda client, views, equity, agg, cfg: (captured_agg.append(agg) or {})
+try:
+    d = tempfile.mkdtemp(); _write(d, aggression=0.9, apply_seq=1)
+    e = _engine(d)
+    e._views = {"AUDUSD": (1, 0.5)}        # non-empty -> _build_targets takes the AI/sizer path
+    e.cfg.signal_source = "ai"
+    e.tick(); e.tick()                      # apply forces reconcile -> _build_targets -> build_targets
+    assert captured_agg and captured_agg[-1] == 0.9, "aggression override reaches the sizer"
+finally:
+    _eng.build_targets = _orig_bt          # restore so other tests/modules are unaffected
+
 print("OK")
