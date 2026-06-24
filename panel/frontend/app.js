@@ -67,8 +67,8 @@ function plotGauges(gauges){
       threshold:{line:{color:C.ink,width:2}, value: (g.hard[0] && g.hard[0].at) || g.max}},
   }));
   // taller grid so each gauge's title clears the gauge in the row above
-  Plotly.react("gauges", data, {...PLOT_BG, height:360,
-    grid:{rows:2, columns:2, pattern:"independent"}, margin:{l:6,r:6,t:14,b:6}}, {displayModeBar:false});
+  Plotly.react("gauges", data, {...PLOT_BG, height:300,
+    grid:{rows:2, columns:2, pattern:"independent", ygap:0.05}, margin:{l:8,r:8,t:18,b:0}}, {displayModeBar:false});
 }
 
 function renderTripwires(tw){

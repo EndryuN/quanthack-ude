@@ -20,8 +20,8 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 #kpis .kpi{display:flex;flex-direction:column;text-align:right}
 #kpis .kpi label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
 #kpis .kpi b{font-weight:500;font-size:15px}
-main{display:grid;grid-template-columns:38% 62%;gap:14px;padding:14px}
-.col-left,.col-main{display:flex;flex-direction:column;gap:14px;min-width:0}
+main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-items:start}
+.col-left,.col-main{display:flex;flex-direction:column;gap:12px;min-width:0}
 .card{background:var(--surface);border:1px solid var(--lift);border-radius:10px;padding:12px}
 .card h2{margin:0 0 8px;font-size:10px;letter-spacing:.12em;font-weight:600;
   text-transform:uppercase;color:var(--muted)}
