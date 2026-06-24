@@ -30,6 +30,13 @@ function renderStrip(s){
   ];
   document.getElementById("kpis").innerHTML = kpis.map(([k,v])=>
     `<div class="kpi"><label>${k}</label><b>${v}</b></div>`).join("");
+  const _age = s.views_age_secs, _va = document.getElementById("views-age");
+  if(_va){
+    if(_age == null){ _va.textContent = ""; }
+    else { const _m = Math.floor(_age/60);
+      _va.textContent = "views " + (_m < 1 ? "<1m" : _m + "m") + (_age > 1200 ? " ⚠" : "");
+      _va.classList.toggle("stale", _age > 1200); }
+  }
 }
 
 function plotEquity(series){
@@ -86,13 +93,22 @@ function plotGauges(gauges){        // horizontal risk bars (replaces the doughn
       preset = `<div class="rbar-preset" style="left:${clamp(_impliedLev(_stagedPreset.aggression))}%" `+
         `title="${_stagedPreset.name} preset target"></div>`;
     }
+    // tick row: 0 (start), each band threshold, max (end) — mirrored when reversed
+    const fmtT = x => (Math.abs(x) >= 1000 ? (x/1000)+"k" : Math.round(x)) + (g.unit || "");
+    const tickVals = [0, ...(g.bands||[]).slice(0,-1).map(b=>b.to), max];
+    const axisHTML = tickVals.map(val=>{
+      let p = clamp(val); if(rev) p = 100 - p;
+      const st = p <= 1 ? "left:0" : p >= 99 ? "right:0" : `left:${p}%;transform:translateX(-50%)`;
+      return `<span class="rbar-tick" style="${st}">${fmtT(val)}</span>`;
+    }).join("");
     return `<div class="rbar">`+
       `<div class="rbar-head"><span class="rbar-label">${g.label}</span><span class="rbar-val">${valTxt}</span></div>`+
       `<div class="rbar-track" style="background:${bg}">`+
         `<div class="rbar-needle" style="left:${rev ? 100-clamp(v) : clamp(v)}%"></div>`+
         (thr != null ? `<div class="rbar-thr" style="left:${rev ? 100-thr : thr}%"></div>` : "")+
         preset+
-      `</div></div>`;
+      `</div>`+
+      `<div class="rbar-axis">${axisHTML}</div></div>`;
   }).join("");
 }
 
@@ -190,7 +206,9 @@ function plotDumbbell(allRows){
      showlegend:false}, {displayModeBar:false});
 }
 
+let _lastHm = null, _conWired = false;
 function plotHeatmap(hm){
+  _lastHm = hm;
   const lum = c => c==null? 0 : c.confidence;             // 0..1
   const sign = c => c==null? 0 : (c.direction==="long"?1 : c.direction==="short"?-1 : 0);
   // z = signed confidence (-1..1): red short, green long, dark flat
@@ -202,7 +220,7 @@ function plotHeatmap(hm){
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
     {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24},
      xaxis:{type:"date", tickangle:-45, tickformat:"%H:%M", color:C.muted, automargin:true},
-     uirevision:"heatmap"},
+     dragmode:"pan", uirevision:"heatmap"},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
@@ -293,9 +311,24 @@ function buildSymbolList(symbols){
   }
 }
 
+function wireConsensusTabs(){
+  if(_conWired) return;
+  const tabs = document.querySelectorAll(".con-tabs .contab");
+  if(!tabs.length) return;
+  tabs.forEach(btn=> btn.onclick = ()=>{
+    const which = btn.dataset.con;
+    tabs.forEach(b=>b.classList.toggle("active", b===btn));
+    const lt = document.getElementById("con-latest"), ot = document.getElementById("con-overtime");
+    if(lt) lt.hidden = which !== "latest";
+    if(ot) ot.hidden = which !== "overtime";
+    if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
+  });
+  _conWired = true;
+}
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   wireDumbTabs();
+  wireConsensusTabs();
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
   const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols

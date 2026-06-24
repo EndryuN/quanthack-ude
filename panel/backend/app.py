@@ -69,8 +69,14 @@ def state():
                 c.shutdown()
             except Exception:
                 pass
+    import datetime as _dt
+    try:   # age of the AI views (local naive clock, same as the engine's _iso)
+        _age = (_dt.datetime.now() - _dt.datetime.strptime(last["ts"], "%Y-%m-%dT%H:%M:%S")).total_seconds()
+    except Exception:
+        _age = None
     return {
         "ts": last["ts"], "mode": last.get("mode"),
+        "views_age_secs": _age,
         "account": acct,
         "gauges": data.risk_gauges(acct),
         "tripwires": data.tripwire_status(acct),

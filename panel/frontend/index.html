@@ -17,6 +17,7 @@
       <div class="regime claude"><label>CLAUDE</label><span id="regime-claude">—</span></div>
       <div class="regime nemo"><label>NEMOTRON</label><span id="regime-nemo">—</span></div>
     </div>
+    <span id="views-age" class="views-age" title="age of the AI market read">—</span>
     <div id="kpis"></div>
   </header>
   <nav id="navmenu" hidden>
@@ -82,16 +83,27 @@
           <div id="ov-ai" class="ov-ai"></div>
         </div>
       </div>
-      <div class="card" id="dumbbell-card">
-        <div class="card-head"><h2>Consensus — latest</h2>
-          <div class="dir-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div></div>
-        <div class="dumb-tabs">
-          <button class="dtab active" data-grp="fx">FX</button>
-          <button class="dtab" data-grp="crypto">Crypto</button>
-          <button class="dtab" data-grp="metals">Metals</button>
+      <div class="card" id="consensus-card">
+        <div class="card-head"><h2>Consensus</h2>
+          <div class="con-tabs">
+            <button class="contab active" data-con="latest">Latest</button>
+            <button class="contab" data-con="overtime">Over time</button>
+          </div></div>
+        <div id="con-latest" class="con-pane">
+          <div class="con-sub">
+            <div class="dumb-tabs">
+              <button class="dtab active" data-grp="fx">FX</button>
+              <button class="dtab" data-grp="crypto">Crypto</button>
+              <button class="dtab" data-grp="metals">Metals</button>
+            </div>
+            <div class="dir-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div>
+          </div>
+          <div id="dumbbell"></div>
         </div>
-        <div id="dumbbell"></div></div>
-      <div class="card" id="heatmap-card"><h2>Consensus — over time</h2><div id="heatmap"></div></div>
+        <div id="con-overtime" class="con-pane" hidden>
+          <div id="heatmap"></div>
+        </div>
+      </div>
     </section>
   </main>
   <section id="view-history" class="view" hidden>
