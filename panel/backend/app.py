@@ -87,15 +87,16 @@ def positions():
 
 
 @app.get("/api/bars/{symbol}")
-def bars(symbol: str):
-    """Recent bars + each model's projection cone for one symbol. Needs live
-    MT5; degrades to {available:false} otherwise."""
+def bars(symbol: str, tf: str = "15m"):
+    """Recent bars + each model's projection cone for one symbol, on the 15m or
+    1h timeframe. Needs live MT5; degrades to {available:false} otherwise."""
     c = _mt5()
     if c is None:
         return {"available": False}
     try:
         import MetaTrader5 as mt5
-        rates = c.bars(symbol, mt5.TIMEFRAME_M15, 120)
+        timeframe = mt5.TIMEFRAME_H1 if tf == "1h" else mt5.TIMEFRAME_M15
+        rates = c.bars(symbol, timeframe, 120)
         if rates is None or len(rates) < 20:
             return {"available": False}
         closes = [float(x) for x in rates["close"]]

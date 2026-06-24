@@ -31,11 +31,24 @@ function plotEquity(series){
   const start = ys.length? ys[0] : 1000000;
   const killLine = start * (1 - 0.20);   // 20% drawdown kill level
   const traces = [
-    {x:xs, y:ys, type:"scatter", mode:"lines", line:{color:C.chartreuse, shape:"hv", width:2}, name:"equity"},
-    {x:xs, y:xs.map(()=>killLine), type:"scatter", mode:"lines",
-     line:{color:C.short, dash:"dash", width:1}, name:"kill (-20%)"},
+    {x:xs, y:ys, type:"scatter", mode:"lines", name:"equity",
+     line:{color:C.long, width:2}, fill:"tozeroy", fillcolor:"rgba(46,204,113,0.08)",
+     hovertemplate:"%{x|%b %d %H:%M}<br>$%{y:,.0f}<extra></extra>"},
+    {x:xs, y:xs.map(()=>killLine), type:"scatter", mode:"lines", name:"kill (-20%)",
+     line:{color:C.short, dash:"dot", width:1}, hoverinfo:"skip"},
   ];
-  Plotly.react("equity-chart", traces, {...PLOT_BG, height:180, showlegend:false}, {displayModeBar:false});
+  // frame tightly around the EQUITY data (not the far-off kill line) so the
+  // curve fills the chart and its real movement is visible. The kill line stays
+  // a clipped trace that only enters view if equity actually falls toward it.
+  const lo = ys.length? Math.min(...ys) : start;
+  const hi = ys.length? Math.max(...ys) : start;
+  const pad = (hi - lo) * 0.18 || 2000;
+  Plotly.react("equity-chart", traces, {...PLOT_BG, height:210, showlegend:false,
+    uirevision:"equity",
+    xaxis:{gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted},
+    yaxis:{side:"right", tickprefix:"$", tickformat:",.0f", color:C.muted,
+      gridcolor:"rgba(255,255,255,0.06)", range:[lo - pad, hi + pad]},
+    margin:{l:6, r:74, t:8, b:26}}, {displayModeBar:false});
 }
 
 function bandSteps(bands){           // [{to,color}] -> Plotly gauge steps
@@ -124,16 +137,24 @@ function plotHeatmap(hm){
   Plotly.react("heatmap", [{z, x:hm.timestamps.map(t=>t.slice(11,16)), y:hm.symbols,
     type:"heatmap", text, hovertemplate:"%{y} %{x}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
-    {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24}}, {displayModeBar:false});
+    {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24},
+     uirevision:"heatmap"},
+    {displayModeBar:true, displaylogo:false, scrollZoom:true,
+     modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
 
-async function plotSymbol(symbol){
-  const b = await getJSON("/api/bars/"+symbol);
+let curSymbol = null, curTF = "15m", _tfWired = false;
+
+async function plotSymbol(symbol, tf){
+  if(symbol) curSymbol = symbol;
+  if(tf) curTF = tf;
+  if(!curSymbol) return;
+  const b = await getJSON(`/api/bars/${curSymbol}?tf=${curTF}`);
   const el = document.getElementById("symbol-chart");
-  if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:20px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
+  if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:24px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
   const n = b.closes.length;
   const xhist = b.closes.map((_,i)=>i);
-  const price = [{x:xhist, y:b.closes, type:"scatter", mode:"lines", line:{color:C.muted,width:1}, name:symbol, hoverinfo:"skip"}];
+  const price = [{x:xhist, y:b.closes, type:"scatter", mode:"lines", line:{color:C.muted,width:1}, name:curSymbol, hoverinfo:"skip"}];
   const coneTrace=(cone,color,name)=> cone? [
     {x:cone.upper.map(p=>n-1+p[0]), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
     {x:cone.lower.map(p=>n-1+p[0]), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
@@ -144,20 +165,45 @@ async function plotSymbol(symbol){
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus")];
-  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:220, showlegend:true,
-    legend:{font:{size:9}, orientation:"h"}}, {displayModeBar:false});
+  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:300, showlegend:true,
+    legend:{font:{size:9}, orientation:"h"},
+    uirevision: curSymbol + "|" + curTF,   // keep the user's zoom across refreshes; reset on switch
+    xaxis:{title:{text:`${curSymbol} · ${curTF} bars`, font:{size:9}}, color:C.muted},
+    yaxis:{color:C.muted}},
+    {displayModeBar:true, displaylogo:false, scrollZoom:true,
+     modeBarButtonsToRemove:["select2d","lasso2d"]});
+}
+
+function buildSymbolList(symbols){
+  const el = document.getElementById("symbol-list");
+  if(el && el.dataset.sig !== symbols.join(",")){
+    el.dataset.sig = symbols.join(",");
+    el.innerHTML = symbols.map(s=>`<div class="sym${s===curSymbol?" active":""}" data-sym="${s}">${s}</div>`).join("");
+    el.querySelectorAll(".sym").forEach(node=> node.onclick = ()=>{
+      el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x===node));
+      plotSymbol(node.dataset.sym, curTF);
+    });
+  } else if(el){
+    el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===curSymbol));
+  }
+  if(!_tfWired){
+    document.querySelectorAll(".tf-toggle .tf").forEach(btn=> btn.onclick = ()=>{
+      document.querySelectorAll(".tf-toggle .tf").forEach(b=>b.classList.toggle("active", b===btn));
+      plotSymbol(curSymbol, btn.dataset.tf);
+    });
+    _tfWired = true;
+  }
 }
 
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
-  const sel = document.getElementById("symbol-select");
-  if(!sel) return;
-  if(!sel.dataset.init && (s.consensus||[]).length){
-    sel.innerHTML = s.consensus.map(r=>`<option>${r.symbol}</option>`).join("");
-    sel.dataset.init = "1";
-    sel.onchange = ()=>plotSymbol(sel.value);
-    plotSymbol(sel.value);
+  const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols
+                 : (s.consensus || []).map(r=>r.symbol);
+  if(symbols.length){
+    if(!curSymbol) curSymbol = symbols[0];
+    buildSymbolList(symbols);
+    plotSymbol(curSymbol, curTF);
   }
 };

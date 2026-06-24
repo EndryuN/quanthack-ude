@@ -27,7 +27,20 @@ main{display:grid;grid-template-columns:38% 62%;gap:14px;padding:14px}
   text-transform:uppercase;color:var(--muted)}
 .mono{font-family:"JetBrains Mono"}
 #orders div,#tripwires div{font-family:"JetBrains Mono";font-size:12px;padding:2px 0}
-select{background:var(--lift);color:var(--ink);border:1px solid var(--muted);
-  border-radius:6px;padding:4px 8px;font-family:"JetBrains Mono";margin-bottom:8px}
 .tw{display:flex;justify-content:space-between}
 .tw.active{color:var(--short)} .tw.ok{color:var(--muted)}
+
+/* Instrument & projection: symbol list on the side + 15m/1h toggle */
+.sym-pane{display:flex;gap:12px}
+.sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
+.sym-pane #symbol-chart{flex:1;min-width:0}
+.tf-toggle{display:flex;gap:4px}
+.tf-toggle .tf{flex:1;background:var(--lift);color:var(--muted);border:1px solid var(--lift);
+  border-radius:6px;padding:5px 0;font-family:"JetBrains Mono";font-size:11px;cursor:pointer}
+.tf-toggle .tf.active{color:var(--canvas);background:var(--chartreuse);
+  border-color:var(--chartreuse);font-weight:600}
+#symbol-list{display:flex;flex-direction:column;gap:2px;max-height:280px;overflow-y:auto}
+#symbol-list .sym{padding:5px 8px;border-radius:5px;font-family:"JetBrains Mono";
+  font-size:12px;cursor:pointer;color:var(--ink);border-left:2px solid transparent}
+#symbol-list .sym:hover{background:var(--lift)}
+#symbol-list .sym.active{background:var(--lift);border-left-color:var(--chartreuse);color:var(--chartreuse)}
