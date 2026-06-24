@@ -11,6 +11,7 @@
 </head>
 <body>
   <header id="strip">
+    <button id="hamburger" title="menu">&#9776;</button>
     <div class="brand">SIGNAL<span>//</span>LAYER</div>
     <div id="regimes">
       <div class="regime claude"><label>CLAUDE</label><span id="regime-claude">—</span></div>
@@ -18,7 +19,12 @@
     </div>
     <div id="kpis"></div>
   </header>
-  <main>
+  <nav id="navmenu" hidden>
+    <button class="navitem active" data-view="dashboard">Dashboard</button>
+    <button class="navitem" data-view="history">History</button>
+    <button class="navitem" data-view="scalper">Scalper</button>
+  </nav>
+  <main id="view-dashboard" class="view">
     <section class="col-left">
       <div class="card" id="controls-card"><h2>Controls</h2>
         <div class="ctl-row"><label>Preset</label>
@@ -76,7 +82,9 @@
           <div id="ov-ai" class="ov-ai"></div>
         </div>
       </div>
-      <div class="card" id="dumbbell-card"><h2>Consensus — latest</h2>
+      <div class="card" id="dumbbell-card">
+        <div class="card-head"><h2>Consensus — latest</h2>
+          <div class="dir-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div></div>
         <div class="dumb-tabs">
           <button class="dtab active" data-grp="fx">FX</button>
           <button class="dtab" data-grp="crypto">Crypto</button>
@@ -86,6 +94,34 @@
       <div class="card" id="heatmap-card"><h2>Consensus — over time</h2><div id="heatmap"></div></div>
     </section>
   </main>
+  <section id="view-history" class="view" hidden>
+    <div class="card">
+      <div class="hist-head">
+        <h2>History — instrument over time</h2>
+        <div class="hist-controls">
+          <select id="hist-symbol"></select>
+          <button id="hist-back" class="ctl-btn">&larr; Dashboard</button>
+        </div>
+      </div>
+      <div id="hist-chart"></div>
+      <h2 style="margin-top:14px">Order history</h2>
+      <div id="hist-orders"></div>
+    </div>
+  </section>
+  <section id="view-scalper" class="view" hidden>
+    <div class="card scalp-card">
+      <h2>Scalper — mean-reversion (separate system)</h2>
+      <div class="scalp-badge">DORMANT · not armed</div>
+      <p>A standalone process (own magic <b>990624</b>) that fades short-term deviations from a
+         short EMA on its configured symbols (default <b>EURUSD</b>, zero spread). It is fully
+         built and unit-tested, but ships <b>disabled</b> — it only trades after the evidence gate.</p>
+      <p><b>Next step — the go/no-go:</b> run <code>python run_scalp_backtest.py EURUSD</code>.
+         It sweeps the entry/take-profit/stop params on real tick data and reports win-rate,
+         net-after-cost, and Sharpe. We arm it only if the edge clears costs.</p>
+      <p class="scalp-note">Live scalper view (price + mean-reversion bands + recent scalps + P&amp;L)
+         appears here once it's armed and emitting state.</p>
+    </div>
+  </section>
   <div id="regime-modal" class="modal-backdrop" hidden>
     <div class="modal-card">
       <button id="regime-close" class="modal-close" title="close">&times;</button>

@@ -397,7 +397,73 @@ function wireRegimeModal(){
     document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") m.hidden=true; });
   }
 }
-loadControls(); loadPresets(); wireControls(); wireRegimeModal();
+let _histSym = null, _navWired = false;
+function showView(name){
+  ["dashboard","history","scalper"].forEach(v=>{
+    const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
+  const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
+  document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
+  if(name === "history") initHistory();
+}
+function wireNav(){
+  if(_navWired) return;
+  const h = document.getElementById("hamburger");
+  if(h) h.onclick = (e)=>{ e.stopPropagation(); const nm=document.getElementById("navmenu"); if(nm) nm.hidden = !nm.hidden; };
+  document.querySelectorAll(".navitem").forEach(b=> b.onclick = ()=> showView(b.dataset.view));
+  const more = document.getElementById("orders-more"); if(more) more.onclick = ()=> showView("history");
+  const back = document.getElementById("hist-back"); if(back) back.onclick = ()=> showView("dashboard");
+  const sel = document.getElementById("hist-symbol"); if(sel) sel.onchange = ()=>{ _histSym = sel.value; renderHistory(_histSym); };
+  document.addEventListener("click", (e)=>{ const nm=document.getElementById("navmenu");
+    if(nm && !nm.hidden && e.target.id!=="hamburger" && !nm.contains(e.target)) nm.hidden = true; });
+  _navWired = true;
+}
+async function initHistory(){
+  const d = await getJSON("/api/decisions");
+  const recs = (d && d.records) || [];
+  const syms = [];
+  for(const rec of recs) for(const v of (rec.views||[])) if(!syms.includes(v.symbol)) syms.push(v.symbol);
+  const sel = document.getElementById("hist-symbol");
+  if(sel){ const cur = _histSym || syms[0] || "";
+    sel.innerHTML = syms.map(s=>`<option${s===cur?" selected":""}>${s}</option>`).join("");
+    _histSym = cur; }
+  if(_histSym) renderHistory(_histSym);
+}
+async function renderHistory(sym){
+  if(!sym) return;
+  const d = await getJSON("/api/decisions");
+  const recs = ((d && d.records) || []).filter(r=>r.event!=="refresh_failed");
+  const sgn = dir => dir==="long"?1:dir==="short"?-1:0;
+  const xs=[], ys=[], oX=[], oY=[], oT=[];
+  for(const rec of recs){
+    const v = (rec.views||[]).find(x=>x.symbol===sym);
+    if(v){ xs.push(rec.ts); ys.push(sgn(v.direction)*(v.confidence||0)); }
+    for(const o of (rec.orders||[])) if(o.symbol===sym){ oX.push(rec.ts); oY.push(0); oT.push((o.side||"").toUpperCase()+" "+(o.lots||"")); }
+  }
+  const traces=[
+    {x:xs, y:ys, type:"scatter", mode:"lines+markers", line:{color:C.chartreuse,width:2}, marker:{size:5},
+     name:"stance", hovertemplate:"%{x|%b %d %H:%M}<br>%{y:.2f}<extra></extra>"},
+    {x:oX, y:oY, type:"scatter", mode:"markers", marker:{color:C.human,size:11,symbol:"diamond"},
+     text:oT, name:"orders", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+  ];
+  Plotly.react("hist-chart", traces, {...PLOT_BG, height:440, hovermode:"x unified", showlegend:false,
+    yaxis:{range:[-1.05,1.05], color:C.muted, gridcolor:"rgba(255,255,255,0.06)", zeroline:true, zerolinecolor:C.muted,
+      title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
+    xaxis:{type:"date", color:C.muted, gridcolor:"rgba(255,255,255,0.04)", tickangle:-30, automargin:true}},
+    {displayModeBar:true, displaylogo:false, scrollZoom:true, modeBarButtonsToRemove:["select2d","lasso2d"]});
+  const el = document.getElementById("hist-orders"); if(!el) return;
+  const items=[];
+  for(const rec of [...recs].reverse()){
+    for(const o of (rec.orders||[])) if(o.symbol===sym){
+      const t = rec.ts ? rec.ts.slice(5,16).replace("T"," ") : "";
+      const side=(o.side||"").toUpperCase();
+      const col = o.side==="close"?C.muted:(o.side==="buy"?C.long:C.short);
+      items.push(`<div><span style="color:var(--muted)">${t}</span> <span style="color:${col}">${side}</span> ${o.lots||""} ${o.symbol}</div>`);
+    }
+    if(items.length>=40) break;
+  }
+  el.innerHTML = items.length ? items.join("") : '<div style="color:var(--muted)">(no orders for '+sym+' yet)</div>';
+}
+loadControls(); loadPresets(); wireControls(); wireRegimeModal(); wireNav();
 
 let _ov = {};   // last-known overrides {sym:{pinned,view,take_profit,note}}
 
