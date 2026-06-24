@@ -8,6 +8,27 @@ A web dashboard for monitoring and (optionally) steering the live trading engine
 
 ## Running it
 
+The normal way is the **interactive launcher** at the repo root — double-click `run_live.bat` (or run it from a terminal). It asks two questions, in order:
+
+1. **Mode** — `[L]ive trading` or `[D]ry-run` (dry-run sends no orders).
+2. **Panel** — `[W]ith panel` or `[N]o panel`.
+
+Choosing **With panel** does two things: it launches this dashboard in its own window (uvicorn on port 8800) **and** sets `QUANTHACK_PANEL=1` for the engine, which flips `use_control_panel` on so the operator controls actually steer the bot. Choosing **No panel** runs the engine exactly as it would with no panel code at all. The engine itself runs in the launcher window; press Ctrl+C there to stop it.
+
+```text
+===============================================
+           QUANTHACK  LAUNCHER
+===============================================
+
+Mode  -  [L]ive trading   [D]ry-run : D
+Panel -  [W]ith panel   [N]o panel : W
+
+  Mode : DRY-RUN (no orders sent)
+  Panel: ON  -  dashboard at http://127.0.0.1:8800
+```
+
+**Watch-only (no engine):** to bring up the dashboard against existing logs without touching the engine, run it standalone — it stays strictly read-only because `QUANTHACK_PANEL` is never set:
+
 ```powershell
 # from the repo root (the launcher cd's there itself)
 .\panel\run_panel.ps1
@@ -20,17 +41,42 @@ Then open **http://127.0.0.1:8800**. First load: do a hard refresh (Ctrl+Shift+R
 
 ---
 
-## The three phases
+## The layout
+
+The dashboard (**SIGNAL//LAYER**) is a single-page app with three views, switched from the **hamburger menu** (top-left): **Dashboard** (the default), **History**, and **Scalper**. A persistent **header strip** sits above all of them:
+
+- **Brand + nav** — `SIGNAL//LAYER` and the hamburger menu.
+- **Regime pills** — `CLAUDE` and `NEMOTRON` each show the model's one-word market regime; **click either pill** to open a modal with that model's full natural-language reasoning from the latest read (side-by-side Claude vs Nemotron).
+- **Views-age badge** — how long ago the AI last refreshed (a staleness guard; goes amber/red as the 15-min read ages).
+- **Currency-strength ribbon** — each currency/asset (USD, GBP, XAU, JPY, XAG, SOL…) aggregated **net up/down across all its pairs**, shown with a direction arrow.
+- **KPI strip** — live `EQUITY`, `RET` (return %), `LEV` (gross leverage), `ML` (margin level), `DD` (drawdown), `SHARPE`.
+
+### Dashboard view
+
+**Left column (operator):**
+- **Equity Trend** — the equity curve with the **kill line drawn on it** (the −20% drawdown floor), framed tightly so real movement is visible.
+- **Positions / History split** — open positions (refreshing every **1 s**, signed lots + live P&L) beside a rolling order/decision feed (`more →` expands it).
+- **Controls** — the steering knobs (Phase 2/3 below): preset selector + Apply/Save, the `aggression` slider, **Pause**, **Flatten now**.
+- **Risk** — horizontal gauges (margin level, gross leverage, margin usage, drawdown) with **threshold ticks** (0 / competition tripwire / max) drawn on each bar, the bars re-colouring live as values move, plus the 30-minute tripwire clocks.
+
+**Main column (signal):**
+- **Instrument & projection** — a symbol list grouped by asset class (FX / Metals / Crypto) with a **1m / 15m / 1h** timeframe toggle; the selected symbol's recent price (scroll/zoom, crosshair hover) with a forward **projection cone per model** (slope = confidence, width = volatility). This is an honest rendering of conviction + uncertainty — **not** a price forecast (the models output direction + confidence, not target levels). Below the chart is the per-position override row (Phase 3 below) and a per-ticker **Goal** note.
+- **Consensus** — tabbed **Latest** / **Over time**:
+  - **Latest** is the **dumbbell** — per instrument, Claude (violet) and Nemotron (teal) confidence + direction on a short↔long axis, with a connecting line that encodes agreement (chartreuse = agree/boosted, red = disagree). Sub-tabs split it by **FX / Crypto / Metals**.
+  - **Over time** is the **heatmap** — instruments × 15-min timesteps, coloured red→green by signed confidence (long = green, short = red), with a long/short legend.
+
+### History view
+Per-symbol stance-over-time chart plus that symbol's order history — the audit trail for "what did the AI think about EURUSD all day, and what did we trade."
+
+### Scalper view
+Status page for the **dormant** mean-reversion scalper (a separate process, own magic `990624`): its backtest verdict (no durable edge → stays disabled) and config. It only ever shows a live view if the scalper is armed and emitting state; by default it ships off. See [STRATEGY.md](STRATEGY.md).
+
+## The three control phases
 
 The panel is built in three layers. Phase 1 is read-only; Phases 2–3 add the (default-off) control channel.
 
 ### Phase 1 — Watch (read-only, zero engine risk)
-- **Consensus dumbbell** — per instrument, Claude (violet) and Nemotron (teal) confidence + direction, with a connecting line that encodes agreement (chartreuse = agree/boosted, red = disagree).
-- **Consensus heatmap** — instruments × 15-min timesteps, coloured red→green by signed confidence.
-- **Equity Trend** — the equity curve with the **risk-floor lines drawn on it** (the −20% drawdown kill level), framed tightly so real movement is visible.
-- **Risk gauges + tripwire clocks** — margin level, gross leverage, margin usage, drawdown against the real `RiskLimits`, plus how long each 30-minute competition tripwire has been live.
-- **Per-symbol price + projection cones** — recent price (15m/1h, scroll/zoom) with a forward directional cone per model (slope = confidence, width = volatility). This is an honest rendering of conviction + uncertainty — **not** a price forecast (the models output direction + confidence, not target levels).
-- **Rolling orders feed** and the symbol list grouped by asset class (FX / Metals / Crypto).
+Everything described under **Dashboard / History / Scalper** above reads only `logs/`, `state/`, and live MT5 (account / positions / bars). Charts that need MT5 degrade to an "unavailable" note when no terminal is connected; the rest renders from the logs alone.
 
 ### Phase 2 — Steer (global knobs + presets)
 - **Knobs:** an `aggression` slider, global **Pause** (no new risk), **Flatten now** (panic close-all), and per-symbol **allow/block** (a de-risk clamp — it never force-closes).
@@ -46,11 +92,12 @@ The panel is built in three layers. Phase 1 is read-only; Phases 2–3 add the (
 
 ## Enabling the control channel
 
-1. Set `use_control_panel = True` in [`bot/config.py`](../bot/config.py).
-2. Restart the engine.
-3. Run the panel. Knobs/presets and per-position controls now take effect.
+The launcher does this for you: choosing **With panel** in `run_live.bat` sets `QUANTHACK_PANEL=1`, and `EngineConfig.use_control_panel` defaults to `os.environ.get("QUANTHACK_PANEL") == "1"` (see [`bot/config.py`](../bot/config.py)). So:
 
-Until you do all three, the controls in the UI write files that the engine simply ignores — your bot is unchanged.
+- **`run_live.bat` → With panel** → controls live (engine reads knobs/presets/overrides).
+- **`run_live.bat` → No panel**, or the standalone `panel\run_panel.ps1` (which never sets the env var) → the engine ignores the control files; the UI is a pure monitor. Your bot is byte-for-byte unchanged.
+
+To pin it on without the launcher, either export `QUANTHACK_PANEL=1` before starting the engine, or hard-set `use_control_panel = True` in `bot/config.py`. Either way, restart the engine for the change to take effect.
 
 ---
 
