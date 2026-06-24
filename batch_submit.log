@@ -1,0 +1,20 @@
+425 requests, 2 already done -> 423 to fetch (concurrency=8, tier=realtime)...
+  25/423 done (~$0.024)
+  50/423 done (~$0.046)
+  75/423 done (~$0.070)
+  100/423 done (~$0.093)
+  125/423 done (~$0.117)
+  150/423 done (~$0.138)
+  175/423 done (~$0.147)
+  200/423 done (~$0.156)
+  225/423 done (~$0.180)
+  250/423 done (~$0.203)
+  275/423 done (~$0.222)
+  300/423 done (~$0.238)
+  325/423 done (~$0.251)
+  350/423 done (~$0.261)
+  375/423 done (~$0.270)
+  400/423 done (~$0.278)
+done: 423 ok, 0 failed in 17.8 min
+tokens: in=501,341 out=771,245 cost=~$0.2861
+wrote 425 results -> results.jsonl
