@@ -33,8 +33,8 @@ class FakeRisk:
     def enforce(self, snap, dry): self.enforced += 1; return "FLATTENED (kill)"
 
 
-def _engine(state_dir, kill=False):
-    e = Engine(dry_run=True)
+def _engine(state_dir, kill=False, dry_run=True):
+    e = Engine(dry_run=dry_run)
     e.cfg.use_control_panel = True
     e.cfg.state_dir = state_dir
     e.client = FakeClient()
@@ -62,7 +62,7 @@ assert e._controls is None, "controls never loaded on a kill tick"
 
 # B) operator flatten one-shot: flatten_seq bump -> flatten_all + ack updated
 d = tempfile.mkdtemp(); _write(d, flatten_seq=1)
-e = _engine(d); e.tick()
+e = _engine(d, dry_run=False); e.tick()
 assert e.client.flattened == 1, "operator flatten ran"
 ack = json.load(open(os.path.join(d, "control_ack.json")))
 assert ack["flatten_seq_done"] == 1

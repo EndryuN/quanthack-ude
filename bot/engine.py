@@ -257,7 +257,6 @@ class Engine:
         kill-switch — never weakens it."""
         if self.dry_run:
             print(f"[{_ts()}] [DRY] OPERATOR FLATTEN ALL")
-            self.client.flatten_all(comment="PANEL")
             return
         results = self.client.flatten_all(comment="PANEL")
         print(f"[{_ts()}] OPERATOR FLATTEN ALL ({len(results)} positions)")
