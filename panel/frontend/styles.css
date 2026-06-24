@@ -10,7 +10,12 @@ body{margin:0;background:var(--canvas);color:var(--ink);
   background:var(--surface);border-bottom:1px solid var(--lift);position:sticky;top:0;z-index:10}
 .brand{font-family:"Space Grotesk";font-weight:700;letter-spacing:.04em;font-size:18px}
 .brand span{color:var(--chartreuse)}
-#regimes{display:flex;gap:18px;flex:1;min-width:0}
+#regimes{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;align-items:center}
+.rchip{font-family:"JetBrains Mono";font-size:11px;padding:3px 8px;border-radius:5px;
+  white-space:nowrap;background:var(--lift);border:1px solid transparent;flex:none}
+.rchip.long{color:var(--long);border-color:rgba(46,204,113,.35)}
+.rchip.short{color:var(--short);border-color:rgba(255,77,77,.35)}
+.rchip.flat{color:var(--muted)}
 .regime{display:flex;flex-direction:column;min-width:0}
 .regime label{font-size:10px;letter-spacing:.12em;color:var(--muted)}
 .regime.claude span{color:var(--claude)} .regime.nemo span{color:var(--nemo)}
@@ -26,7 +31,16 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .card h2{margin:0 0 8px;font-size:10px;letter-spacing:.12em;font-weight:600;
   text-transform:uppercase;color:var(--muted)}
 .mono{font-family:"JetBrains Mono"}
-#orders div,#tripwires div{font-family:"JetBrains Mono";font-size:12px;padding:2px 0}
+#orders div,#tripwires div,#positions div{font-family:"JetBrains Mono";font-size:12px;padding:2px 0}
+.oc-split{display:flex;gap:16px}
+.oc-col{flex:1;min-width:0}
+#positions div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oc-colhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.oc-colhead h2{margin:0}
+.refresh-tag{font-family:"JetBrains Mono";font-size:9px;color:var(--chartreuse);letter-spacing:.08em}
+.more-btn{background:none;border:none;color:var(--chartreuse);font-family:"JetBrains Mono";
+  font-size:10px;cursor:pointer;padding:0}
+.more-btn:hover{text-decoration:underline}
 .tw{display:flex;justify-content:space-between}
 .tw.active{color:var(--short)} .tw.ok{color:var(--muted)}
 
@@ -85,14 +99,14 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ov-ai .claude{color:var(--claude)} .ov-ai .nemo{color:var(--nemo)}
 
 /* RISK as 4 horizontal bars (replaces the doughnut gauges) */
-#gauges{display:flex;flex-direction:column;gap:13px;margin-bottom:6px}
+#gauges{display:flex;flex-direction:column;gap:16px;margin-bottom:6px}
 .rbar-head{display:flex;justify-content:space-between;align-items:baseline;
-  font-family:"JetBrains Mono";font-size:11px;margin-bottom:4px}
+  font-family:"JetBrains Mono";font-size:11px;margin-bottom:5px}
 .rbar-label{color:var(--muted);letter-spacing:.06em}
-.rbar-val{color:var(--ink);font-weight:600;font-size:13px}
-.rbar-track{position:relative;height:14px;border-radius:7px;overflow:hidden}
-.rbar-needle{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink);
-  transform:translateX(-1px);box-shadow:0 0 3px rgba(0,0,0,.6)}
+.rbar-val{color:var(--ink);font-weight:700;font-size:16px}
+.rbar-track{position:relative;height:20px;border-radius:6px;overflow:hidden}
+.rbar-needle{position:absolute;top:-2px;bottom:-2px;width:3px;background:#fff;
+  transform:translateX(-1.5px);box-shadow:0 0 6px rgba(255,255,255,.7)}
 .rbar-thr{position:absolute;top:-1px;bottom:-1px;width:0;
   border-left:2px dashed rgba(232,234,240,.55)}
 .rbar-preset{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--chartreuse);
@@ -105,3 +119,31 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .dumb-tabs .dtab:hover{border-color:var(--ink)}
 .dumb-tabs .dtab.active{color:var(--canvas);background:var(--chartreuse);
   border-color:var(--chartreuse);font-weight:600}
+
+/* Tidy, theme-matched scrollbars (page + symbol list) */
+*{scrollbar-width:thin;scrollbar-color:#2A3040 transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2A3040;border-radius:6px;
+  border:2px solid var(--surface);background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+#symbol-list::-webkit-scrollbar{width:7px}
+
+/* Regime "full reasoning" popup (click the CLAUDE/NEMOTRON strip) */
+#regimes{cursor:pointer}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;z-index:100}
+.modal-backdrop[hidden]{display:none}
+.modal-card{background:var(--surface);border:1px solid var(--lift);border-radius:12px;
+  max-width:680px;width:90%;max-height:80vh;overflow:auto;padding:22px 24px;position:relative;
+  box-shadow:0 16px 48px rgba(0,0,0,.5)}
+.modal-title{margin:0 0 16px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.modal-close{position:absolute;top:10px;right:14px;background:none;border:none;color:var(--muted);
+  font-size:24px;line-height:1;cursor:pointer}
+.modal-close:hover{color:var(--ink)}
+.rm-section{margin-bottom:20px;border-left:2px solid var(--lift);padding-left:14px}
+.rm-section.claude{border-left-color:var(--claude)} .rm-section.nemo{border-left-color:var(--nemo)}
+.rm-text{font-size:14px;line-height:1.65;color:var(--ink)}
+.rm-tag{margin-top:10px;font-size:10px;letter-spacing:.14em;font-weight:700}
+.rm-section.claude .rm-tag{color:var(--claude)} .rm-section.nemo .rm-tag{color:var(--nemo)}

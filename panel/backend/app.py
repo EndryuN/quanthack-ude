@@ -45,7 +45,30 @@ def state():
     if last is None:
         return {"account": None, "gauges": [], "tripwires": [], "consensus": [],
                 "regime": {}, "models": {}, "cost": {}, "ts": None}
-    acct = last["account"]
+    acct = dict(last["account"])
+    # Overlay the LIVE account so the risk gauges react in real time — the logged
+    # account is only as fresh as the last 15-min decision. Falls back to the
+    # logged values if MT5 is unavailable. (margin_level / margin_usage / gross
+    # leverage track the market each poll; drawdown stays the engine's round
+    # figure from the log since it needs the equity-peak history.)
+    c = _mt5()
+    if c is not None:
+        try:
+            a = c.account()
+            eq = a.equity or acct.get("equity") or 1.0
+            acct["equity"] = a.equity
+            gross = sum(abs(c.notional(p.symbol, p.volume)) for p in c.positions())
+            acct["gross_leverage"] = gross / eq if eq else acct.get("gross_leverage", 0.0)
+            if a.margin and a.margin > 0:        # real numbers only when positions are open
+                acct["margin_level"] = a.margin_level
+                acct["margin_usage"] = a.margin / eq if eq else acct.get("margin_usage", 0.0)
+        except Exception:
+            pass
+        finally:
+            try:
+                c.shutdown()
+            except Exception:
+                pass
     return {
         "ts": last["ts"], "mode": last.get("mode"),
         "account": acct,
@@ -100,7 +123,8 @@ def bars(symbol: str, tf: str = "15m"):
         return {"available": False}
     try:
         import MetaTrader5 as mt5
-        timeframe = mt5.TIMEFRAME_H1 if tf == "1h" else mt5.TIMEFRAME_M15
+        _TF = {"1m": mt5.TIMEFRAME_M1, "15m": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1}
+        timeframe = _TF.get(tf, mt5.TIMEFRAME_M15)
         rates = c.bars(symbol, timeframe, 120)
         if rates is None or len(rates) < 20:
             return {"available": False}

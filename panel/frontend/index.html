@@ -35,13 +35,23 @@
       </div>
       <div class="card" id="equity-card"><h2>Equity Trend</h2><div id="equity-chart"></div></div>
       <div class="card" id="gauges-card"><h2>Risk</h2><div id="gauges"></div><div id="tripwires"></div></div>
-      <div class="card" id="orders-card"><h2>Orders</h2><div id="orders"></div></div>
+      <div class="card" id="orders-card">
+        <div class="oc-split">
+          <div class="oc-col">
+            <div class="oc-colhead"><h2>Positions</h2><span class="refresh-tag">&#8635; 1s</span></div>
+            <div id="positions"></div></div>
+          <div class="oc-col">
+            <div class="oc-colhead"><h2>History</h2><button id="orders-more" class="more-btn">more &rarr;</button></div>
+            <div id="orders"></div></div>
+        </div>
+      </div>
     </section>
     <section class="col-main">
       <div class="card" id="symbol-card"><h2>Instrument &amp; projection</h2>
         <div class="sym-pane">
           <div class="sym-side">
             <div class="tf-toggle">
+              <button class="tf" data-tf="1m">1m</button>
               <button class="tf active" data-tf="15m">15m</button>
               <button class="tf" data-tf="1h">1h</button>
             </div>
@@ -76,6 +86,14 @@
       <div class="card" id="heatmap-card"><h2>Consensus — over time</h2><div id="heatmap"></div></div>
     </section>
   </main>
+  <div id="regime-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <button id="regime-close" class="modal-close" title="close">&times;</button>
+      <h3 class="modal-title">Market read — full reasoning</h3>
+      <div class="rm-section claude"><div id="rm-claude" class="rm-text"></div><div class="rm-tag">CLAUDE</div></div>
+      <div class="rm-section nemo"><div id="rm-nemo" class="rm-text"></div><div class="rm-tag">NEMOTRON</div></div>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>
