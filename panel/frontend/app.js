@@ -290,3 +290,59 @@ function wireControls(){
 const _origTick = tick;
 tick = async function(){ await _origTick(); wireControls(); await loadControls(); await loadPresets(); };
 loadControls(); loadPresets(); wireControls();
+
+let _ov = {};   // last-known overrides {sym:{pinned,view,take_profit,note}}
+
+async function loadOverrides(){ _ov = (await getJSON("/api/overrides")) || {}; renderOverride(); }
+
+function renderOverride(){
+  const sym = curSymbol; if(!sym) return;
+  const o = _ov[sym] || {};
+  const pin = document.getElementById("ov-pin");
+  if(pin){ pin.classList.toggle("on", !!o.pinned); pin.textContent = o.pinned ? "Pinned" : "Pin"; }
+  const dir = document.getElementById("ov-dir");
+  if(dir && document.activeElement !== dir) dir.value = (o.view && o.view.direction) || "";
+  const conf = document.getElementById("ov-conf");
+  if(conf && document.activeElement !== conf) conf.value = (o.view && o.view.confidence != null) ? o.view.confidence : "";
+  const tp = document.getElementById("ov-tp");
+  if(tp && document.activeElement !== tp) tp.value = (o.take_profit != null) ? o.take_profit : "";
+  const note = document.getElementById("ov-note");
+  if(note && document.activeElement !== note) note.value = o.note || "";
+  // AI rationale for this symbol from the latest state
+  const ai = document.getElementById("ov-ai");
+  if(ai && window._lastState){
+    const v = (window._lastState.consensus || []).find(r=>r.symbol===sym);
+    ai.innerHTML = v ? `<span class="claude">Claude:</span> ${v.claude ? v.claude.confidence : "—"} `+
+      `· <span class="nemo">Nemotron:</span> ${v.nemotron ? v.nemotron.confidence : "—"} · ${v.agreement}` : "";
+  }
+}
+
+async function postOverride(sym, patch){
+  await fetch(`/api/overrides/${sym}`, {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(patch)});
+  await loadOverrides();
+}
+
+function wireOverride(){
+  const pin = document.getElementById("ov-pin");
+  if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=> postOverride(curSymbol, {pinned: !(_ov[curSymbol] && _ov[curSymbol].pinned)}); }
+  const save = document.getElementById("ov-save");
+  if(save && !save.dataset.w){ save.dataset.w="1"; save.onclick=()=>{
+    const dir = document.getElementById("ov-dir").value;
+    const conf = parseFloat(document.getElementById("ov-conf").value);
+    const tpv = document.getElementById("ov-tp").value;
+    const patch = {};
+    patch.view = dir ? {direction: dir, confidence: isNaN(conf)?0.5:conf} : null;
+    patch.take_profit = tpv === "" ? null : parseFloat(tpv);
+    postOverride(curSymbol, patch);
+  }; }
+  const ns = document.getElementById("ov-note-save");
+  if(ns && !ns.dataset.w){ ns.dataset.w="1"; ns.onclick=()=> postOverride(curSymbol, {note: document.getElementById("ov-note").value}); }
+}
+
+// capture last state for the AI-rationale line, and hook into the loop
+const _origRenderStrip = renderStrip;
+renderStrip = function(s){ window._lastState = s; _origRenderStrip(s); };
+const _tick2 = tick;
+tick = async function(){ await _tick2(); await loadOverrides(); wireOverride(); };
+loadOverrides(); wireOverride();

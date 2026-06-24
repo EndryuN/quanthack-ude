@@ -51,6 +51,7 @@ class Engine:
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
         self._controls = None   # last-read operator controls (None when gated off)
+        self._overrides = None   # last-read per-symbol overrides (None when gated off)
 
     def start(self):
         self.client.connect()
@@ -84,9 +85,12 @@ class Engine:
         # NOTE: this sits AFTER the kill-switch on purpose — the risk floor is
         # never gated by any control.
         self._controls = None
+        self._overrides = None
         if self.cfg.use_control_panel:
             from .controls import load_controls, load_ack, atomic_write_json
             self._controls = load_controls(self.cfg.state_dir)
+            from .overrides import load_overrides
+            self._overrides = load_overrides(self.cfg.state_dir)
             ack = load_ack(self.cfg.state_dir)
             ack_path = os.path.join(self.cfg.state_dir, "control_ack.json")
             if self._controls["flatten_seq"] > ack["flatten_seq_done"]:
@@ -123,6 +127,10 @@ class Engine:
                 targets = self._derisk_only(targets)
             if self._controls:
                 targets = self._clamp_blocked(targets)
+            if self._overrides:
+                from .overrides import pinned_set
+                _pinned = pinned_set(self._overrides)
+                targets = {s: t for s, t in targets.items() if s not in _pinned}
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
@@ -130,6 +138,10 @@ class Engine:
         # 5. trail stops into profit on meaningful winners (every loop)
         if self.cfg.use_trailing_stop:
             self._update_trailing_stops()
+
+        # operator take-profit (gated): honor per-position TP overrides
+        if self._overrides:
+            self._apply_take_profits()
 
         # 6. write the decision record for this refresh (after reconcile)
         if refreshed and self.logger and self._pending_log:
@@ -184,6 +196,12 @@ class Engine:
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
                 gain=self.cfg.nemotron_consensus_gain)
+
+            if self._overrides:
+                from .overrides import human_views
+                from .second_opinion import apply_human_override
+                sizer_views, view_records = apply_human_override(
+                    sizer_views, view_records, human_views(self._overrides))
 
             self._views = sizer_views
             self._views_ts = time.time()
@@ -317,7 +335,11 @@ class Engine:
         """Ratchet each position's broker SL toward profit once it's a meaningful
         winner. Never loosens a stop; only locks gains behind the peak."""
         import MetaTrader5 as _mt5
+        from .overrides import pinned_set as _pinned_set
+        _pinned = _pinned_set(self._overrides) if self._overrides else set()
         for p in self.client.positions():
+            if p.symbol in _pinned:
+                continue
             tick = self.client.tick(p.symbol)
             if not tick:
                 continue
@@ -341,9 +363,30 @@ class Engine:
             if self.dry_run:
                 print(f"   [DRY] TRAIL {p.symbol} SL -> {cand}")
                 continue
-            ok, res = self.client.set_sl(p.symbol, cand)
+            if self.cfg.use_control_panel:
+                ok, res = self.client.set_sltp(p.symbol, cand, getattr(p, "tp", 0.0))
+            else:
+                ok, res = self.client.set_sl(p.symbol, cand)
             rc = getattr(res, "retcode", res)
             print(f"   [LIVE] TRAIL {p.symbol} SL -> {cand} ok={ok} ret={rc}")
+
+    def _apply_take_profits(self):
+        """For each symbol with a take_profit override, set a broker-side TP via
+        set_sltp (preserving the current SL). Idempotent: skip if already set."""
+        from .overrides import take_profits
+        tps = take_profits(self._overrides)
+        if not tps:
+            return
+        for p in self.client.positions():
+            tp = tps.get(p.symbol)
+            if tp is None or abs(getattr(p, "tp", 0.0) - tp) < 1e-9:
+                continue
+            if self.dry_run:
+                print(f"   [DRY] TP {p.symbol} -> {tp}")
+                continue
+            ok, res = self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
+            rc = getattr(res, "retcode", res)
+            print(f"   [LIVE] TP {p.symbol} -> {tp} ok={ok} ret={rc}")
 
     def _pos_sl(self, p):
         import MetaTrader5 as _mt5

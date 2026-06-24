@@ -37,6 +37,8 @@ class Position:
     price_open: float
     price_current: float
     profit: float
+    sl: float = 0.0
+    tp: float = 0.0
     @property
     def signed_lots(self) -> float:
         return self.volume if self.type == mt5.POSITION_TYPE_BUY else -self.volume
@@ -124,7 +126,8 @@ class MT5Client:
         out = []
         for p in raw:
             out.append(Position(p.ticket, p.symbol, p.volume, p.type,
-                                p.price_open, p.price_current, p.profit))
+                                p.price_open, p.price_current, p.profit,
+                                sl=getattr(p, "sl", 0.0), tp=getattr(p, "tp", 0.0)))
         return out
 
     def position_for(self, symbol: str):
@@ -233,6 +236,24 @@ class MT5Client:
             "position": pos.ticket,
             "sl": float(sl_price),
             "tp": 0.0,
+        }
+        res = mt5.order_send(req)
+        ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+        return ok, res
+
+    def set_sltp(self, symbol: str, sl: float, tp: float):
+        """Set BOTH stop-loss and take-profit on the net position. The caller
+        passes the CURRENT value for whichever leg it isn't changing, so neither
+        leg is clobbered (unlike set_sl, which zeroes tp)."""
+        pos = self.position_for(symbol)
+        if pos is None:
+            return False, "no position"
+        req = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": symbol,
+            "position": pos.ticket,
+            "sl": float(sl),
+            "tp": float(tp),
         }
         res = mt5.order_send(req)
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE

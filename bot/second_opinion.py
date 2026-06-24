@@ -126,3 +126,24 @@ def get_second_opinion(context: str, symbols, model: str, *, timeout: float = 30
     usage = {"in": u.get("prompt_tokens", 0),
              "out": u.get("completion_tokens", 0), "usd": 0.0}
     return views, regime, usage
+
+
+def apply_human_override(sizer_views, records, overrides):
+    """After apply_consensus, let a human view be the DECIDING voice for a symbol
+    — it can flip the AI's direction. `overrides` is {sym: {direction, confidence}}
+    (already filtered to non-null human views). Mutates sizer_views + records in
+    place and returns them."""
+    by_sym = {r["symbol"]: r for r in records}
+    for sym, hv in overrides.items():
+        d = _DIR.get(str(hv.get("direction", "flat")).lower(), 0)
+        c = max(0.0, min(1.0, float(hv.get("confidence", 0.0))))
+        if sym in sizer_views:
+            sizer_views[sym] = (d, c)
+        rec = by_sym.get(sym)
+        if rec is not None:
+            rec["direction"] = _DIR_STR[d]
+            rec["confidence"] = round(c, 4)
+            rec["human"] = {"direction": _DIR_STR[d], "confidence": c}
+            rec["agreement"] = "human_override"
+            rec["boosted"] = False
+    return sizer_views, records
