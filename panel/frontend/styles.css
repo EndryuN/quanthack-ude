@@ -83,3 +83,25 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ov-note input{flex:1}
 .ov-ai{font-size:11px;color:var(--muted);line-height:1.5}
 .ov-ai .claude{color:var(--claude)} .ov-ai .nemo{color:var(--nemo)}
+
+/* RISK as 4 horizontal bars (replaces the doughnut gauges) */
+#gauges{display:flex;flex-direction:column;gap:13px;margin-bottom:6px}
+.rbar-head{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:"JetBrains Mono";font-size:11px;margin-bottom:4px}
+.rbar-label{color:var(--muted);letter-spacing:.06em}
+.rbar-val{color:var(--ink);font-weight:600;font-size:13px}
+.rbar-track{position:relative;height:14px;border-radius:7px;overflow:hidden}
+.rbar-needle{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--ink);
+  transform:translateX(-1px);box-shadow:0 0 3px rgba(0,0,0,.6)}
+.rbar-thr{position:absolute;top:-1px;bottom:-1px;width:0;
+  border-left:2px dashed rgba(232,234,240,.55)}
+.rbar-preset{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--chartreuse);
+  transform:translateX(-1px);box-shadow:0 0 4px var(--chartreuse)}
+
+/* Consensus asset-class tabs */
+.dumb-tabs{display:flex;gap:4px;margin-bottom:8px}
+.dumb-tabs .dtab{background:var(--lift);color:var(--muted);border:1px solid var(--lift);
+  border-radius:6px;padding:4px 12px;font-family:"JetBrains Mono";font-size:11px;cursor:pointer}
+.dumb-tabs .dtab:hover{border-color:var(--ink)}
+.dumb-tabs .dtab.active{color:var(--canvas);background:var(--chartreuse);
+  border-color:var(--chartreuse);font-weight:600}

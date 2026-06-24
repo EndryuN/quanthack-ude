@@ -51,24 +51,42 @@ function plotEquity(series){
     margin:{l:6, r:74, t:8, b:26}}, {displayModeBar:false});
 }
 
-function bandSteps(bands){           // [{to,color}] -> Plotly gauge steps
-  let from = 0;
-  return bands.map(b => { const s = {range:[from, b.to], color:b.color}; from = b.to; return s; });
-}
-function plotGauges(gauges){
-  const data = gauges.map((g,i)=>({
-    type:"indicator", mode:"gauge+number", value:g.value,
-    number:{suffix:g.unit, font:{size:17, color:C.ink}},
-    title:{text:g.label, font:{size:10, color:C.muted}},
-    domain:{row:Math.floor(i/2), column:i%2},
-    gauge:{axis:{range:[0,g.max], tickcolor:C.muted, tickfont:{size:8, color:C.muted}, nticks:5},
-      bar:{color:C.ink, thickness:0.2},
-      steps: bandSteps(g.bands),
-      threshold:{line:{color:C.ink,width:2}, value: (g.hard[0] && g.hard[0].at) || g.max}},
-  }));
-  // taller grid so each gauge's title clears the gauge in the row above
-  Plotly.react("gauges", data, {...PLOT_BG, height:300,
-    grid:{rows:2, columns:2, pattern:"independent", ygap:0.05}, margin:{l:8,r:8,t:18,b:0}}, {displayModeBar:false});
+let _lastGauges = [], _stagedPreset = null, _presets = {};
+// implied target gross-leverage for an aggression level (survival ~2x .. finals ~6x)
+const _impliedLev = a => 2 + Math.max(0, Math.min(1, a)) * 4;
+
+function plotGauges(gauges){        // horizontal risk bars (replaces the doughnut gauges)
+  _lastGauges = gauges || [];
+  const el = document.getElementById("gauges");
+  if(!el) return;
+  el.innerHTML = _lastGauges.map(g=>{
+    const max = g.max || 1;
+    const clamp = v => Math.max(0, Math.min(100, (v / max) * 100));
+    let from = 0; const stops = [];
+    (g.bands || []).forEach(b=>{ const to = clamp(b.to);
+      stops.push(`${b.color} ${from}%`, `${b.color} ${to}%`); from = to; });
+    if(g.bands && g.bands.length && from < 100){
+      const last = g.bands[g.bands.length - 1].color;
+      stops.push(`${last} ${from}%`, `${last} 100%`);
+    }
+    const bg = stops.length ? `linear-gradient(90deg,${stops.join(",")})` : "var(--lift)";
+    const thr = (g.hard && g.hard[0] && g.hard[0].at != null) ? clamp(g.hard[0].at) : null;
+    const v = g.value;
+    const valTxt = (v == null ? "—"
+      : (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : v.toFixed(v < 10 ? 2 : 1))) + (g.unit || "");
+    let preset = "";
+    if(_stagedPreset && /leverage/i.test(g.label)){
+      preset = `<div class="rbar-preset" style="left:${clamp(_impliedLev(_stagedPreset.aggression))}%" `+
+        `title="${_stagedPreset.name} preset target"></div>`;
+    }
+    return `<div class="rbar">`+
+      `<div class="rbar-head"><span class="rbar-label">${g.label}</span><span class="rbar-val">${valTxt}</span></div>`+
+      `<div class="rbar-track" style="background:${bg}">`+
+        `<div class="rbar-needle" style="left:${clamp(v)}%"></div>`+
+        (thr != null ? `<div class="rbar-thr" style="left:${thr}%"></div>` : "")+
+        preset+
+      `</div></div>`;
+  }).join("");
 }
 
 function renderTripwires(tw){
@@ -109,9 +127,26 @@ setInterval(tick, 15000);
 
 const dirColor = d => d==="long"? C.long : d==="short"? C.short : C.flat;
 
-function plotDumbbell(rows){
+let _dumbTab = "fx", _lastConsensus = [], _dtabWired = false;
+
+function wireDumbTabs(){
+  if(_dtabWired) return;
+  const tabs = document.querySelectorAll(".dumb-tabs .dtab");
+  if(!tabs.length) return;
+  tabs.forEach(btn => btn.onclick = ()=>{
+    _dumbTab = btn.dataset.grp;
+    tabs.forEach(b => b.classList.toggle("active", b === btn));
+    plotDumbbell(_lastConsensus);
+  });
+  _dtabWired = true;
+}
+
+function plotDumbbell(allRows){
   // one row per instrument: Claude (violet, left) — Nemotron (teal, right) confidences,
-  // x sign encodes direction so opposing calls point opposite ways.
+  // x sign encodes direction so opposing calls point opposite ways. Filtered to the
+  // active asset-class tab (FX / Crypto / Metals).
+  _lastConsensus = allRows || [];
+  const rows = _lastConsensus.filter(r => _grpOf(r.symbol) === _dumbTab);
   const ys = rows.map(r=>r.symbol);
   const sgn = d => d==="long"?1 : d==="short"?-1 : 0;
   const cx = rows.map(r=> r.claude? sgn(r.claude.direction)*r.claude.confidence : 0);
@@ -222,6 +257,7 @@ function buildSymbolList(symbols){
 
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
+  wireDumbTabs();
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
   const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols
@@ -257,9 +293,16 @@ async function postControls(patch){
 
 async function loadPresets(){
   const p = await getJSON("/api/presets"); if(!p) return;
+  _presets = p.presets || {};
   const sel = document.getElementById("preset-select"); if(!sel) return;
-  const names = Object.keys(p.presets);
-  sel.innerHTML = names.map(n=>`<option${n===p.active?" selected":""}>${n}</option>`).join("");
+  const names = Object.keys(_presets);
+  const sig = names.join(",");
+  if(sel.dataset.sig !== sig){            // (re)build options only when the set changes
+    sel.dataset.sig = sig;
+    sel.innerHTML = names.map(n=>`<option>${n}</option>`).join("");
+  }
+  // reflect the APPLIED preset, but never clobber a selection the user is staging
+  if(!_stagedPreset && document.activeElement !== sel) sel.value = p.active;
 }
 
 function wireControls(){
@@ -277,12 +320,20 @@ function wireControls(){
   }; }
   const ps = document.getElementById("preset-select");
   if(ps && !ps.dataset.w){ ps.dataset.w="1"; ps.onchange = ()=>{
-    setStatus("preset "+ps.value+" staged — press Apply"); }; }
+    const pr = _presets[ps.value] || {};
+    const a = pr.aggression == null ? 0.30 : pr.aggression;
+    _stagedPreset = {name: ps.value, aggression: a};
+    const posture = a < 0.34 ? "diversified · low risk" : a < 0.67 ? "balanced" : "concentrated · high risk";
+    setStatus(`${ps.value} staged — aggr ${a.toFixed(2)} · ~${_impliedLev(a).toFixed(1)}x target lev · ${posture} — press Apply`);
+    plotGauges(_lastGauges);   // re-render the risk bars with the staged preset's marker
+  }; }
   const pa = document.getElementById("preset-apply");
   if(pa && !pa.dataset.w){ pa.dataset.w="1"; pa.onclick = async ()=>{
     const ps2 = document.getElementById("preset-select");
     await fetch("/api/presets/apply", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({name: ps2.value})}); await loadControls(); setStatus("preset "+ps2.value+" applied"); }; }
+      body: JSON.stringify({name: ps2.value})});
+    await loadControls(); _stagedPreset = null; plotGauges(_lastGauges);
+    setStatus("preset "+ps2.value+" applied"); }; }
   const sv = document.getElementById("preset-save");
   if(sv && !sv.dataset.w){ sv.dataset.w="1"; sv.onclick = async ()=>{
     const name = prompt("Save current knobs as preset:"); if(!name) return;
