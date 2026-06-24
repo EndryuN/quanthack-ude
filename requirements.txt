@@ -18,3 +18,7 @@ pydantic>=2.12.5
 
 # MetaTrader 5 broker integration (Windows-only)
 MetaTrader5>=5.0.5735
+
+# Control panel dashboard (panel/) — read-only web UI
+fastapi>=0.115.0
+uvicorn>=0.30.0
