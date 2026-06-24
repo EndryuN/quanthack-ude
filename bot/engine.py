@@ -73,6 +73,7 @@ class Engine:
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
         self._controls = None   # last-read operator controls (None when gated off)
         self._overrides = None   # last-read per-symbol overrides (None when gated off)
+        self._last_positions = {}   # ticket -> {symbol, profit}; for stop-hit detection
 
     def start(self):
         self.client.connect()
@@ -167,6 +168,10 @@ class Engine:
         # 6. write the decision record for this refresh (after reconcile)
         if refreshed and self.logger and self._pending_log:
             self._write_decision_record(acct, snap, m, orders)
+
+        # report any broker-side stop/TP fills (positions that vanished without
+        # an engine close this tick)
+        self._report_stop_hits({o["symbol"] for o in orders if o.get("side") == "close"})
 
         self._print_status(acct, snap, m, n_orders)
 
@@ -408,6 +413,23 @@ class Engine:
                 continue
             ok, res = self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
             print(f"   [LIVE] TP {p.symbol} -> {tp}{_rc(ok, res)}")
+
+    def _report_stop_hits(self, engine_closed):
+        """Detect positions that vanished since the last tick WITHOUT the engine
+        closing them — i.e. a broker-side stop-loss or take-profit fired — and
+        report them with the last-observed P&L. Read-only; never raises."""
+        try:
+            current = {p.ticket: p for p in self.client.positions()}
+        except Exception:
+            return
+        for tk, prev in self._last_positions.items():
+            if tk in current or prev["symbol"] in engine_closed:
+                continue
+            print(f"[{_ts()}]    ⚑ STOP HIT {prev['symbol']}  "
+                  f"{prev['profit']:+,.0f}  (broker SL/TP)")
+        self._last_positions = {tk: {"symbol": p.symbol,
+                                     "profit": getattr(p, "profit", 0.0)}
+                                for tk, p in current.items()}
 
     def _pos_sl(self, p):
         import MetaTrader5 as _mt5
