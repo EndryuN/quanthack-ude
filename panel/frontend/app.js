@@ -175,12 +175,36 @@ async function plotSymbol(symbol, tf){
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
 
+// asset-class grouping for the symbol list (crypto kept separate from FX/metals)
+const _CRYPTO = new Set(["BTCUSD","ETHUSD","SOLUSD","XRPUSD","BARUSD"]);
+const _METALS = new Set(["XAGUSD","XAUUSD"]);
+const _grpOf = s => _CRYPTO.has(s) ? "crypto" : _METALS.has(s) ? "metals" : "fx";
+const _GRP_ORDER = {fx:0, metals:1, crypto:2};
+
 function buildSymbolList(symbols){
   const el = document.getElementById("symbol-list");
-  if(el && el.dataset.sig !== symbols.join(",")){
-    el.dataset.sig = symbols.join(",");
-    el.innerHTML = symbols.map(s=>`<div class="sym${s===curSymbol?" active":""}" data-sym="${s}">${s}</div>`).join("");
-    el.querySelectorAll(".sym").forEach(node=> node.onclick = ()=>{
+  const sig = symbols.join(",") + "|" + ((_ctl && _ctl.block) || []).join(",");
+  if(el && el.dataset.sig !== sig){
+    el.dataset.sig = sig;
+    const blocked = new Set((_ctl && _ctl.block) || []);
+    const sorted = [...symbols].sort((a,b)=> _GRP_ORDER[_grpOf(a)] - _GRP_ORDER[_grpOf(b)]); // stable within group
+    let html = "", lastG = null;
+    for(const s of sorted){
+      const g = _grpOf(s);
+      if(g !== lastG){ html += `<div class="sym-group">${g.toUpperCase()}</div>`; lastG = g; }
+      html += `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
+        `<span class="sym-name">${s}</span>`+
+        `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
+      if(ev.target.classList.contains("sym-block")){
+        const sym = ev.target.dataset.block;
+        const cur = new Set((_ctl && _ctl.block) || []);
+        cur.has(sym) ? cur.delete(sym) : cur.add(sym);
+        postControls({block: [...cur]});
+        return;
+      }
       el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x===node));
       plotSymbol(node.dataset.sym, curTF);
     });
@@ -208,3 +232,61 @@ window.renderConsensus = async function(s){
     plotSymbol(curSymbol, curTF);
   }
 };
+
+let _ctl = null;   // last-known controls
+
+function setStatus(msg){ const e=document.getElementById("ctl-status"); if(e) e.textContent = msg; }
+
+async function loadControls(){
+  _ctl = await getJSON("/api/controls");
+  if(!_ctl) return;
+  const aggr = document.getElementById("aggr");
+  const a = _ctl.aggression == null ? 0.30 : _ctl.aggression;
+  if(aggr && document.activeElement !== aggr){ aggr.value = a; }
+  const av = document.getElementById("aggr-val"); if(av) av.textContent = Number(a).toFixed(2);
+  const pb = document.getElementById("pause-btn");
+  if(pb){ pb.classList.toggle("on", !!_ctl.paused); pb.textContent = _ctl.paused ? "Paused" : "Pause"; }
+}
+
+async function postControls(patch){
+  _ctl = await getJSON("/api/controls");  // refresh base first
+  const r = await fetch("/api/controls", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(patch)});
+  _ctl = await r.json(); await loadControls(); setStatus("applied · "+new Date().toLocaleTimeString());
+}
+
+async function loadPresets(){
+  const p = await getJSON("/api/presets"); if(!p) return;
+  const sel = document.getElementById("preset-select"); if(!sel) return;
+  const names = Object.keys(p.presets);
+  sel.innerHTML = names.map(n=>`<option${n===p.active?" selected":""}>${n}</option>`).join("");
+}
+
+function wireControls(){
+  const aggr = document.getElementById("aggr");
+  if(aggr && !aggr.dataset.w){ aggr.dataset.w="1";
+    aggr.oninput = ()=>{ document.getElementById("aggr-val").textContent = Number(aggr.value).toFixed(2); };
+    aggr.onchange = ()=> postControls({aggression: parseFloat(aggr.value)});
+  }
+  const pb = document.getElementById("pause-btn");
+  if(pb && !pb.dataset.w){ pb.dataset.w="1"; pb.onclick = ()=> postControls({paused: !(_ctl && _ctl.paused)}); }
+  const fb = document.getElementById("flatten-btn");
+  if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
+    if(!confirm("Flatten ALL positions now?")) return;
+    await fetch("/api/flatten", {method:"POST"}); setStatus("FLATTEN sent · "+new Date().toLocaleTimeString());
+  }; }
+  const ps = document.getElementById("preset-select");
+  if(ps && !ps.dataset.w){ ps.dataset.w="1"; ps.onchange = async ()=>{
+    await fetch("/api/presets/apply", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: ps.value})}); await loadControls(); setStatus("preset "+ps.value+" applied"); }; }
+  const sv = document.getElementById("preset-save");
+  if(sv && !sv.dataset.w){ sv.dataset.w="1"; sv.onclick = async ()=>{
+    const name = prompt("Save current knobs as preset:"); if(!name) return;
+    await fetch("/api/presets/save", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name})}); await loadPresets(); setStatus("saved preset "+name); }; }
+}
+
+// hook controls into the existing 15s loop
+const _origTick = tick;
+tick = async function(){ await _origTick(); wireControls(); await loadControls(); await loadPresets(); };
+loadControls(); loadPresets(); wireControls();

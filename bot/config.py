@@ -87,6 +87,9 @@ class EngineConfig:
     use_broker_sl: bool = True                # attach broker-side SL failsafe
     use_trailing_stop: bool = True            # ratchet SL into profit on winners
 
+    # --- operator control panel (Phase 2; OFF by default = identical to today) ---
+    use_control_panel: bool = False           # read state/controls.json each tick
+
     # --- AI decision logging ---
     log_decisions: bool = True                # write per-day decision logs
     log_dir: str = "logs"                     # directory for ai_decisions_*.{jsonl,md}

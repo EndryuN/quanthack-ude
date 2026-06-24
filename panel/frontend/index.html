@@ -20,6 +20,18 @@
   </header>
   <main>
     <section class="col-left">
+      <div class="card" id="controls-card"><h2>Controls</h2>
+        <div class="ctl-row"><label>Preset</label>
+          <select id="preset-select"></select>
+          <button id="preset-save" class="ctl-btn">Save</button></div>
+        <div class="ctl-row"><label>Aggression</label>
+          <input id="aggr" type="range" min="0" max="1" step="0.05">
+          <span id="aggr-val" class="mono">—</span></div>
+        <div class="ctl-row">
+          <button id="pause-btn" class="ctl-btn">Pause</button>
+          <button id="flatten-btn" class="ctl-btn danger">Flatten now</button></div>
+        <div id="ctl-status" class="ctl-status"></div>
+      </div>
       <div class="card" id="equity-card"><h2>Equity Trend</h2><div id="equity-chart"></div></div>
       <div class="card" id="gauges-card"><h2>Risk</h2><div id="gauges"></div><div id="tripwires"></div></div>
       <div class="card" id="orders-card"><h2>Orders</h2><div id="orders"></div></div>

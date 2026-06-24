@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import data, projection
+from bot import controls as ctrl
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FRONTEND = os.path.join(_HERE, "..", "frontend")
@@ -123,6 +124,88 @@ def bars(symbol: str, tf: str = "15m"):
             c.shutdown()
         except Exception:
             pass
+
+
+def _controls_path():
+    return os.path.join(STATE_DIR, "controls.json")
+
+
+@app.get("/api/controls")
+def get_controls():
+    return ctrl.load_controls(STATE_DIR)
+
+
+@app.post("/api/controls")
+def post_controls(body: dict):
+    c = ctrl.load_controls(STATE_DIR)
+    for k in ("paused", "aggression", "block", "allow", "active_preset"):
+        if k in body:
+            c[k] = body[k]
+    c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
+@app.post("/api/flatten")
+def post_flatten():
+    c = ctrl.load_controls(STATE_DIR)
+    c["flatten_seq"] = int(c.get("flatten_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
+def _presets_path():
+    return os.path.join(STATE_DIR, "presets.json")
+
+
+def _load_presets():
+    import json as _json
+    try:
+        with open(_presets_path(), encoding="utf-8") as f:
+            data = _json.load(f)
+        if isinstance(data, dict) and data:
+            return data
+    except (OSError, ValueError):
+        pass
+    return {k: dict(v) for k, v in ctrl.DEFAULT_PRESETS.items()}
+
+
+@app.get("/api/presets")
+def get_presets():
+    return {"presets": _load_presets(),
+            "active": ctrl.load_controls(STATE_DIR).get("active_preset", "Default")}
+
+
+@app.post("/api/presets/apply")
+def apply_preset(body: dict):
+    name = body.get("name")
+    if not name:
+        return {"error": "preset name required"}
+    presets = _load_presets()
+    if name not in presets:
+        return {"error": f"unknown preset {name}"}
+    p = presets[name]
+    c = ctrl.load_controls(STATE_DIR)
+    c["aggression"] = p.get("aggression")
+    c["block"] = list(p.get("block") or [])
+    c["allow"] = p.get("allow")
+    c["active_preset"] = name
+    c["apply_seq"] = int(c.get("apply_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
+@app.post("/api/presets/save")
+def save_preset(body: dict):
+    name = body.get("name")
+    if not name:
+        return {"error": "preset name required"}
+    c = ctrl.load_controls(STATE_DIR)
+    presets = _load_presets()
+    presets[name] = {"aggression": c.get("aggression"),
+                     "block": list(c.get("block") or []), "allow": c.get("allow")}
+    ctrl.atomic_write_json(_presets_path(), presets)
+    return {"presets": presets, "active": c.get("active_preset", "Default")}
 
 
 @app.get("/")
