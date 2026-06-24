@@ -208,3 +208,61 @@ window.renderConsensus = async function(s){
     plotSymbol(curSymbol, curTF);
   }
 };
+
+let _ctl = null;   // last-known controls
+
+function setStatus(msg){ const e=document.getElementById("ctl-status"); if(e) e.textContent = msg; }
+
+async function loadControls(){
+  _ctl = await getJSON("/api/controls");
+  if(!_ctl) return;
+  const aggr = document.getElementById("aggr");
+  const a = _ctl.aggression == null ? 0.30 : _ctl.aggression;
+  if(aggr && document.activeElement !== aggr){ aggr.value = a; }
+  const av = document.getElementById("aggr-val"); if(av) av.textContent = Number(a).toFixed(2);
+  const pb = document.getElementById("pause-btn");
+  if(pb){ pb.classList.toggle("on", !!_ctl.paused); pb.textContent = _ctl.paused ? "Paused" : "Pause"; }
+}
+
+async function postControls(patch){
+  _ctl = await getJSON("/api/controls");  // refresh base first
+  const r = await fetch("/api/controls", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(patch)});
+  _ctl = await r.json(); await loadControls(); setStatus("applied · "+new Date().toLocaleTimeString());
+}
+
+async function loadPresets(){
+  const p = await getJSON("/api/presets"); if(!p) return;
+  const sel = document.getElementById("preset-select"); if(!sel) return;
+  const names = Object.keys(p.presets);
+  sel.innerHTML = names.map(n=>`<option${n===p.active?" selected":""}>${n}</option>`).join("");
+}
+
+function wireControls(){
+  const aggr = document.getElementById("aggr");
+  if(aggr && !aggr.dataset.w){ aggr.dataset.w="1";
+    aggr.oninput = ()=>{ document.getElementById("aggr-val").textContent = Number(aggr.value).toFixed(2); };
+    aggr.onchange = ()=> postControls({aggression: parseFloat(aggr.value)});
+  }
+  const pb = document.getElementById("pause-btn");
+  if(pb && !pb.dataset.w){ pb.dataset.w="1"; pb.onclick = ()=> postControls({paused: !(_ctl && _ctl.paused)}); }
+  const fb = document.getElementById("flatten-btn");
+  if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
+    if(!confirm("Flatten ALL positions now?")) return;
+    await fetch("/api/flatten", {method:"POST"}); setStatus("FLATTEN sent · "+new Date().toLocaleTimeString());
+  }; }
+  const ps = document.getElementById("preset-select");
+  if(ps && !ps.dataset.w){ ps.dataset.w="1"; ps.onchange = async ()=>{
+    await fetch("/api/presets/apply", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: ps.value})}); await loadControls(); setStatus("preset "+ps.value+" applied"); }; }
+  const sv = document.getElementById("preset-save");
+  if(sv && !sv.dataset.w){ sv.dataset.w="1"; sv.onclick = async ()=>{
+    const name = prompt("Save current knobs as preset:"); if(!name) return;
+    await fetch("/api/presets/save", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name})}); await loadPresets(); setStatus("saved preset "+name); }; }
+}
+
+// hook controls into the existing 15s loop
+const _origTick = tick;
+tick = async function(){ await _origTick(); wireControls(); await loadControls(); await loadPresets(); };
+loadControls(); loadPresets(); wireControls();
