@@ -365,8 +365,12 @@ scope (use Flatten or set a human flat view).
 `client.set_sltp(symbol, sl, tp)` that reads the position's current SL/TP and
 preserves the leg not being changed (the existing `set_sl` zeroes TP — a naive
 `set_tp` and the trailing stop would clobber each other every loop). Add `sl`/`tp`
-to the `Position` dataclass. The backend validates a user TP is on the profitable
-side of current price before writing it.
+to the `Position` dataclass. TP-side validation (is the TP on the profitable side
+of current price?) is an **advisory frontend concern**, NOT a hard backend gate
+(REFINED 2026-06-24): an operator-set TP is their own bounded choice on their own
+position — a wrong-side TP simply triggers at the broker immediately. The engine
+applies overrides defensively: a malformed/non-numeric override value must NEVER
+crash the trading loop (the override accessors skip bad entries).
 
 **Live per-ticker P&L from MT5, not the log (was I5).** Phase-1 live per-ticker
 P&L comes from the backend reading live MT5 `positions()[].profit` directly. Drop
