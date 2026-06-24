@@ -58,3 +58,10 @@ main{display:grid;grid-template-columns:38% 62%;gap:14px;padding:14px}
 .ctl-btn.danger{color:var(--short);border-color:var(--short)}
 .ctl-btn.on{background:var(--chartreuse);color:var(--canvas);border-color:var(--chartreuse);font-weight:600}
 .ctl-status{font-family:"JetBrains Mono";font-size:11px;color:var(--muted);min-height:14px}
+
+/* Task 6: per-symbol block toggles */
+#symbol-list .sym{display:flex;justify-content:space-between;align-items:center}
+#symbol-list .sym.blocked .sym-name{color:var(--short);text-decoration:line-through}
+.sym-block{color:var(--muted);width:16px;text-align:center}
+.sym-block:hover{color:var(--ink)}
+#symbol-list .sym.blocked .sym-block{color:var(--short)}

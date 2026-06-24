@@ -177,10 +177,23 @@ async function plotSymbol(symbol, tf){
 
 function buildSymbolList(symbols){
   const el = document.getElementById("symbol-list");
-  if(el && el.dataset.sig !== symbols.join(",")){
-    el.dataset.sig = symbols.join(",");
-    el.innerHTML = symbols.map(s=>`<div class="sym${s===curSymbol?" active":""}" data-sym="${s}">${s}</div>`).join("");
-    el.querySelectorAll(".sym").forEach(node=> node.onclick = ()=>{
+  const sig = symbols.join(",") + "|" + ((_ctl && _ctl.block) || []).join(",");
+  if(el && el.dataset.sig !== sig){
+    el.dataset.sig = sig;
+    const blocked = new Set((_ctl && _ctl.block) || []);
+    el.innerHTML = symbols.map(s=>
+      `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
+      `<span class="sym-name">${s}</span>`+
+      `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`
+    ).join("");
+    el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
+      if(ev.target.classList.contains("sym-block")){
+        const sym = ev.target.dataset.block;
+        const cur = new Set((_ctl && _ctl.block) || []);
+        cur.has(sym) ? cur.delete(sym) : cur.add(sym);
+        postControls({block: [...cur]});
+        return;
+      }
       el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x===node));
       plotSymbol(node.dataset.sym, curTF);
     });
