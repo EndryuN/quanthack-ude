@@ -9,10 +9,11 @@ SYMBOL = sys.argv[1] if len(sys.argv) > 1 else "EURUSD"
 
 
 def main():
-    closes, cost_frac = m1_bars(SYMBOL)
+    closes, cost_frac = m1_bars(SYMBOL)   # local parquet, else live MT5 M1
     if not closes:
-        print(f"no tick data for {SYMBOL} (local set is FX+metals+oil only). "
-              f"For crypto, pull M1 from MT5.")
+        print(f"no M1 data for {SYMBOL} from local parquet OR MT5 "
+              f"(see notes above). For crypto, make sure the MT5 terminal is "
+              f"open and {SYMBOL} is available from the broker.")
         return
     print(f"{SYMBOL}: {len(closes)} M1 bars, cost_frac={cost_frac*1e4:.2f}bps/round-trip")
     print(f"{'entry':>6}{'tp':>6}{'stop':>6}{'trades':>8}{'win%':>7}{'net_bps':>9}{'sharpe':>8}{'maxDD':>8}")

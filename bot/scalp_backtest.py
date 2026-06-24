@@ -11,8 +11,12 @@ from .scalp_signal import scalp_decision
 
 
 def m1_bars(symbol: str):
-    """Resample the symbol's tick parquet to M1 mid closes. Returns
-    (closes:list[float], cost_frac:float) where cost_frac = mean spread/price."""
+    """M1 mid closes for `symbol`. Returns (closes:list[float], cost_frac:float)
+    where cost_frac = mean spread/price (the per-round-trip cost).
+
+    Tries the local tick parquet first (FX + metals + oil). If the symbol isn't
+    in that set (e.g. crypto), falls back to pulling M1 history live from the
+    MetaTrader 5 terminal."""
     import pandas as pd
     import pyarrow.parquet as pq
     from .dataloader import DATA_ROOT
@@ -28,13 +32,50 @@ def m1_bars(symbol: str):
                           "spread": spread.resample("1min").mean()}).dropna()
         parts.append(b)
     if not parts:
-        return [], 0.0
+        return m1_bars_mt5(symbol)        # no local data -> try the live terminal
     bars = pd.concat(parts).sort_index()
     bars = bars[~bars.index.duplicated(keep="last")]
     closes = [float(x) for x in bars["close"].to_numpy()]
     price = closes[-1] if closes else 1.0
     cost_frac = float(bars["spread"].mean() / price) if price > 0 else 0.0
     return closes, cost_frac
+
+
+def m1_bars_mt5(symbol: str, count: int = 50000):
+    """Pull up to `count` M1 bars for `symbol` straight from a running MT5
+    terminal. Returns (closes, cost_frac); ([], 0.0) with a printed note if the
+    terminal/history is unavailable. cost_frac is the mean bar spread (in points
+    -> price) over the mean close — the realistic per-round-trip cost the live
+    scalper would pay on this instrument."""
+    try:
+        import MetaTrader5 as mt5
+    except Exception:
+        print("  MetaTrader5 package not installed; cannot pull crypto M1.")
+        return [], 0.0
+    if not mt5.initialize():
+        print(f"  mt5.initialize() failed: {mt5.last_error()} "
+              f"(open the MT5 terminal, then retry).")
+        return [], 0.0
+    try:
+        if not mt5.symbol_select(symbol, True):
+            print(f"  symbol_select({symbol}) failed: {mt5.last_error()}")
+            return [], 0.0
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, count)
+        if rates is None or len(rates) == 0:
+            print(f"  no M1 history for {symbol} from MT5: {mt5.last_error()}")
+            return [], 0.0
+        info = mt5.symbol_info(symbol)
+        point = float(getattr(info, "point", 0.0) or 0.0)
+        closes = [float(x) for x in rates["close"]]
+        mean_price = sum(closes) / len(closes) if closes else 1.0
+        # per-bar spread is reported in points; convert to price and average.
+        spreads = [float(s) * point for s in rates["spread"]]
+        cost_frac = (sum(spreads) / len(spreads) / mean_price) \
+            if mean_price > 0 and spreads else 0.0
+        print(f"  pulled {len(closes)} M1 bars for {symbol} from MT5.")
+        return closes, cost_frac
+    finally:
+        mt5.shutdown()
 
 
 def backtest_scalp(closes, params, cost_frac: float) -> dict:
