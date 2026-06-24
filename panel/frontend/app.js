@@ -67,12 +67,13 @@ function plotEquity(series){
   const lo = ys.length? Math.min(...ys) : start;
   const hi = ys.length? Math.max(...ys) : start;
   const pad = (hi - lo) * 0.18 || 2000;
-  Plotly.react("equity-chart", traces, {...PLOT_BG, height:210, showlegend:false,
+  Plotly.react("equity-chart", traces, {...PLOT_BG, height:210, showlegend:true,
+    legend:{orientation:"h", x:0, y:1.14, font:{size:9}, bgcolor:"rgba(0,0,0,0)"},
     uirevision:"equity",
     xaxis:{gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted},
     yaxis:{side:"right", tickprefix:"$", tickformat:",.0f", color:C.muted,
       gridcolor:"rgba(255,255,255,0.06)", range:[lo - pad, hi + pad]},
-    margin:{l:6, r:74, t:8, b:26}}, {displayModeBar:false});
+    margin:{l:6, r:74, t:22, b:26}}, {displayModeBar:false});
 }
 
 let _lastGauges = [], _stagedPreset = null, _presets = {};

@@ -193,3 +193,9 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .scalp-badge{display:inline-block;margin:4px 0 12px;padding:4px 10px;border-radius:6px;
   background:var(--lift);color:var(--human);font-family:"JetBrains Mono";font-size:11px;letter-spacing:.08em}
 .scalp-note{color:var(--muted);font-size:13px}
+.scalp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+.scalp-box{background:var(--lift);border-radius:8px;padding:14px 16px}
+.scalp-box h3{margin:0 0 8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.scalp-box ul{margin:0;padding-left:16px;line-height:1.7;font-size:13px;color:var(--ink)}
+.scalp-verdict{font-family:"JetBrains Mono";font-size:12px;font-weight:600;margin-bottom:8px}
+.scalp-verdict.short{color:var(--short)}
