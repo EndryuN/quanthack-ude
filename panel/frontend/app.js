@@ -448,6 +448,64 @@ function showView(name){
   const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
   document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   if(name === "history") initHistory();
+  if(name === "scalper") initScalper();
+}
+
+let _scalpWired = false;
+async function initScalper(){
+  const sel = document.getElementById("scalp-sym");
+  if(sel && !sel.options.length){
+    const d = await getJSON("/api/scalp/symbols");
+    const syms = (d && d.symbols) || [];
+    const needs = new Set((d && d.needs_mt5) || []);
+    sel.innerHTML = syms.map(s=>`<option value="${s}"${s==="EURUSD"?" selected":""}>${s}${needs.has(s)?" (MT5)":""}</option>`).join("");
+  }
+  if(!_scalpWired){
+    const go = document.getElementById("scalp-go");
+    if(go) go.onclick = runScalp;
+    _scalpWired = true;
+  }
+}
+async function runScalp(){
+  const sel = document.getElementById("scalp-sym");
+  const st = document.getElementById("scalp-status");
+  const out = document.getElementById("scalp-results");
+  const go = document.getElementById("scalp-go");
+  const sym = sel ? sel.value : "EURUSD";
+  if(st) st.textContent = "running… (crypto pulls M1 from MT5, ~a few seconds)";
+  if(go) go.disabled = true;
+  if(out) out.innerHTML = "";
+  let r;
+  try { r = await getJSON("/api/scalp/backtest?symbol=" + encodeURIComponent(sym)); }
+  finally { if(go) go.disabled = false; }
+  if(!r || !r.available){
+    if(st) st.textContent = `no M1 data for ${sym} — for crypto, open the MT5 terminal and make sure the symbol is available.`;
+    return;
+  }
+  if(st) st.textContent = `${r.bars.toLocaleString()} M1 bars · cost ${r.cost_bps.toFixed(2)} bps/round-trip`;
+  const best = r.best;
+  const hdr = `<tr><th>entry</th><th>tp</th><th>stop</th><th>trades</th><th>win%</th>`+
+              `<th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th></tr>`;
+  const rows = r.rows.map(x=>{
+    const isBest = best && x.entry===best.entry && x.tp===best.tp && x.stop===best.stop;
+    const net = x.net_pnl_bps>0 ? `<span style="color:var(--long)">${x.net_pnl_bps.toFixed(1)}</span>`
+              : `<span style="color:var(--short)">${x.net_pnl_bps.toFixed(1)}</span>`;
+    return `<tr class="${isBest?"scalp-best":""}"><td>${x.entry}</td><td>${x.tp}</td><td>${x.stop}</td>`+
+      `<td>${x.trades}</td><td>${(x.win_rate*100).toFixed(1)}</td><td>${net}</td>`+
+      `<td>${x.sharpe.toFixed(3)}</td><td>${x.max_dd_bps.toFixed(1)}</td></tr>`;
+  }).join("");
+  let verdict;
+  if(best){
+    const armable = best.net_pnl_bps>0 && best.sharpe>0.1;   // gate: positive AND clears the AI engine's ~0.1
+    verdict = `<div class="scalp-verdict ${armable?"":"short"}">`+
+      `BEST (Sharpe, ≥30 trades): entry ${best.entry} / tp ${best.tp} / stop ${best.stop} → `+
+      `net ${best.net_pnl_bps.toFixed(1)} bps, Sharpe ${best.sharpe.toFixed(3)}, win ${(best.win_rate*100).toFixed(1)}% — `+
+      `${armable?"clears the gate":"no durable edge → stays dormant"}</div>`;
+  } else {
+    verdict = `<div class="scalp-verdict short">no parameter set produced ≥30 trades — no edge to arm.</div>`;
+  }
+  if(out) out.innerHTML = verdict + `<table class="scalp-table">${hdr}${rows}</table>`+
+    `<p class="scalp-note">GATE: arm live only if net &gt; 0 after cost AND Sharpe clears the AI engine's (~0.1).</p>`;
 }
 function wireNav(){
   if(_navWired) return;

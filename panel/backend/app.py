@@ -261,6 +261,25 @@ def post_override(symbol: str, body: dict):
     return o
 
 
+@app.get("/api/scalp/symbols")
+def scalp_symbols():
+    """The instruments the Scalper page can backtest (BARUSD excluded — it's
+    untradeable in size). Crypto needs a running MT5 terminal for M1 history."""
+    from bot.config import ALL_SYMBOLS, CRYPTO
+    return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"],
+            "needs_mt5": [s for s in CRYPTO if s != "BARUSD"]}
+
+
+@app.get("/api/scalp/backtest")
+def scalp_backtest(symbol: str = "EURUSD"):
+    """Run the entry/tp/stop sweep for one symbol and return the grid + best row.
+    Crypto pulls M1 live from MT5; FX/metals use the local tick parquet. This is
+    a read-only analysis — it never trades. Synchronous (blocks the worker for a
+    few seconds while it loads bars); fine for a single-operator panel."""
+    from bot.scalp_backtest import sweep_scalp
+    return sweep_scalp(symbol.upper())
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(FRONTEND, "index.html"))

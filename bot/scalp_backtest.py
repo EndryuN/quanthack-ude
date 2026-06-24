@@ -7,7 +7,13 @@ import glob
 import os
 import re
 
-from .scalp_signal import scalp_decision
+from .scalp_signal import ScalpParams, scalp_decision
+
+# the entry/tp/stop grid swept for every symbol (bps). Kept here so the CLI and
+# the panel's "Run backtest" button sweep the exact same parameter space.
+SWEEP_ENTRY = (3.0, 5.0, 8.0)
+SWEEP_TP = (3.0, 5.0, 8.0)
+SWEEP_STOP = (8.0, 12.0)
 
 
 def m1_bars(symbol: str):
@@ -112,3 +118,35 @@ def backtest_scalp(closes, params, cost_frac: float) -> dict:
     return {"trades": n, "win_rate": round(wins / n, 4),
             "net_pnl_bps": round(net * 1e4, 2), "sharpe": round(sharpe, 4),
             "max_dd_bps": round(mdd * 1e4, 2)}
+
+
+def sweep_over_closes(closes, cost_frac: float) -> dict:
+    """Run the entry/tp/stop grid over one M1 close series. Returns
+    {"rows": [...], "best": row|None} where each row is the param triple merged
+    with backtest_scalp's stats. `best` is the highest-Sharpe row with >=30
+    trades (the arming-gate candidate). Pure function -> unit-testable."""
+    rows, best = [], None
+    for entry in SWEEP_ENTRY:
+        for tp in SWEEP_TP:
+            for stop in SWEEP_STOP:
+                p = ScalpParams(ema_period=20, entry_bps=entry, exit_bps=1.0,
+                                tp_bps=tp, stop_bps=stop, time_stop_bars=10)
+                r = backtest_scalp(closes, p, cost_frac)
+                row = {"entry": entry, "tp": tp, "stop": stop, **r}
+                rows.append(row)
+                if r["trades"] >= 30 and (best is None or r["sharpe"] > best["sharpe"]):
+                    best = row
+    return {"rows": rows, "best": best}
+
+
+def sweep_scalp(symbol: str) -> dict:
+    """Load M1 data for `symbol` (local parquet, else live MT5) and sweep the
+    grid. Returns a JSON-friendly dict the CLI and the panel both render.
+    {"available": False} when no M1 data could be sourced."""
+    closes, cost_frac = m1_bars(symbol)
+    if not closes:
+        return {"available": False, "symbol": symbol}
+    out = sweep_over_closes(closes, cost_frac)
+    out.update({"available": True, "symbol": symbol, "bars": len(closes),
+                "cost_bps": round(cost_frac * 1e4, 2)})
+    return out
