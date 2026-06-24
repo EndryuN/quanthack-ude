@@ -44,6 +44,17 @@ class Position:
         return self.volume if self.type == mt5.POSITION_TYPE_BUY else -self.volume
 
 
+_OWN = object()   # sentinel: positions() default == filter to this client's magic
+
+
+def _filter_by_magic(raw, magic, own):
+    """Keep raw positions matching `magic`. magic=None -> keep all.
+    `own` is unused here but kept for caller symmetry."""
+    if magic is None:
+        return list(raw)
+    return [p for p in raw if getattr(p, "magic", None) == magic]
+
+
 class MT5Client:
     def __init__(self, magic: int = 990623, deviation: int = 50):
         self.magic = magic
@@ -121,8 +132,12 @@ class MT5Client:
         return Account(a.login, a.server, a.currency, a.balance, a.equity,
                        a.margin, a.margin_free, a.margin_level, a.leverage, a.profit)
 
-    def positions(self):
-        raw = mt5.positions_get() or ()
+    def positions(self, magic=_OWN):
+        """Open positions. By default returns only THIS client's own (by magic)
+        so two systems on one account don't see each other — a no-op today since
+        only one magic trades. Pass magic=None for all account positions."""
+        m = self.magic if magic is _OWN else magic
+        raw = _filter_by_magic(mt5.positions_get() or (), m, self.magic)
         out = []
         for p in raw:
             out.append(Position(p.ticket, p.symbol, p.volume, p.type,
