@@ -4,6 +4,10 @@ A web dashboard for monitoring and (optionally) steering the live trading engine
 
 > **Safety in one line:** every engine behaviour the panel can trigger is gated behind `EngineConfig.use_control_panel` (default `False`). With that flag off, the panel cannot affect trading at all. The kill-switch and risk floor always run first and can never be overridden by an operator control.
 
+![SIGNAL//LAYER dashboard — left column (equity, positions/history, controls, risk gauges), main column (instrument & projection, consensus dumbbell)](panel-dashboard.jpeg)
+
+*The Dashboard view. Header KPIs across the top; operator column on the left; signal column (instrument projection + Claude×Nemotron consensus dumbbell) on the right. Numbers shown are dry-run/sample data.*
+
 ---
 
 ## Running it
@@ -64,6 +68,8 @@ The dashboard (**SIGNAL//LAYER**) is a single-page app with three views, switche
 - **Consensus** — tabbed **Latest** / **Over time**:
   - **Latest** is the **dumbbell** — per instrument, Claude (violet) and Nemotron (teal) confidence + direction on a short↔long axis, with a connecting line that encodes agreement (chartreuse = agree/boosted, red = disagree). Sub-tabs split it by **FX / Crypto / Metals**.
   - **Over time** is the **heatmap** — instruments × 15-min timesteps, coloured red→green by signed confidence (long = green, short = red), with a long/short legend.
+
+    ![Consensus Over-time heatmap — instruments down the side, time across the bottom, cells red (short) to green (long)](panel-consensus-overtime.jpeg)
 
 ### History view
 Per-symbol stance-over-time chart plus that symbol's order history — the audit trail for "what did the AI think about EURUSD all day, and what did we trade."
