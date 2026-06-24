@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import data, projection
+from bot import controls as ctrl
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FRONTEND = os.path.join(_HERE, "..", "frontend")
@@ -123,6 +124,34 @@ def bars(symbol: str, tf: str = "15m"):
             c.shutdown()
         except Exception:
             pass
+
+
+def _controls_path():
+    return os.path.join(STATE_DIR, "controls.json")
+
+
+@app.get("/api/controls")
+def get_controls():
+    return ctrl.load_controls(STATE_DIR)
+
+
+@app.post("/api/controls")
+def post_controls(body: dict):
+    c = ctrl.load_controls(STATE_DIR)
+    for k in ("paused", "aggression", "block", "allow", "active_preset"):
+        if k in body:
+            c[k] = body[k]
+    c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
+@app.post("/api/flatten")
+def post_flatten():
+    c = ctrl.load_controls(STATE_DIR)
+    c["flatten_seq"] = int(c.get("flatten_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
 
 
 @app.get("/")
