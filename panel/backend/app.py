@@ -123,11 +123,13 @@ def positions():
     if c is None:
         return {"available": False, "positions": []}
     try:
-        from bot.config import SCALPER
-        # account-wide so scalper positions (own magic) show too, each tagged
+        from bot.config import SCALPER, ALL_SYMBOLS
+        # a position is "scalped" if its symbol is ASSIGNED to the scalper (the
+        # operator's intent) OR it's actually held under the scalper's magic.
+        assigned = set(ctrl.scalper_assignments(ctrl.load_controls(STATE_DIR), ALL_SYMBOLS))
         out = [{"symbol": p.symbol, "lots": p.signed_lots,
                 "profit": getattr(p, "profit", 0.0),
-                "scalped": getattr(p, "magic", 0) == SCALPER.magic}
+                "scalped": p.symbol in assigned or getattr(p, "magic", 0) == SCALPER.magic}
                for p in c.positions(magic=None)]
         return {"available": True, "positions": out}
     finally:
