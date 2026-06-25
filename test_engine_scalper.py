@@ -54,8 +54,8 @@ def _engine(d, **controls):
     e._scalper = FakeScalper()                              # inject -> _run_scalper skips real connect
     base = {"paused": False, "aggression": None, "block": [], "allow": None,
             "active_preset": "Default", "flatten_seq": 0, "apply_seq": 0,
-            "scalper_symbols": [], "scalper_armed": False,
-            "scalper_armed_force": False, "scalper_gate": {}}
+            "scalper_symbols": [], "scalper_armed": [],
+            "scalper_armed_force": [], "scalper_gate": {}}
     base.update(controls)
     json.dump(base, open(os.path.join(d, "controls.json"), "w"))
     return e
@@ -69,18 +69,24 @@ assert e._scalper.cfg.symbols == ["EURUSD"] and e._scalper.steps == [True], "sca
 assert e._scalper.live_symbols == set(), "unarmed -> nothing live"
 
 # armed but gate NOT cleared -> still nothing live (engine is the final boundary)
-d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=True); e.tick()
+d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=["EURUSD"]); e.tick()
 assert e._scalper.live_symbols == set(), "armed but not gate-cleared -> not live"
 
 # armed AND gate-cleared -> live, with the gate's params locked in
 GATE = {"EURUSD": {"cleared": True, "params": {"entry": 25.0, "lookback": 5, "tp": 40.0, "stop": 20.0}}}
-d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=True, scalper_gate=GATE); e.tick()
+d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=["EURUSD"], scalper_gate=GATE); e.tick()
 assert e._scalper.live_symbols == {"EURUSD"}, "armed + cleared -> live"
 assert e._scalper.params_by_symbol["EURUSD"]["entry"] == 25.0, "gate params locked"
 
 # force-arm overrides an uncleared gate
-d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=True, scalper_armed_force=True); e.tick()
+d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"], scalper_armed=["EURUSD"], scalper_armed_force=["EURUSD"]); e.tick()
 assert e._scalper.live_symbols == {"EURUSD"}, "force-arm goes live without clearance"
+
+# PER-SYMBOL: arming one symbol does NOT make an un-armed second symbol live
+GATE2 = {"EURUSD": {"cleared": True}, "GBPUSD": {"cleared": True}}
+d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD", "GBPUSD"],
+                                    scalper_armed=["EURUSD"], scalper_gate=GATE2); e.tick()
+assert e._scalper.live_symbols == {"EURUSD"}, "only the armed symbol is live"
 
 # no assignment -> no handoff, no step, symbol stays with the engine
 d = tempfile.mkdtemp(); e = _engine(d); e.tick()

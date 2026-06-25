@@ -4,7 +4,7 @@ from bot.controls import scalper_assignments, DEFAULT_CONTROLS
 from bot.config import live_engine_symbols, assert_symbol_partition, ALL_SYMBOLS
 
 # defaults: nothing assigned, not armed
-assert DEFAULT_CONTROLS["scalper_symbols"] == [] and DEFAULT_CONTROLS["scalper_armed"] is False
+assert DEFAULT_CONTROLS["scalper_symbols"] == [] and DEFAULT_CONTROLS["scalper_armed"] == []
 
 # assignments: filtered to valid instruments, de-duped, order-stable
 assert scalper_assignments({"scalper_symbols": ["EURUSD", "EURUSD", "NOPE", "BTCUSD"]},

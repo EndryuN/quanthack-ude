@@ -410,8 +410,8 @@ class Engine:
         if (c.get("scalper_symbols") or c.get("scalper_armed")
                 or c.get("scalper_armed_force") or c.get("scalper_gate")):
             c["scalper_symbols"] = []
-            c["scalper_armed"] = False
-            c["scalper_armed_force"] = False
+            c["scalper_armed"] = []
+            c["scalper_armed_force"] = []
             c["scalper_gate"] = {}
             atomic_write_json(os.path.join(self.cfg.state_dir, "controls.json"), c)
             print("[engine] scalper session reset on launch "
@@ -442,19 +442,23 @@ class Engine:
         self._scalper.state_dir = self.cfg.state_dir   # emit state/scalper.json for the panel
         self._scalper.dry_run = self.dry_run
         # Engine is the FINAL arming boundary (spec §3.3): a symbol trades LIVE
-        # only when armed AND gate-cleared (or force-armed) — never on the toggle
-        # alone, even if controls.json was hand-edited. Lock the gate's params.
-        armed = bool(self._controls and self._controls.get("scalper_armed"))
-        force = bool(self._controls and self._controls.get("scalper_armed_force"))
+        # only when it is individually armed AND gate-cleared (or force-armed) —
+        # never on the toggle alone. Arming is PER SYMBOL so adding/gating one
+        # symbol never disarms another. Lock the gate's params.
+        def _as_set(v):   # tolerate a stale boolean controls.json without crashing
+            return set(v) if isinstance(v, (list, tuple, set)) else set()
+        armed = _as_set((self._controls or {}).get("scalper_armed"))
+        force = _as_set((self._controls or {}).get("scalper_armed_force"))
         gates = (self._controls or {}).get("scalper_gate") or {}
         live, params = set(), {}
-        if armed:
-            for s in assigned:
-                g = gates.get(s) or {}
-                if g.get("cleared") or force:
-                    live.add(s)
-                    if g.get("params"):
-                        params[s] = g["params"]
+        for s in assigned:
+            if s not in armed:
+                continue
+            g = gates.get(s) or {}
+            if g.get("cleared") or s in force:
+                live.add(s)
+                if g.get("params"):
+                    params[s] = g["params"]
         self._scalper.live_symbols = live
         self._scalper.params_by_symbol = params
         try:

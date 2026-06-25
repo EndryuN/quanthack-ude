@@ -10,8 +10,8 @@ def _controls_path(d): return os.path.join(d, "controls.json")
 
 # a previous session left the scalper ARMED LIVE with an assignment + cleared gate
 d = tempfile.mkdtemp()
-json.dump({"scalper_symbols": ["BTCUSD"], "scalper_armed": True,
-           "scalper_armed_force": True,
+json.dump({"scalper_symbols": ["BTCUSD"], "scalper_armed": ["BTCUSD"],
+           "scalper_armed_force": ["BTCUSD"],
            "scalper_gate": {"BTCUSD": {"cleared": True}}},
           open(_controls_path(d), "w"))
 # also a stale scalper.json from last run
@@ -23,7 +23,7 @@ e._reset_scalper_session()
 
 c = load_controls(d)
 assert c["scalper_symbols"] == [], c["scalper_symbols"]
-assert c["scalper_armed"] is False and c["scalper_armed_force"] is False
+assert c["scalper_armed"] == [] and c["scalper_armed_force"] == []
 assert c["scalper_gate"] == {}
 assert json.load(open(os.path.join(d, "scalper.json")))["symbols"] == []
 

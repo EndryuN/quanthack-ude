@@ -206,17 +206,22 @@ def post_controls(body: dict):
               "scalper_armed_force"):
         if k in body:
             c[k] = body[k]
-    # gated arming (spec §3.2): refuse scalper_armed unless every assigned symbol
-    # cleared the backtest gate, unless force is set. The engine re-checks too.
+    # gated arming (spec §3.2), PER SYMBOL: a symbol may be armed only if it
+    # cleared the gate or is in the force list. Drop any armed symbol that fails
+    # this (so arming/gating one symbol never disarms another). Engine re-checks.
     arm_error = None
-    if c.get("scalper_armed") and not c.get("scalper_armed_force"):
-        from bot.config import ALL_SYMBOLS
-        gates = c.get("scalper_gate") or {}
-        uncleared = [s for s in ctrl.scalper_assignments(c, ALL_SYMBOLS)
-                     if not (gates.get(s) or {}).get("cleared")]
-        if uncleared:
-            c["scalper_armed"] = False                # reject the arm
-            arm_error = f"not gate-cleared: {', '.join(uncleared)}"
+    gates = c.get("scalper_gate") or {}
+    force = set(c.get("scalper_armed_force") or [])
+    keep, rejected = [], []
+    for s in (c.get("scalper_armed") or []):
+        if (gates.get(s) or {}).get("cleared") or s in force:
+            keep.append(s)
+        else:
+            rejected.append(s)
+    c["scalper_armed"] = keep
+    c["scalper_armed_force"] = [s for s in force if s in keep]   # prune stale force flags
+    if rejected:
+        arm_error = f"not gate-cleared: {', '.join(rejected)}"
     c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
     ctrl.atomic_write_json(_controls_path(), c)
     return {**c, "arm_error": arm_error} if arm_error else c

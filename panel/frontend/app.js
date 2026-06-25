@@ -460,10 +460,6 @@ async function loadControls(){
   const so = document.getElementById("so-btn");
   if(so){ const on = _ctl.second_opinion !== false;   // null/true = used (default on)
     so.classList.toggle("on", on); so.textContent = on ? "Nemotron input: ON" : "Nemotron input: OFF"; }
-  const arm = document.getElementById("scalp-arm");
-  if(arm){ const on = !!_ctl.scalper_armed;
-    arm.classList.toggle("on", on);
-    arm.textContent = on ? "Armed (live)" : (_scalpAllCleared() ? "Arm: dry-run" : "Arm (force)"); }
   renderScalpAssigned();
 }
 
@@ -471,9 +467,26 @@ async function loadControls(){
 // /api/scalper/gate backtest step); _gateRunning tracks in-flight runs.
 let _gateRunning = {};
 function _scalpGate(sym){ return ((_ctl && _ctl.scalper_gate) || {})[sym] || null; }
-function _scalpAllCleared(){
-  const syms = (_ctl && _ctl.scalper_symbols) || [];
-  return syms.length > 0 && syms.every(s => (_scalpGate(s) || {}).cleared);
+
+// Arm/disarm a SINGLE symbol (per-symbol arming: toggling one never touches the
+// others). Force-confirm if it hasn't cleared the gate.
+function toggleArm(sym){
+  const armed = new Set((_ctl && _ctl.scalper_armed) || []);
+  const forced = new Set((_ctl && _ctl.scalper_armed_force) || []);
+  if(armed.has(sym)){                       // disarm -> back to dry-run
+    armed.delete(sym); forced.delete(sym);
+    postControls({scalper_armed:[...armed], scalper_armed_force:[...forced]})
+      .then(()=> setStatus(`${sym} disarmed (dry-run)`));
+    return;
+  }
+  if((_scalpGate(sym) || {}).cleared){
+    armed.add(sym);
+    postControls({scalper_armed:[...armed]}).then(()=> setStatus(`${sym} ARMED (live) — gate-cleared`));
+  } else if(confirm(`${sym} has NOT cleared the backtest gate. Force-arm anyway (unvalidated)?`)){
+    armed.add(sym); forced.add(sym);
+    postControls({scalper_armed:[...armed], scalper_armed_force:[...forced]})
+      .then(()=> setStatus(`${sym} FORCE-ARMED (unvalidated)`));
+  }
 }
 
 async function runGate(sym){     // the "backtest as a step" when a symbol is assigned
@@ -493,6 +506,8 @@ function renderScalpAssigned(){
   const el = document.getElementById("scalp-assigned"); if(!el) return;
   const syms = (_ctl && _ctl.scalper_symbols) || [];
   if(!syms.length){ el.innerHTML = '<span style="color:var(--muted);font-size:10px">none assigned (engine trades all)</span>'; return; }
+  const armed = new Set((_ctl && _ctl.scalper_armed) || []);
+  const forced = new Set((_ctl && _ctl.scalper_armed_force) || []);
   el.innerHTML = syms.map(s=>{
     const g = _scalpGate(s);
     let verdict, cls;
@@ -500,12 +515,21 @@ function renderScalpAssigned(){
     else if(!g){ verdict = "no backtest yet"; cls = "g-none"; }
     else if(g.cleared){ verdict = `clears ✓ (Sh ${(g.test&&g.test.sharpe!=null)?g.test.sharpe:"?"})`; cls = "g-ok"; }
     else { verdict = "no edge — " + (g.reason || "dormant"); cls = "g-no"; }
-    return `<div class="scalp-row"><span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
-           `<span class="scalp-gate ${cls}">${verdict}</span></div>`;
+    // per-symbol Arm button
+    const isArmed = armed.has(s);
+    const armLabel = isArmed ? (forced.has(s) ? "Armed (forced)" : "Armed (live)")
+                             : ((g && g.cleared) ? "Arm" : "Arm (force)");
+    const armCls = isArmed ? " on" : "";
+    const dis = _gateRunning[s] ? " disabled" : "";
+    return `<div class="scalp-row">`+
+      `<span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
+      `<span class="scalp-gate ${cls}">${verdict}</span>`+
+      `<button class="scalp-arm1${armCls}" data-arm="${s}"${dis}>${armLabel}</button></div>`;
   }).join("");
   el.querySelectorAll(".scalp-x").forEach(b=> b.onclick = ()=>{
     const cur = ((_ctl && _ctl.scalper_symbols) || []).filter(x=>x!==b.dataset.sym);
     postControls({scalper_symbols: cur}); });
+  el.querySelectorAll(".scalp-arm1").forEach(b=> b.onclick = ()=> toggleArm(b.dataset.arm));
 }
 
 async function postControls(patch){
@@ -557,17 +581,8 @@ function wireControls(){
     setStatus(sym+" -> scalper (ceded from engine) — running backtest gate…");
     runGate(sym);   // backtest-as-a-step: gate the newly assigned symbol
   }; }
-  const sarm = document.getElementById("scalp-arm");
-  if(sarm && !sarm.dataset.w){ sarm.dataset.w="1"; sarm.onclick = ()=>{
-    if(_ctl && _ctl.scalper_armed){ postControls({scalper_armed: false, scalper_armed_force: false})
-      .then(()=> setStatus("Scalper disarmed (dry-run)")); return; }
-    if(_scalpAllCleared()){
-      postControls({scalper_armed: true, scalper_armed_force: false})
-        .then(()=> setStatus("Scalper ARMED (live) — gate-cleared"));
-    } else if(confirm("Some symbols have NOT cleared the backtest gate. Force-arm anyway (unvalidated)?")){
-      postControls({scalper_armed: true, scalper_armed_force: true})
-        .then(()=> setStatus("Scalper FORCE-ARMED (unvalidated)"));
-    } }; }
+  // arming is per-symbol now (buttons rendered in #scalp-assigned, wired in
+  // renderScalpAssigned -> toggleArm) — no global Arm button.
   const rb = document.getElementById("refresh-btn");
   if(rb && !rb.dataset.w){ rb.dataset.w="1"; rb.onclick = async ()=>{
     await fetch("/api/refresh", {method:"POST"});

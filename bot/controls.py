@@ -15,8 +15,8 @@ DEFAULT_CONTROLS = {
     "active_preset": "Default",
     "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
     "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
-    "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
-    "scalper_armed_force": False,  # override: arm even when a symbol hasn't cleared the gate
+    "scalper_armed": [],    # per-symbol arm: symbols cleared to trade LIVE (rest are dry-run)
+    "scalper_armed_force": [],  # per-symbol override: armed despite not clearing the gate
     "scalper_gate": {},     # {sym: {cleared, reason, params, test, cost_bps}} from the backtest gate
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
