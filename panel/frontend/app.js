@@ -242,15 +242,23 @@ function plotDumbbell(allRows){
      showlegend:false}, {displayModeBar:false});
 }
 
-let _lastHm = null, _conWired = false;
+let _lastHm = null, _conWired = false, _conLayer = "combined";
+// pick which view a cell shows: combined (used), Claude-only, or Nemotron-only
+function _cellLayer(c){
+  if(c==null) return null;
+  if(_conLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
+  if(_conLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
+  return c.combined || {direction:c.direction, confidence:c.confidence};
+}
 function plotHeatmap(hm){
   _lastHm = hm;
   const lum = c => c==null? 0 : c.confidence;             // 0..1
   const sign = c => c==null? 0 : (c.direction==="long"?1 : c.direction==="short"?-1 : 0);
-  // z = signed confidence (-1..1): red short, green long, dark flat
-  const z = hm.cells.map(row=> row.map(c=> c==null? null : sign(c)*Math.max(lum(c),0.05)));
-  const text = hm.cells.map(row=> row.map(c=> c==null? "" :
-    `${c.direction} ${c.confidence.toFixed(2)}${c.boosted?" ★":""}`));
+  // z = signed confidence (-1..1): red short, green long, dark flat — per selected layer
+  const z = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
+    return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
+  const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
+    return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_conLayer==="combined"?" ★":""}`; }));
   Plotly.react("heatmap", [{z, x:hm.timestamps, y:hm.symbols,
     type:"heatmap", text, hovertemplate:"%{y} %{x|%b %d %H:%M}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
@@ -361,6 +369,12 @@ function wireConsensusTabs(){
     if(lt) lt.hidden = which !== "latest";
     if(ot) ot.hidden = which !== "overtime";
     if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
+  });
+  const layers = document.querySelectorAll(".ot-layers .otlayer");
+  layers.forEach(btn=> btn.onclick = ()=>{
+    _conLayer = btn.dataset.layer;
+    layers.forEach(b=>b.classList.toggle("active", b===btn));
+    if(_lastHm) plotHeatmap(_lastHm);
   });
   _conWired = true;
 }

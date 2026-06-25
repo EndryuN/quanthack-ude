@@ -90,9 +90,14 @@ def heatmap_matrix(records: list[dict]) -> dict:
     sidx = {s: i for i, s in enumerate(symbols)}
     for c, rec in enumerate(decisions):
         for v in rec.get("views", []):
+            used = {"direction": v["direction"], "confidence": v["confidence"]}
+            claude = _slim(v.get("claude")) or used        # old records: fall back to `used`
+            nemo = _slim(v.get("nemotron"))                 # None when no second opinion
+            combined = _slim(v.get("combined")) or used     # old records: `used` was the combined
             cells[sidx[v["symbol"]]][c] = {
                 "direction": v["direction"], "confidence": v["confidence"],
                 "agreement": v["agreement"], "boosted": v.get("boosted", False),
+                "claude": claude, "nemotron": nemo, "combined": combined,
             }
     return {"symbols": symbols, "timestamps": timestamps, "cells": cells}
 

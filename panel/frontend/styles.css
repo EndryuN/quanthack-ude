@@ -134,6 +134,13 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .dir-legend{display:flex;gap:12px;font-family:"JetBrains Mono";font-size:10px}
 .dl.long{color:var(--long)} .dl.short{color:var(--short)}
 .ot-legend{justify-content:flex-start;margin-bottom:6px}
+.ot-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.ot-head .ot-legend{margin-bottom:0}
+.ot-layers{display:flex;gap:4px}
+.otlayer{background:var(--lift);color:var(--muted);border:1px solid var(--lift);border-radius:6px;
+  padding:3px 12px;font-family:"JetBrains Mono";font-size:11px;cursor:pointer}
+.otlayer:hover{border-color:var(--ink)}
+.otlayer.active{color:var(--canvas);background:var(--chartreuse);border-color:var(--chartreuse);font-weight:600}
 
 /* Consensus Latest/Over-time tabs */
 .con-tabs{display:flex;gap:4px}
