@@ -8,7 +8,7 @@ d = tempfile.mkdtemp()
 c = load_controls(d)
 assert c["paused"] is False and c["aggression"] is None and c["flatten_seq"] == 0
 assert c["block"] == [] and c["allow"] is None
-assert load_ack(d) == {"flatten_seq_done": 0, "apply_seq_done": 0}
+assert load_ack(d) == {"flatten_seq_done": 0, "apply_seq_done": 0, "refresh_seq_done": 0}
 
 # atomic write round-trips and partial files merge over defaults
 atomic_write_json(os.path.join(d, "controls.json"), {"paused": True, "aggression": 0.7})
