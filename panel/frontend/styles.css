@@ -56,11 +56,19 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   border-top:1px solid rgba(255,255,255,0.08);font-family:"JetBrains Mono";font-size:11px;font-weight:500;
   letter-spacing:.04em}
 .scalp-hook{color:var(--chartreuse);font-size:9px;font-weight:600;margin-left:3px;letter-spacing:.04em}
+.pos-row{cursor:pointer;border-radius:4px;padding:1px 4px;margin:0 -4px;transition:background .08s}
+.pos-row:hover{background:rgba(200,255,0,0.10);box-shadow:inset 2px 0 0 var(--chartreuse)}
 .scalp-assigned{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .scalp-chip{display:inline-flex;align-items:center;gap:3px;background:var(--lift);border:1px solid var(--lift);
   border-radius:6px;padding:1px 4px 1px 7px;font-family:"JetBrains Mono";font-size:10px;color:var(--ink)}
 .scalp-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
 .scalp-x:hover{color:var(--short)}
+.scalp-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+.scalp-gate{font-family:"JetBrains Mono";font-size:10px}
+.scalp-gate.g-ok{color:var(--long)}
+.scalp-gate.g-no{color:var(--short)}
+.scalp-gate.g-run{color:var(--chartreuse)}
+.scalp-gate.g-none{color:var(--muted)}
 .tw{display:flex;justify-content:space-between}
 .tw.active{color:var(--short)} .tw.ok{color:var(--muted)}
 

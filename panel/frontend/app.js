@@ -432,16 +432,40 @@ async function loadControls(){
     ex.classList.toggle("on", on); ex.textContent = on ? "Exposure cap: ON" : "Exposure cap: OFF"; }
   const arm = document.getElementById("scalp-arm");
   if(arm){ const on = !!_ctl.scalper_armed;
-    arm.classList.toggle("on", on); arm.textContent = on ? "Armed (live)" : "Arm: dry-run"; }
+    arm.classList.toggle("on", on);
+    arm.textContent = on ? "Armed (live)" : (_scalpAllCleared() ? "Arm: dry-run" : "Arm (force)"); }
   renderScalpAssigned();
+}
+
+// gate verdict per symbol comes from controls.scalper_gate (persisted by the
+// /api/scalper/gate backtest step); _gateRunning tracks in-flight runs.
+let _gateRunning = {};
+function _scalpGate(sym){ return ((_ctl && _ctl.scalper_gate) || {})[sym] || null; }
+function _scalpAllCleared(){
+  const syms = (_ctl && _ctl.scalper_symbols) || [];
+  return syms.length > 0 && syms.every(s => (_scalpGate(s) || {}).cleared);
+}
+
+async function runGate(sym){     // the "backtest as a step" when a symbol is assigned
+  _gateRunning[sym] = true; renderScalpAssigned();
+  try { await getJSON("/api/scalper/gate?symbol=" + encodeURIComponent(sym)); }
+  finally { _gateRunning[sym] = false; await loadControls(); }   // loadControls re-renders
 }
 
 function renderScalpAssigned(){
   const el = document.getElementById("scalp-assigned"); if(!el) return;
   const syms = (_ctl && _ctl.scalper_symbols) || [];
-  el.innerHTML = syms.length
-    ? syms.map(s=>`<span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`).join("")
-    : '<span style="color:var(--muted);font-size:10px">none assigned (engine trades all)</span>';
+  if(!syms.length){ el.innerHTML = '<span style="color:var(--muted);font-size:10px">none assigned (engine trades all)</span>'; return; }
+  el.innerHTML = syms.map(s=>{
+    const g = _scalpGate(s);
+    let verdict, cls;
+    if(_gateRunning[s]){ verdict = "backtesting…"; cls = "g-run"; }
+    else if(!g){ verdict = "no backtest yet"; cls = "g-none"; }
+    else if(g.cleared){ verdict = `clears ✓ (Sh ${(g.test&&g.test.sharpe!=null)?g.test.sharpe:"?"})`; cls = "g-ok"; }
+    else { verdict = "no edge — " + (g.reason || "dormant"); cls = "g-no"; }
+    return `<div class="scalp-row"><span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
+           `<span class="scalp-gate ${cls}">${verdict}</span></div>`;
+  }).join("");
   el.querySelectorAll(".scalp-x").forEach(b=> b.onclick = ()=>{
     const cur = ((_ctl && _ctl.scalper_symbols) || []).filter(x=>x!==b.dataset.sym);
     postControls({scalper_symbols: cur}); });
@@ -491,16 +515,27 @@ function wireControls(){
     getJSON("/api/symbols").then(r=>{ if(r && r.symbols)
       ssel.innerHTML = r.symbols.map(s=>`<option>${s}</option>`).join(""); }); }
   const sasg = document.getElementById("scalp-assign");
-  if(sasg && !sasg.dataset.w){ sasg.dataset.w="1"; sasg.onclick = ()=>{
+  if(sasg && !sasg.dataset.w){ sasg.dataset.w="1"; sasg.onclick = async ()=>{
     const sel = document.getElementById("scalp-sym-sel"); if(!sel || !sel.value) return;
-    const cur = new Set((_ctl && _ctl.scalper_symbols) || []); cur.add(sel.value);
-    postControls({scalper_symbols: [...cur]}).then(()=> setStatus(
-      sel.value+" -> scalper (ceded from engine)")); }; }
+    const sym = sel.value;
+    const cur = new Set((_ctl && _ctl.scalper_symbols) || []);
+    if(cur.size >= 2 && !cur.has(sym)){ setStatus("max 2 scalped symbols"); return; }
+    cur.add(sym);
+    await postControls({scalper_symbols: [...cur]});
+    setStatus(sym+" -> scalper (ceded from engine) — running backtest gate…");
+    runGate(sym);   // backtest-as-a-step: gate the newly assigned symbol
+  }; }
   const sarm = document.getElementById("scalp-arm");
   if(sarm && !sarm.dataset.w){ sarm.dataset.w="1"; sarm.onclick = ()=>{
-    const on = _ctl && _ctl.scalper_armed;
-    postControls({scalper_armed: !on}).then(()=> setStatus(
-      "Scalper "+(!on ? "ARMED (live)" : "disarmed (dry-run)"))); }; }
+    if(_ctl && _ctl.scalper_armed){ postControls({scalper_armed: false, scalper_armed_force: false})
+      .then(()=> setStatus("Scalper disarmed (dry-run)")); return; }
+    if(_scalpAllCleared()){
+      postControls({scalper_armed: true, scalper_armed_force: false})
+        .then(()=> setStatus("Scalper ARMED (live) — gate-cleared"));
+    } else if(confirm("Some symbols have NOT cleared the backtest gate. Force-arm anyway (unvalidated)?")){
+      postControls({scalper_armed: true, scalper_armed_force: true})
+        .then(()=> setStatus("Scalper FORCE-ARMED (unvalidated)"));
+    } }; }
   const rb = document.getElementById("refresh-btn");
   if(rb && !rb.dataset.w){ rb.dataset.w="1"; rb.onclick = async ()=>{
     await fetch("/api/refresh", {method:"POST"});
@@ -553,96 +588,13 @@ function wireRegimeModal(){
 }
 let _histSym = null, _navWired = false;
 function showView(name){
-  ["dashboard","history","scalper"].forEach(v=>{
+  ["dashboard","history"].forEach(v=>{
     const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
   const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
   document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   if(name === "history") initHistory();
-  if(name === "scalper") initScalper();
 }
 
-let _scalpWired = false;
-async function initScalper(){
-  const sel = document.getElementById("scalp-sym");
-  if(sel && !sel.options.length){
-    const d = await getJSON("/api/scalp/symbols");
-    const syms = (d && d.symbols) || [];
-    const needs = new Set((d && d.needs_mt5) || []);
-    sel.innerHTML = syms.map(s=>`<option value="${s}"${s==="EURUSD"?" selected":""}>${s}${needs.has(s)?" (MT5)":""}</option>`).join("");
-  }
-  if(!_scalpWired){
-    const go = document.getElementById("scalp-go");
-    if(go) go.onclick = runScalp;
-    const clr = document.getElementById("scalp-clear");
-    if(clr) clr.onclick = ()=>{ _scalpRuns={}; _scalpLast=null; renderScalp(); };
-    _scalpWired = true;
-  }
-  renderScalp();
-}
-// accumulate one result per symbol so candidates can be compared side-by-side
-// (you arm at most max_concurrent=2, so the table is how you pick your 2 slots).
-let _scalpRuns = {}, _scalpLast = null;
-const _armable = b => b && b.net_pnl_bps>0 && b.sharpe>0.1;   // net>0 AND Sharpe clears the AI engine's (~0.1)
-
-async function runScalp(){
-  const sel = document.getElementById("scalp-sym");
-  const st = document.getElementById("scalp-status");
-  const go = document.getElementById("scalp-go");
-  const sym = sel ? sel.value : "EURUSD";
-  if(st) st.textContent = `running ${sym}… (crypto pulls M1 from MT5, ~a few seconds)`;
-  if(go) go.disabled = true;
-  let r;
-  try { r = await getJSON("/api/scalp/backtest?symbol=" + encodeURIComponent(sym)); }
-  finally { if(go) go.disabled = false; }
-  if(!r || !r.available){
-    if(st) st.textContent = `no M1 data for ${sym} — for crypto, open the MT5 terminal and make sure the symbol is available.`;
-    return;
-  }
-  if(st) st.textContent = `${sym}: ${r.bars.toLocaleString()} M1 bars · cost ${r.cost_bps.toFixed(2)} bps/round-trip`;
-  _scalpRuns[sym] = r;   // overwrite same symbol, keep the others
-  _scalpLast = sym;
-  renderScalp();
-}
-
-function renderScalp(){
-  const out = document.getElementById("scalp-results");
-  if(!out) return;
-  const syms = Object.keys(_scalpRuns);
-  if(!syms.length){ out.innerHTML = '<p class="scalp-note">Pick a symbol and Run backtest. Results accumulate here so you can compare candidates and pick your 2 live slots.</p>'; return; }
-  // --- comparison table: best row per tested symbol, sorted by Sharpe ---
-  const ranked = syms.map(s=>_scalpRuns[s]).sort((a,b)=>((b.best?.sharpe??-9)-(a.best?.sharpe??-9)));
-  const chead = `<tr><th>symbol</th><th>bars</th><th>cost</th><th>entry/tp/stop</th><th>trades</th>`+
-                `<th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th><th>verdict</th></tr>`;
-  const crows = ranked.map(r=>{
-    const b=r.best;
-    const sel = r.symbol===_scalpLast ? " scalp-best" : "";
-    if(!b) return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td><td colspan="6" style="text-align:center;color:var(--muted)">&lt;30 trades</td><td class="scalp-no">no edge</td></tr>`;
-    const net = `<span style="color:var(--${b.net_pnl_bps>0?'long':'short'})">${b.net_pnl_bps.toFixed(1)}</span>`;
-    const ok=_armable(b);
-    return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td>`+
-      `<td>${b.entry}/${b.tp}/${b.stop}</td><td>${b.trades}</td><td>${(b.win_rate*100).toFixed(1)}</td>`+
-      `<td>${net}</td><td>${b.sharpe.toFixed(3)}</td><td>${b.max_dd_bps.toFixed(1)}</td>`+
-      `<td class="${ok?'scalp-ok':'scalp-no'}">${ok?'clears ✓':'dormant'}</td></tr>`;
-  }).join("");
-  let html = `<h3 class="scalp-cmp-h">Candidates (best params per symbol — pick 2 to arm)</h3>`+
-    `<table class="scalp-table scalp-cmp">${chead}${crows}</table>`;
-  // --- full grid for the most-recently run symbol ---
-  const last = _scalpRuns[_scalpLast];
-  if(last){
-    const b=last.best;
-    const ghead = `<tr><th>entry</th><th>tp</th><th>stop</th><th>trades</th><th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th></tr>`;
-    const grows = last.rows.map(x=>{
-      const isBest = b && x.entry===b.entry && x.tp===b.tp && x.stop===b.stop;
-      const net = `<span style="color:var(--${x.net_pnl_bps>0?'long':'short'})">${x.net_pnl_bps.toFixed(1)}</span>`;
-      return `<tr class="${isBest?'scalp-best':''}"><td>${x.entry}</td><td>${x.tp}</td><td>${x.stop}</td>`+
-        `<td>${x.trades}</td><td>${(x.win_rate*100).toFixed(1)}</td><td>${net}</td>`+
-        `<td>${x.sharpe.toFixed(3)}</td><td>${x.max_dd_bps.toFixed(1)}</td></tr>`;
-    }).join("");
-    html += `<h3 class="scalp-cmp-h">${_scalpLast} — full sweep</h3><table class="scalp-table">${ghead}${grows}</table>`;
-  }
-  html += `<p class="scalp-note">GATE: arm live only if net &gt; 0 after cost AND Sharpe clears the AI engine's (~0.1).</p>`;
-  out.innerHTML = html;
-}
 function wireNav(){
   if(_navWired) return;
   const h = document.getElementById("hamburger");
