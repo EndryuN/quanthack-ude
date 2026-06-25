@@ -14,6 +14,7 @@ DEFAULT_CONTROLS = {
     "allow": None,          # if a list, every symbol NOT listed is clamped toward flat
     "active_preset": "Default",
     "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
+    "exposure_cap": None,   # None -> use CONFIG.use_exposure_cap; True/False -> override
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
 }
@@ -89,11 +90,16 @@ def effective_aggression(controls: dict, default: float) -> float:
     return default if a is None else float(a)
 
 
+def control_flag(controls, key: str, default: bool) -> bool:
+    """Effective boolean for a runtime toggle. A control override (True/False)
+    wins over the config `default`; `controls` may be None (panel gated off) ->
+    use the default."""
+    if controls is not None and controls.get(key) is not None:
+        return bool(controls[key])
+    return default
+
+
 def second_opinion_on(controls, config_default: bool, key_present: bool) -> bool:
-    """Effective Nemotron second-opinion setting. A control override (True/False)
-    wins over the config default; either way it can never be on without an API
-    key. `controls` may be None (panel gated off) -> use the config default."""
-    pref = config_default
-    if controls is not None and controls.get("second_opinion") is not None:
-        pref = bool(controls["second_opinion"])
-    return pref and key_present
+    """Effective Nemotron second-opinion setting: the runtime toggle, but never on
+    without an API key."""
+    return control_flag(controls, "second_opinion", config_default) and key_present

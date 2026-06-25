@@ -120,6 +120,14 @@ class EngineConfig:
     use_broker_sl: bool = True                # attach broker-side SL failsafe
     use_trailing_stop: bool = True            # ratchet SL into profit on winners
 
+    # --- currency-factor exposure cap (block-only; OFF by default, runtime toggle) ---
+    # Caps NET per-currency exposure (a long USDCHF + long USDCAD both stack USD).
+    # Block-only: holds an exposure-WORSENING add at current size when consensus is
+    # weak; never reduces a position; strong consensus always passes. See exposure.py.
+    use_exposure_cap: bool = False            # master default; toggle live via the panel
+    exposure_cap_frac: float = 1.0            # max |net currency notional| / equity
+    exposure_strong_conf: float = 0.70        # consensus >= this is always allowed through
+
     # --- operator control panel (Phase 2; OFF by default = identical to today) ---
     # Default reads the QUANTHACK_PANEL env var (set by the launcher's "with panel"
     # choice); unset/"0" -> False -> byte-for-byte identical to no panel.

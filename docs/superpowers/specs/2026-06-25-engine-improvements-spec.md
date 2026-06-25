@@ -84,6 +84,14 @@ A runtime ON/OFF control for the Nemotron second opinion is implemented (indepen
 
 Applies at the next AI refresh (≤15 min). The principled fix (E1.1 symmetric consensus) supersedes this as the long-term answer.
 
+**Currency-factor exposure cap (E1.2) — shipped (block-only, with toggle).** Net per-currency exposure is computed by decomposing each position into base/quote legs (`bot/exposure.py`); a **block-only soft cap** holds any exposure-worsening, weak-consensus add at its current size — never reducing a position, always letting strong consensus through ("only if it's a good thing").
+- `exposure.py`: `currency_exposure()` + `blocked_adds()` (pure, tested in `test_exposure.py`).
+- `engine.py`: `_clamp_currency_exposure()` runs in the target pipeline before reconcile.
+- `config.py`: `use_exposure_cap` (default off), `exposure_cap_frac` (1.0×equity), `exposure_strong_conf` (0.70).
+- Runtime toggle: `controls.py` `exposure_cap` key + shared `control_flag()` helper; `/api/controls` accepts it; "Exposure cap: ON/OFF" button in the Controls card.
+
+The full active versions (E1.2 correlation-weighted sizing, E1.3 vol-targeting) remain as larger follow-ups.
+
 ---
 
 ## 5. AI refresh frequency & Doubleword inference (direction)
