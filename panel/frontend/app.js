@@ -156,15 +156,20 @@ function renderPositions(pos){
   const list = pos.positions || [];
   if(!list.length){ el.innerHTML = '<div style="color:var(--muted)">(flat)</div>'; return; }
   const fmtPL = v => (v>=0?"+$":"-$")+Math.abs(Math.round(v)).toLocaleString();
-  const rows = list.map(p=>{
+  const row = p=>{
     const long = p.lots > 0, col = long ? C.long : C.short;
     const prof = (p.profit == null) ? null : p.profit;
     const pl = prof==null ? "" : fmtPL(prof);
     const plcol = (prof||0) >= 0 ? C.long : C.short;
+    // scalped symbols get a hook marker on the name
+    const hook = p.scalped ? `<span class="scalp-hook" title="scalper">·s</span>` : "";
     return `<div style="display:flex;justify-content:space-between;gap:6px">`+
-      `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}</span>`+
+      `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}${hook}</span>`+
       `<span style="color:${plcol}">${pl}</span></div>`;
-  }).join("");
+  };
+  // engine positions first, scalped pinned at the bottom (spec §9.6)
+  const eng = list.filter(p=>!p.scalped), scalp = list.filter(p=>p.scalped);
+  const rows = eng.map(row).join("") + scalp.map(row).join("");
   const total = list.reduce((s,p)=> s + (p.profit || 0), 0);
   const tcol = total >= 0 ? C.long : C.short;
   const totalRow = `<div class="pos-total">`+

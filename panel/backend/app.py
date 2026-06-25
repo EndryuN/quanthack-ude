@@ -116,8 +116,12 @@ def positions():
     if c is None:
         return {"available": False, "positions": []}
     try:
+        from bot.config import SCALPER
+        # account-wide so scalper positions (own magic) show too, each tagged
         out = [{"symbol": p.symbol, "lots": p.signed_lots,
-                "profit": getattr(p, "profit", 0.0)} for p in c.positions()]
+                "profit": getattr(p, "profit", 0.0),
+                "scalped": getattr(p, "magic", 0) == SCALPER.magic}
+               for p in c.positions(magic=None)]
         return {"available": True, "positions": out}
     finally:
         try:
