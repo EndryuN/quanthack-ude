@@ -51,12 +51,17 @@ def state():
     # logged values if MT5 is unavailable. (margin_level / margin_usage / gross
     # leverage track the market each poll; drawdown stays the engine's round
     # figure from the log since it needs the equity-peak history.)
+    realized = None
     c = None if os.environ.get("PANEL_NO_LIVE") == "1" else _mt5()
     if c is not None:
         try:
             a = c.account()
             eq = a.equity or acct.get("equity") or 1.0
             acct["equity"] = a.equity
+            try:
+                realized = c.realized_profit()
+            except Exception:
+                realized = None
             gross = sum(abs(c.notional(p.symbol, p.volume)) for p in c.positions())
             acct["gross_leverage"] = gross / eq if eq else acct.get("gross_leverage", 0.0)
             if a.margin and a.margin > 0:        # real numbers only when positions are open
@@ -86,6 +91,7 @@ def state():
         "cost": last.get("cost", {}),
         "orders": last.get("orders", []),
         "recent_orders": data.recent_orders(recs),
+        "realized": realized,
     }
 
 

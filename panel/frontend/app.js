@@ -155,15 +155,31 @@ function renderPositions(pos){
   if(!pos || !pos.available){ el.innerHTML = '<div style="color:var(--muted)">(MT5 unavailable)</div>'; return; }
   const list = pos.positions || [];
   if(!list.length){ el.innerHTML = '<div style="color:var(--muted)">(flat)</div>'; return; }
-  el.innerHTML = list.map(p=>{
+  const fmtPL = v => (v>=0?"+$":"-$")+Math.abs(Math.round(v)).toLocaleString();
+  const rows = list.map(p=>{
     const long = p.lots > 0, col = long ? C.long : C.short;
     const prof = (p.profit == null) ? null : p.profit;
-    const pl = prof==null ? "" : (prof>=0?"+$":"-$")+Math.abs(Math.round(prof)).toLocaleString();
+    const pl = prof==null ? "" : fmtPL(prof);
     const plcol = (prof||0) >= 0 ? C.long : C.short;
     return `<div style="display:flex;justify-content:space-between;gap:6px">`+
       `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}</span>`+
       `<span style="color:${plcol}">${pl}</span></div>`;
   }).join("");
+  const total = list.reduce((s,p)=> s + (p.profit || 0), 0);
+  const tcol = total >= 0 ? C.long : C.short;
+  const totalRow = `<div class="pos-total">`+
+    `<span style="color:${C.muted}">TOTAL P/L</span>`+
+    `<span style="color:${tcol}">${fmtPL(total)}</span></div>`;
+  el.innerHTML = rows + totalRow;
+}
+
+function renderHistPL(realized){
+  const el = document.getElementById("hist-pl");
+  if(!el) return;
+  if(realized == null){ el.textContent = ""; return; }
+  const v = Math.round(realized);
+  el.textContent = (v>=0?"+$":"-$")+Math.abs(v).toLocaleString();
+  el.style.color = v >= 0 ? C.long : C.short;
 }
 
 window.renderCharts = async function(s){
@@ -172,6 +188,7 @@ window.renderCharts = async function(s){
   plotGauges(s.gauges || []);
   renderTripwires(s.tripwires || []);
   renderOrders(s.recent_orders || s.orders || []);
+  renderHistPL(s.realized);
   renderPositions(await getJSON("/api/positions"));
   if (window.renderConsensus) await window.renderConsensus(s);  // Task 9
 };
@@ -572,19 +589,27 @@ async function renderHistory(sym){
   const d = await getJSON("/api/decisions");
   const recs = ((d && d.records) || []).filter(r=>r.event!=="refresh_failed");
   const sgn = dir => dir==="long"?1:dir==="short"?-1:0;
-  const xs=[], ys=[], oX=[], oY=[], oT=[];
+  const xs=[], ys=[], eX=[], eY=[], eT=[], cX=[], cY=[], cT=[];
   for(const rec of recs){
     const v = (rec.views||[]).find(x=>x.symbol===sym);
     if(v){ xs.push(rec.ts); ys.push(sgn(v.direction)*(v.confidence||0)); }
-    for(const o of (rec.orders||[])) if(o.symbol===sym){ oX.push(rec.ts); oY.push(0); oT.push((o.side||"").toUpperCase()+" "+(o.lots||"")); }
+    for(const o of (rec.orders||[])) if(o.symbol===sym){
+      const lbl = (o.side||"").toUpperCase()+" "+(o.lots||"");
+      if(o.side==="close"){ cX.push(rec.ts); cY.push(0); cT.push(lbl); }
+      else { eX.push(rec.ts); eY.push(0); eT.push(lbl); }
+    }
   }
   const traces=[
     {x:xs, y:ys, type:"scatter", mode:"lines+markers", line:{color:C.chartreuse,width:2}, marker:{size:5},
      name:"stance", hovertemplate:"%{x|%b %d %H:%M}<br>%{y:.2f}<extra></extra>"},
-    {x:oX, y:oY, type:"scatter", mode:"markers", marker:{color:C.human,size:11,symbol:"diamond"},
-     text:oT, name:"orders", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+    {x:eX, y:eY, type:"scatter", mode:"markers", marker:{color:C.human,size:11,symbol:"diamond"},
+     text:eT, name:"entries", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+    {x:cX, y:cY, type:"scatter", mode:"markers",
+     marker:{color:C.short,size:11,symbol:"x",line:{color:C.ink,width:1}},
+     text:cT, name:"closes", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
   ];
-  Plotly.react("hist-chart", traces, {...PLOT_BG, height:440, hovermode:"x unified", showlegend:false,
+  Plotly.react("hist-chart", traces, {...PLOT_BG, height:440, hovermode:"x unified", showlegend:true,
+    legend:{orientation:"h", x:0, y:1.08, font:{size:10,color:C.muted}, bgcolor:"rgba(0,0,0,0)"},
     yaxis:{range:[-1.05,1.05], color:C.muted, gridcolor:"rgba(255,255,255,0.06)", zeroline:true, zerolinecolor:C.muted,
       title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
     xaxis:{type:"date", color:C.muted, gridcolor:"rgba(255,255,255,0.04)", tickangle:-30, automargin:true}},

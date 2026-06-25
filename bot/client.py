@@ -151,6 +151,23 @@ class MT5Client:
                 return p
         return None
 
+    def realized_profit(self, magic=_OWN, days: float | None = None) -> float:
+        """Net realized P&L (profit + swap) of CLOSED deals for this client's
+        magic. `days` limits the lookback window; None == all history.
+        Open-position floating P&L is NOT included — see positions()."""
+        import datetime as _dt
+        m = self.magic if magic is _OWN else magic
+        frm = (_dt.datetime.now() - _dt.timedelta(days=days)) if days \
+            else _dt.datetime(2000, 1, 1)
+        to = _dt.datetime.now() + _dt.timedelta(days=1)
+        deals = mt5.history_deals_get(frm, to) or ()
+        total = 0.0
+        for d in deals:
+            if m is not None and getattr(d, "magic", None) != m:
+                continue
+            total += getattr(d, "profit", 0.0) + getattr(d, "swap", 0.0)
+        return total
+
     # ---- notional / exposure helpers ----------------------------------
     def notional(self, symbol: str, lots: float) -> float:
         """USD notional of `lots` lots. Assumes USD-quoted or *USD pair; for
