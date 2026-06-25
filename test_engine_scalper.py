@@ -1,7 +1,8 @@
 """Engine hosts the scalper slot (spec G1/§9.4): dynamic assignment cedes the
 symbol from the engine's live universe, hands off the engine's position, steps the
 scalper, and keeps it dry-run until armed. Fakes, no MT5."""
-import json, os, tempfile, time
+import io, json, os, tempfile, time
+from contextlib import redirect_stdout
 from types import SimpleNamespace
 from bot.engine import Engine
 from bot.risk import RiskSnapshot
@@ -85,4 +86,15 @@ assert e._scalper.live_symbols == {"EURUSD"}, "force-arm goes live without clear
 d = tempfile.mkdtemp(); e = _engine(d); e.tick()
 assert e._scalper.steps == [] and "EURUSD" in e._active_symbols and "EURUSD" not in e.client.closed
 
+# ISOLATION: a scalper that throws must NOT crash the engine tick (else presets,
+# refresh, reconcile — everything — would stop)
+class BoomScalper:
+    def __init__(self):
+        self.cfg = SimpleNamespace(symbols=[]); self.dry_run = True
+        self.live_symbols = None; self.params_by_symbol = {}
+    def connect(self): pass
+    def step(self, allow_new_risk=True): raise RuntimeError("boom")
+d = tempfile.mkdtemp(); e = _engine(d, scalper_symbols=["EURUSD"]); e._scalper = BoomScalper()
+with redirect_stdout(io.StringIO()):
+    e.tick()   # must NOT raise
 print("OK")

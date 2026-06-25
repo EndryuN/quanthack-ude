@@ -465,7 +465,10 @@ class Engine:
                         params[s] = g["params"]
         self._scalper.live_symbols = live
         self._scalper.params_by_symbol = params
-        self._scalper.step(allow_new_risk=snap.allow_new_risk and not paused)
+        try:
+            self._scalper.step(allow_new_risk=snap.allow_new_risk and not paused)
+        except Exception as e:   # the scalper must NEVER take down the engine tick
+            print(f"[{_ts()}] [scalper] step failed (isolated): {e}")
 
     def _operator_flatten(self):
         """Operator-initiated flatten-all (panel 'Flatten now'). Additive to the

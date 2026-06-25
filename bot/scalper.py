@@ -137,12 +137,18 @@ class Scalper:
         self.client.close_symbol(sym, comment="scalp-nostop")
 
     def _ensure_stops(self):
-        """Backstop sweep: any of THIS scalper's positions missing a broker stop
-        gets one (or is closed). The engine's _ensure_stops is magic-filtered and
-        cannot see scalper-magic positions, so the scalper guards its own (C1)."""
+        """Backstop sweep: any of THIS scalper's LIVE positions missing a broker
+        stop gets one (or is closed). The engine's _ensure_stops is magic-filtered
+        and cannot see scalper-magic positions, so the scalper guards its own (C1).
+        Per-position try/except so one bad symbol never stalls the engine tick."""
         for p in self.client.positions():               # own magic
-            if p.symbol in self.cfg.symbols and not getattr(p, "sl", 0.0):
+            if (p.symbol not in self.cfg.symbols or self._is_dry(p.symbol)
+                    or getattr(p, "sl", 0.0)):
+                continue
+            try:
                 self._protect(p.symbol, p.type == 0)
+            except Exception as e:
+                print(f"[{_ts()}] [scalper] ensure-stop {p.symbol} failed: {e}")
 
     def _flatten_own(self, comment):
         for p in self.client.positions():
