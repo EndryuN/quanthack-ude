@@ -106,6 +106,25 @@ def engine_symbols(scalper_enabled: bool, scalper_symbols) -> list:
     return [s for s in ALL_SYMBOLS if s != "BARUSD" and s not in ceded]
 
 
+def live_engine_symbols(assigned) -> list:
+    """The engine's tradable universe at RUNTIME: all symbols minus BARUSD and
+    minus the dynamically-assigned scalper symbols (computed each tick so a panel
+    assignment cedes the symbol live, spec §9.4)."""
+    ceded = set(assigned or [])
+    return [s for s in ALL_SYMBOLS if s != "BARUSD" and s not in ceded]
+
+
+def assert_symbol_partition(engine_syms, scalper_syms) -> None:
+    """Fail-fast invariant (spec §3.2): scalper symbols must be real instruments
+    and disjoint from the engine's universe."""
+    bad = [s for s in scalper_syms if s not in ALL_SYMBOLS]
+    if bad:
+        raise ValueError(f"scalper symbols not in ALL_SYMBOLS: {bad}")
+    overlap = set(engine_syms) & set(scalper_syms)
+    if overlap:
+        raise ValueError(f"engine/scalper symbol overlap (must be disjoint): {sorted(overlap)}")
+
+
 @dataclass
 class EngineConfig:
     dry_run: bool = True                      # True = compute & log, send NO orders

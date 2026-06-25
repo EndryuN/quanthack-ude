@@ -15,6 +15,8 @@ DEFAULT_CONTROLS = {
     "active_preset": "Default",
     "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
     "exposure_cap": None,   # None -> use CONFIG.use_exposure_cap; True/False -> override
+    "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
+    "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
 }
@@ -88,6 +90,17 @@ def blocked_set(controls: dict, all_symbols) -> set:
 def effective_aggression(controls: dict, default: float) -> float:
     a = controls.get("aggression")
     return default if a is None else float(a)
+
+
+def scalper_assignments(controls, all_symbols) -> list:
+    """Symbols currently assigned to the scalper (from the panel), filtered to
+    valid instruments and de-duplicated in stable order."""
+    raw = (controls or {}).get("scalper_symbols") or []
+    seen, out = set(), []
+    for s in raw:
+        if s in all_symbols and s not in seen:
+            seen.add(s); out.append(s)
+    return out
 
 
 def control_flag(controls, key: str, default: bool) -> bool:
