@@ -117,6 +117,11 @@ class Engine:
         self._handed_off = set()    # symbols whose engine position was flattened for the scalper
 
     def start(self):
+        # H1: clean-open made use_broker_sl load-bearing — without it, live
+        # positions would carry NO stop (liquidation = elimination). Refuse fast.
+        if not self.dry_run and not self.cfg.use_broker_sl:
+            raise RuntimeError("use_broker_sl is OFF while live — positions would "
+                               "run with no stop-loss. Refusing to start.")
         self.client.connect()
         from .config import SCALPER as _SCALPER, assert_symbol_partition
         if _SCALPER.enabled:        # config-seeded assignments must be disjoint (G2)
@@ -522,10 +527,13 @@ class Engine:
                 if self.dry_run:
                     print(f"   [DRY] ENSURE-SL {p.symbol} -> {sl}")
                     continue
-                if self.cfg.use_control_panel:
-                    ok, res = self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
-                else:
-                    ok, res = self.client.set_sl(p.symbol, sl)
+                def _attach():
+                    if self.cfg.use_control_panel:
+                        return self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
+                    return self.client.set_sl(p.symbol, sl)
+                ok, res = _attach()
+                if not ok and _is_transient(res):
+                    ok, res = _attach()          # H2: one in-tick retry on a transient reject
                 print(f"[{_ts()}]    ENSURE-SL {p.symbol} -> {sl}{_rc(ok, res)}")
             except Exception as e:   # never let an SL-ensure error stall the loop
                 print(f"[{_ts()}]    !! ensure-stop {getattr(p, 'symbol', '?')} failed: {e}")
