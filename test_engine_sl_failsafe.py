@@ -1,60 +1,40 @@
-"""An established position must never be left without its broker stop (spec E0.9).
-If the SL can't be priced pre-trade (no quote), the engine retries via set_sl
-post-fill and warns loudly if it still can't attach. Fakes, no MT5."""
+"""_do_order opens WITHOUT an inline stop-loss — this broker rejects market DEALs
+that carry one (ret 10006, observed live on metals). The stop is attached
+separately by _ensure_stops (see test_engine_ensure_sl). Fakes, no MT5."""
 import io
 from contextlib import redirect_stdout
 from bot.engine import Engine
 
+DONE, REQUOTE = 10009, 10004
+
+
+class Res:
+    def __init__(self, rc): self.retcode = rc
+
 
 class FakeClient:
-    def __init__(self, sl_prices, order_ok=True, setsl_ok=True):
-        self._sl = list(sl_prices)
-        self.order_ok = order_ok; self.setsl_ok = setsl_ok
-        self.orders = []; self.set_sl_calls = []
-    def sl_price(self, symbol, is_buy, pct):
-        return self._sl.pop(0) if self._sl else 0.0
-    def market_order(self, symbol, lots, is_buy, comment="", sl=0.0):
-        self.orders.append((symbol, lots, is_buy, sl)); return self.order_ok, None
-    def set_sl(self, symbol, sl_price):
-        self.set_sl_calls.append((symbol, sl_price)); return self.setsl_ok, None
+    def __init__(self, rcs=(DONE,)):
+        self._rcs = list(rcs); self.orders = []
+    def market_order(self, symbol, lots, is_buy, comment="", sl=0.0, tp=0.0):
+        self.orders.append({"symbol": symbol, "is_buy": is_buy, "sl": sl, "tp": tp})
+        rc = self._rcs.pop(0) if self._rcs else DONE
+        return rc == DONE, Res(rc)
 
 
-def _open(sl_prices, **kw):
-    e = Engine(dry_run=False); e.client = FakeClient(sl_prices, **kw)
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        sl = e._do_order("EURUSD", 1.0, is_buy=True, cur=0.0, target=1.0)
-    return e, sl, buf.getvalue()
+def _do(rcs=(DONE,)):
+    e = Engine(dry_run=False); e.cfg.use_broker_sl = True; e.client = FakeClient(rcs)
+    with redirect_stdout(io.StringIO()):
+        e._do_order("XAUUSD", 0.37, is_buy=False, cur=0.0, target=-1.0)
+    return e
 
 
-# A) normal: SL priced pre-trade, attached inline, no retry needed
-e, sl, _ = _open([1.5000])
-assert e.client.orders[0][3] == 1.5000 and sl == 1.5000
-assert e.client.set_sl_calls == []
+# the DEAL never carries an inline SL/TP (broker would reject it)
+e = _do()
+assert e.client.orders[0]["sl"] == 0.0 and e.client.orders[0]["tp"] == 0.0, e.client.orders[0]
 
-# B) no quote pre-trade, recovers post-fill: order goes SL-less, then set_sl attaches
-e, sl, out = _open([0.0, 1.4321])
-assert e.client.orders[0][3] == 0.0, "opened without inline SL"
-assert e.client.set_sl_calls == [("EURUSD", 1.4321)] and sl == 1.4321
-
-# C) still no quote: cannot attach -> loud warning, returns no SL
-e, sl, out = _open([0.0, 0.0])
-assert e.client.set_sl_calls == [] and sl == 0.0
-assert "WITHOUT STOP-LOSS" in out, out
-
-# D) E1.6: a same-direction ADD must NOT attach an SL (would overwrite/loosen the
-#    trailed stop on the netting position). The trail owns the stop after entry.
-e = Engine(dry_run=False); e.client = FakeClient([1.5000])
-buf = io.StringIO()
-with redirect_stdout(buf):
-    sl = e._do_order("EURUSD", 1.0, is_buy=True, cur=1.0, target=2.0)   # adding to a long
-assert e.client.orders[0][3] == 0.0 and sl == 0.0, "add must not carry an SL"
-assert e.client.set_sl_calls == []
-
-# E) a FLIP into the opposite direction DOES attach a fresh SL (new position)
-e = Engine(dry_run=False); e.client = FakeClient([0.9000])
-with redirect_stdout(io.StringIO()):
-    sl = e._do_order("EURUSD", 3.0, is_buy=False, cur=2.0, target=-1.0)  # long -> short
-assert e.client.orders[0][3] == 0.9000 and sl == 0.9000, "flip should attach an SL"
+# transient failure still re-quotes and retries (E0.6), still without inline SL
+e = _do([REQUOTE, DONE])
+assert len(e.client.orders) == 2
+assert all(o["sl"] == 0.0 for o in e.client.orders)
 
 print("OK")

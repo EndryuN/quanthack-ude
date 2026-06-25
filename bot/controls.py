@@ -92,14 +92,20 @@ def effective_aggression(controls: dict, default: float) -> float:
     return default if a is None else float(a)
 
 
-def scalper_assignments(controls, all_symbols) -> list:
+SCALPER_MAX_SYMBOLS = 2   # at most 2 symbols may be scalped alongside the engine
+
+
+def scalper_assignments(controls, all_symbols, max_n=SCALPER_MAX_SYMBOLS) -> list:
     """Symbols currently assigned to the scalper (from the panel), filtered to
-    valid instruments and de-duplicated in stable order."""
+    valid instruments, de-duplicated in stable order, and capped at `max_n` so
+    the scalper can only ever run alongside the engine on up to 2 instruments."""
     raw = (controls or {}).get("scalper_symbols") or []
     seen, out = set(), []
     for s in raw:
         if s in all_symbols and s not in seen:
             seen.add(s); out.append(s)
+        if len(out) >= max_n:
+            break
     return out
 
 

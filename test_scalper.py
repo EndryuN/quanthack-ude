@@ -1,6 +1,5 @@
-"""Step-driven Scalper (integration rework). FakeClient, no MT5. Covers new-bar
-gating, per-bar time-stop, broker-deal loss halt, foreign-symbol guard, new-risk
-gating, broker TP+SL on entry, and fail-closed gating."""
+"""Per-tick scalper slot (Phase 2). Slot mechanics tested with an injected stub
+decision (strategy-independent), plus a crypto-default sanity check. No MT5."""
 import io
 import numpy as np
 from contextlib import redirect_stdout
@@ -12,98 +11,79 @@ OWN = 990624
 
 
 class P:
-    def __init__(self, symbol, vol, typ, price_open=100.0, profit=0.0, magic=OWN):
+    def __init__(self, symbol, vol, typ, profit=0.0, magic=OWN):
         self.symbol = symbol; self.volume = vol; self.type = typ
-        self.price_open = price_open; self.profit = profit; self.magic = magic
-        self.ticket = id(self)
+        self.profit = profit; self.magic = magic; self.ticket = id(self)
 
 
 class FakeClient:
-    def __init__(self, notime=False):
+    def __init__(self):
         self._pos = []; self.orders = []; self.closed = []; self.sltp = []
-        self._closes = {}; self._time = {}; self._realized = 0.0; self._notime = notime
+        self._closes = {}; self._realized = 0.0
     def positions(self, magic=OWN):
-        if magic is None:
-            return list(self._pos)
-        return [p for p in self._pos if getattr(p, "magic", OWN) == magic]
+        return list(self._pos) if magic is None else [p for p in self._pos if getattr(p, "magic", OWN) == magic]
     def position_for(self, s):
         return next((p for p in self._pos if p.symbol == s and getattr(p, "magic", OWN) == OWN), None)
     def bars(self, s, tf, n):
-        c = self._closes.get(s, [100.0] * n)
-        if self._notime:
-            rec = np.empty(len(c), dtype=[("close", "f8")]); rec["close"] = c
-            return rec
-        t0 = self._time.get(s, 0)
-        rec = np.empty(len(c), dtype=[("close", "f8"), ("time", "i8")])
-        rec["close"] = c; rec["time"] = list(range(t0, t0 + len(c)))
-        return rec
+        c = self._closes.get(s, [100.0] * max(n, 2))
+        rec = np.empty(len(c), dtype=[("close", "f8")]); rec["close"] = c; return rec
     def market_order(self, s, lots, is_buy, comment="", sl=0.0, tp=0.0):
-        self.orders.append({"symbol": s, "lots": lots, "is_buy": is_buy, "sl": sl, "tp": tp})
+        self.orders.append({"symbol": s, "is_buy": is_buy, "sl": sl, "tp": tp, "lots": lots})
         return True, None
     def close_symbol(self, s, comment=""):
-        self.closed.append(s); self._pos = [p for p in self._pos if p.symbol != s]
-        return True, None
+        self.closed.append(s); self._pos = [p for p in self._pos if p.symbol != s]; return True, None
     def set_sltp(self, s, sl, tp): self.sltp.append((s, sl, tp)); return True, None
     def realized_profit(self, magic=OWN, days=None): return self._realized
 
 
-CFG = ScalperConfig(enabled=True, symbols=["EURUSD"], lots={"EURUSD": 0.5},
-                    ema_period=3, entry_bps=10.0, tp_bps=4.0, stop_bps=8.0,
-                    time_stop_bars=3, max_concurrent=1, daily_loss_limit=500.0)
-FADE_SHORT = [100.0, 100.0, 100.0, 100.5, 100.5]   # completed[-1]=100.5 >> EMA -> fade short
-HOLD_SHORT = [100.0, 100.0, 100.0, 100.05, 100.05]  # short held: not reverted, within tp/stop
+CFG = ScalperConfig(enabled=True, symbols=["BTCUSD"], lots={"BTCUSD": 1.0},
+                    tp_bps=20.0, stop_bps=20.0, daily_loss_limit=500.0, max_concurrent=1)
+LONG = lambda sym, closes, cur, btc: (1, "stub long")
+SHORT = lambda sym, closes, cur, btc: (-1, "stub short")
 
 
-def fade_client():
-    fc = FakeClient(); fc._closes["EURUSD"] = FADE_SHORT; return fc
+def fc_flat():
+    fc = FakeClient(); fc._closes["BTCUSD"] = [60000.0] * 30; return fc
 
 
-# 1) dry-run fade entry sends nothing
-s = Scalper(CFG, client=fade_client(), dry_run=True); s.step()
-assert s.client.orders == [], "dry-run must not send"
+# 1) dry-run: a long signal sends nothing
+s = Scalper(CFG, client=fc_flat(), dry_run=True, decide=LONG); s.step()
+assert s.client.orders == []
 
-# 2) live fade entry -> market_order SHORT with BOTH broker SL and TP (fast exits)
-s = Scalper(CFG, client=fade_client(), dry_run=False); s.step()
-assert len(s.client.orders) == 1
-o = s.client.orders[0]
-assert o["is_buy"] is False and o["sl"] > 0 and o["tp"] > 0, o   # short, server-side SL+TP
+# 2) live open: order carries NO inline SL/TP (broker rejects, 10006); the
+#    server-side SL (below) + TP (above) are attached via the SLTP action post-fill
+fc = fc_flat(); s = Scalper(CFG, client=fc, dry_run=False, decide=LONG); s.step()
+assert len(fc.orders) == 1 and fc.orders[0]["is_buy"] is True
+assert fc.orders[0]["sl"] == 0 and fc.orders[0]["tp"] == 0, fc.orders[0]
+assert len(fc.sltp) == 1
+sym, sl, tp = fc.sltp[0]
+assert sym == "BTCUSD" and tp > 60000 and sl < 60000, fc.sltp[0]
 
-# 3) new-bar gating + per-bar time-stop on a held short position
-fc = FakeClient(); fc._closes["EURUSD"] = HOLD_SHORT
-fc._pos = [P("EURUSD", 0.5, 1, price_open=100.0)]           # short, magic OWN
-s = Scalper(CFG, client=fc, dry_run=False)
-fc._time["EURUSD"] = 0;  s.step()                            # first sight, bars_held=0
-fc._time["EURUSD"] = 0;  s.step()                            # SAME forming bar -> gated, no-op
-assert fc.closed == [], "same-bar re-poll must not act"
-fc._time["EURUSD"] = 10; s.step()                            # new bar -> bars_held=1
-fc._time["EURUSD"] = 20; s.step()                            # bars_held=2
-assert fc.closed == [], "should still hold before time-stop"
-fc._time["EURUSD"] = 30; s.step()                            # bars_held=3 == time_stop -> close
-assert "EURUSD" in fc.closed, "time-stop should fire at time_stop_bars"
+# 3) new-risk gating: blocked -> no open
+fc = fc_flat(); s = Scalper(CFG, client=fc, dry_run=False, decide=LONG); s.step(allow_new_risk=False)
+assert fc.orders == []
 
-# 4) daily-loss halt sourced from BROKER deal history (not self-accumulation)
-fc = FakeClient(); fc._realized = -600.0                     # past the 500 limit
-fc._pos = [P("EURUSD", 0.5, 1)]
-s = Scalper(CFG, client=fc, dry_run=False)
+# 4) foreign-symbol guard: a different magic holds BTCUSD -> stand down
+fc = fc_flat(); fc._pos = [P("BTCUSD", 2.0, 0, magic=990623)]
+s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
+with redirect_stdout(io.StringIO()): s.step()
+assert fc.orders == []
+
+# 5) daily-loss halt from BROKER deal history
+fc = fc_flat(); fc._realized = -600.0; fc._pos = [P("BTCUSD", 1.0, 0)]
+s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
 out = io.StringIO()
-with redirect_stdout(out):
-    s.step()
-assert s._halted is True and "EURUSD" in fc.closed and "HALT" in out.getvalue().upper()
+with redirect_stdout(out): s.step()
+assert s._halted and "BTCUSD" in fc.closed and "HALT" in out.getvalue().upper()
 
-# 5) foreign-symbol guard: a position under a DIFFERENT magic -> stand down
-fc = fade_client(); fc._pos = [P("EURUSD", 2.0, 0, magic=990623)]   # engine holds it
-s = Scalper(CFG, client=fc, dry_run=False)
-with redirect_stdout(io.StringIO()):
-    s.step()
-assert fc.orders == [], "must not open onto a foreign-magic symbol"
+# 6) reverse-breakout flip: holding long, signal flips short -> close
+fc = fc_flat(); fc._pos = [P("BTCUSD", 1.0, 0)]    # long, own magic
+s = Scalper(CFG, client=fc, dry_run=False, decide=SHORT); s.step()
+assert "BTCUSD" in fc.closed
 
-# 6) new-risk gating: allow_new_risk=False blocks opens
-s = Scalper(CFG, client=fade_client(), dry_run=False); s.step(allow_new_risk=False)
-assert s.client.orders == [], "must not open when new risk is blocked"
-
-# 7) fail-closed: no bar timestamp -> no action (no per-loop over-trading)
-fc = FakeClient(notime=True); fc._closes["EURUSD"] = FADE_SHORT
+# 7) default crypto strategy: a rising BTC series opens long (no stub)
+fc = FakeClient(); fc._closes["BTCUSD"] = [60000.0 * (1.001 ** i) for i in range(30)]
 s = Scalper(CFG, client=fc, dry_run=False); s.step()
-assert fc.orders == [], "missing bar timestamp must fail closed"
+assert len(fc.orders) == 1 and fc.orders[0]["is_buy"] is True
 
 print("OK")

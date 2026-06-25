@@ -1,21 +1,21 @@
-"""Mean-reversion scalper, integrated into the engine process (own magic 990624
-for P&L attribution only). The Engine constructs one Scalper and calls step()
-each loop; there is NO standalone process anymore, so two order streams can never
-race on the netting account (scalper integration spec, D1/D5).
+"""The integrated scalper SLOT (engine-hosted, own magic 990624 for attribution).
+The Engine constructs one Scalper and calls step() each loop; there is no
+standalone process, so two order streams can never race on the netting account.
 
-Decisions are made ONCE PER CLOSED M1 BAR (D2) so live behavior matches the
-backtest. The scalper owns its symbols fully (D3): it computes the target net
-direction via the fade logic, executes through its own (magic-tagged) client with
-a tight broker stop, and the engine excludes its symbols from the AI's sizing /
-trailing / stop logic. Account-wide risk (kill-switch, new-risk gating) is the
-Engine's job; the scalper keeps its own (now functional) daily-loss halt.
+Phase 2 fills the slot with a crypto FAST-MOMENTUM strategy: decisions run
+PER ENGINE TICK (~5s, not per closed bar) on the latest price, alts are gated by
+a BTC lead-lag confirmation, and exits are server-side (a broker take-profit AND
+stop-loss attached at entry) so a 5-10s trade captures its P&L regardless of loop
+speed. The decision function is injectable so the slot mechanics stay testable
+independent of the strategy. Account-wide risk (kill-switch, new-risk gating) is
+the Engine's job; the slot keeps its own broker-deal-sourced daily-loss halt and
+stays dry-run until the operator arms it.
 """
 from __future__ import annotations
 
 import time
 
 from .config import SCALPER
-from .scalp_signal import ScalpParams, scalp_decision
 
 
 def _ts():
@@ -30,34 +30,30 @@ def _m1_tf():
         return 1
 
 
-def _forming_bar_ts(rates):
-    """Timestamp of the latest (still-forming) M1 bar, or None if unavailable.
-    A change in this value means a new bar opened -> the prior bar just CLOSED."""
-    try:
-        return int(rates["time"][-1])
-    except Exception:
-        return None
-
-
 class Scalper:
-    def __init__(self, cfg=SCALPER, client=None, dry_run: bool = True):
+    def __init__(self, cfg=SCALPER, client=None, dry_run: bool = True, decide=None):
         self.cfg = cfg
         self.dry_run = dry_run
         self.client = client
-        self._params = ScalpParams(cfg.ema_period, cfg.entry_bps, cfg.exit_bps,
-                                   cfg.tp_bps, cfg.stop_bps, cfg.time_stop_bars)
-        self._bars_held = {}     # symbol -> bars the current position has been held
-        self._last_bar_ts = {}   # symbol -> last-seen forming-bar timestamp
+        self._decide = decide or self._crypto_decide   # (sym, closes, cur, btc_closes)->(target,reason)
         self._realized_pnl = 0.0
         self._halted = False
+        self._last_action = {}   # symbol -> epoch of last open/flip (anti-churn cooldown)
 
     # ---- lifecycle -----------------------------------------------------
     def connect(self):
-        """Build this strategy's own magic-tagged client. Shares the one global
+        """Build this strategy's own magic-tagged client; shares the one global
         MT5 session already opened by the engine's client."""
         from .client import MT5Client
         self.client = MT5Client(magic=self.cfg.magic)
         self.client.connect()
+
+    # ---- default strategy: crypto fast-momentum ------------------------
+    def _crypto_decide(self, sym, closes, cur, btc_closes):
+        from .crypto_signal import crypto_decision, CryptoParams
+        p = CryptoParams(lookback=self.cfg.lookback, entry_bps=self.cfg.entry_bps,
+                         lead_lookback=self.cfg.lead_lookback, lead_bps=self.cfg.lead_bps)
+        return crypto_decision(closes, cur, btc_closes=btc_closes, p=p)
 
     # ---- helpers -------------------------------------------------------
     def _open_count(self):
@@ -70,8 +66,8 @@ class Scalper:
 
     def _foreign_position(self, sym):
         """True if a position in `sym` exists under a DIFFERENT magic (e.g. the AI
-        engine). On a netting account we must never open into it. Defensive — the
-        symbol partition should already prevent overlap."""
+        engine) — never open into it on a netting account. Defensive; the symbol
+        partition should already prevent overlap."""
         try:
             allpos = self.client.positions(magic=None)
         except Exception:
@@ -89,20 +85,13 @@ class Scalper:
 
     def _sl_tp_for(self, sym, is_buy, ref_price):
         """Broker stop (`stop_bps` adverse) and take-profit (`tp_bps` favorable)
-        from `ref_price`. Both fill server-side at the level — the scalper's fast
-        exits (spec §9.3). Returns (sl, tp); 0.0 for either if not computable."""
+        from `ref_price` — server-side fast exits. (sl, tp); 0.0 if uncomputable."""
         if ref_price <= 0:
             return 0.0, 0.0
-        sbps = self.cfg.stop_bps / 1e4
-        tbps = self.cfg.tp_bps / 1e4
-        digits = self._digits(sym)
+        sbps, tbps, digits = self.cfg.stop_bps / 1e4, self.cfg.tp_bps / 1e4, self._digits(sym)
         if is_buy:
-            sl = round(ref_price * (1 - sbps), digits)
-            tp = round(ref_price * (1 + tbps), digits)
-        else:
-            sl = round(ref_price * (1 + sbps), digits)
-            tp = round(ref_price * (1 - tbps), digits)
-        return sl, tp
+            return round(ref_price * (1 - sbps), digits), round(ref_price * (1 + tbps), digits)
+        return round(ref_price * (1 + sbps), digits), round(ref_price * (1 - tbps), digits)
 
     def _flatten_own(self, comment):
         for p in self.client.positions():
@@ -113,17 +102,14 @@ class Scalper:
                     self.client.close_symbol(p.symbol, comment=comment)
 
     def _realized(self):
-        """Today's realized P&L for this magic, sourced from BROKER deal history so
-        it counts broker-side SL/TP closes too (B2). Falls back to the
-        self-accumulated figure if deal history is unavailable."""
+        """Today's realized P&L for this magic, from BROKER deal history so it
+        counts broker SL/TP closes too (B2). Falls back to self-accumulated."""
         try:
             return self.client.realized_profit(magic=self.cfg.magic, days=1)
         except Exception:
             return self._realized_pnl
 
     def _risk_ok(self):
-        """Scalper-level gate: the daily realized-loss halt. Account-wide
-        protection is the engine's kill-switch."""
         if self._halted:
             return False
         pnl = self._realized()
@@ -135,48 +121,37 @@ class Scalper:
             return False
         return True
 
-    # ---- per-bar decision pass ----------------------------------------
+    def _bars(self, sym, n):
+        rates = self.client.bars(sym, _m1_tf(), n)
+        if rates is None or len(rates) < 2:
+            return None
+        return [float(x) for x in rates["close"]]
+
+    # ---- per-tick decision pass ---------------------------------------
     def step(self, allow_new_risk: bool = True):
-        """One decision pass over configured symbols, acting only on NEWLY CLOSED
-        M1 bars. Called by the engine each loop. `allow_new_risk` mirrors the
-        engine's risk gate: when False the scalper may close/reduce but not open."""
+        """One decision pass over assigned symbols, every engine tick (~5s).
+        `allow_new_risk` mirrors the engine's gate: when False the slot may
+        close/reduce but not open."""
         if self.client is None or not self._risk_ok():
             return
-        tf = _m1_tf()
+        # BTC closes once per pass for the alt lead-lag tilt
+        btc = None
+        if any(s != "BTCUSD" for s in self.cfg.symbols):
+            btc = self._bars("BTCUSD", max(self.cfg.lead_lookback + 2, 30))
         for sym in self.cfg.symbols:
             try:
-                self._step_symbol(sym, tf, allow_new_risk)
+                self._step_symbol(sym, btc, allow_new_risk)
             except Exception as e:
                 print(f"[{_ts()}] [scalper] {sym} error: {e}")
 
-    def _step_symbol(self, sym, tf, allow_new_risk):
-        rates = self.client.bars(sym, tf, max(self._params.ema_period + 2, 30))
-        if rates is None or len(rates) < 3:
-            return
-        bar_ts = _forming_bar_ts(rates)
-        if bar_ts is None:
-            return   # fail closed (B6): can't determine bar cadence -> don't act
-        prev_ts = self._last_bar_ts.get(sym)
-        # act only when a new bar has closed (the forming-bar timestamp advanced)
-        if bar_ts == prev_ts:
-            return
-        new_bar = prev_ts is not None
-        self._last_bar_ts[sym] = bar_ts
-        # decide on COMPLETED bars only (drop the still-forming last bar)
-        closes = [float(x) for x in rates["close"]][:-1]
-        if len(closes) < 2:
+    def _step_symbol(self, sym, btc, allow_new_risk):
+        closes = self._bars(sym, max(self.cfg.lookback + 2, 30))   # latest incl forming bar
+        if closes is None:
             return
         pos = self.client.position_for(sym)
         cur = self._signed(pos)
-        # entry basis is the ACTUAL fill (broker position), robust across restarts
-        entry_price = float(getattr(pos, "price_open", 0.0)) if pos else 0.0
-        if cur != 0:
-            if new_bar:
-                self._bars_held[sym] = self._bars_held.get(sym, 0) + 1
-        else:
-            self._bars_held.pop(sym, None)
-        bars_held = self._bars_held.get(sym, 0)
-        target, reason = scalp_decision(closes, cur, entry_price, bars_held, self._params)
+        btc_closes = btc if sym != "BTCUSD" else None
+        target, reason = self._decide(sym, closes, cur, btc_closes)
         if target != cur:
             self._apply(sym, cur, target, closes[-1], reason,
                         profit=float(getattr(pos, "profit", 0.0)),
@@ -184,17 +159,17 @@ class Scalper:
 
     def _apply(self, sym, cur, target, price, reason, *, profit=0.0, allow_new_risk=True):
         lots = self.cfg.lots.get(sym, 0.0)
-        if target == 0:                       # exit
+        if target == 0:                       # exit (rare: usually broker TP/SL exits)
             if self.dry_run:
-                print(f"   [DRY] scalp CLOSE {sym} ({reason})")
-                self._bars_held.pop(sym, None); return
+                print(f"   [DRY] scalp CLOSE {sym} ({reason})"); return
             ok, _ = self.client.close_symbol(sym, comment="scalp")
             if ok:
                 self._realized_pnl += profit
-                self._bars_held.pop(sym, None)
         elif cur == 0:                        # open
             if not allow_new_risk:
-                return                         # engine blocks new risk
+                return
+            if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
+                return                        # anti-churn cooldown
             if self._foreign_position(sym):
                 print(f"[{_ts()}] [scalper] {sym} held by another system -- standing down")
                 return
@@ -202,27 +177,24 @@ class Scalper:
                 return
             if self.dry_run:
                 print(f"   [DRY] scalp {'BUY' if target>0 else 'SELL'} {lots} {sym} ({reason})")
-                self._bars_held[sym] = 0; return
-            sl, tp = self._sl_tp_for(sym, target > 0, price)
-            ok, _ = self.client.market_order(sym, lots, target > 0, comment="scalp",
-                                             sl=sl, tp=tp)
-            self._bars_held[sym] = 0
-            # B4: never leave a scalp open without its server-side TP/SL. If the
-            # order went through but a leg was missing (no quote pre-trade), retry
-            # via set_sltp; warn loudly if it still can't attach.
-            if ok and (not sl or not tp):
-                sl2, tp2 = self._sl_tp_for(sym, target > 0, price)
-                if sl2 or tp2:
-                    self.client.set_sltp(sym, sl2 or sl, tp2 or tp)
-                    sl, tp = sl2 or sl, tp2 or tp
-                if not sl or not tp:
-                    print(f"[{_ts()}] [scalper] !! {sym} opened without "
-                          f"{'SL' if not sl else 'TP'} -- check quotes")
-        else:                                 # flip (signal logic never flips; guard anyway)
+                self._last_action[sym] = time.time(); return
+            # Open WITHOUT inline SL/TP (this broker rejects DEALs carrying them,
+            # ret 10006), then attach server-side exits via the SLTP action.
+            ok, _ = self.client.market_order(sym, lots, target > 0, comment="scalp")
+            if ok:
+                self._last_action[sym] = time.time()
+                sl, tp = self._sl_tp_for(sym, target > 0, price)
+                if sl or tp:
+                    self.client.set_sltp(sym, sl, tp)
+                else:
+                    print(f"[{_ts()}] [scalper] !! {sym} opened without TP/SL -- check quotes")
+        else:                                 # reverse-breakout flip: close (re-open next tick)
+            if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
+                return                        # anti-churn cooldown
             if self.dry_run:
                 print(f"   [DRY] scalp FLIP-CLOSE {sym} ({reason})")
-                self._bars_held.pop(sym, None); return
+                self._last_action[sym] = time.time(); return
             ok, _ = self.client.close_symbol(sym, comment="scalp-flip")
             if ok:
                 self._realized_pnl += profit
-                self._bars_held.pop(sym, None)
+                self._last_action[sym] = time.time()

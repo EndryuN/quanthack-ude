@@ -601,45 +601,22 @@ class Engine:
 
     def _do_order(self, symbol, lots, is_buy, cur, target):
         side = "BUY" if is_buy else "SELL"
-        order_dir = 1 if is_buy else -1
-        # Attach a stop-loss only when this trade ESTABLISHES or FLIPS into the
-        # target direction — NOT on a same-direction add (E1.6): a fresh SL_PCT
-        # stop on an add would overwrite an already-tightened trailing stop on the
-        # netting position, loosening it. The trailing logic owns the stop after
-        # entry. (Reductions don't match the target sign, so they never attach.)
-        same_dir_add = (cur != 0 and target != 0
-                        and (cur > 0) == (target > 0) and abs(target) > abs(cur))
-        attach_sl = (self.cfg.use_broker_sl and target != 0
-                     and np.sign(target) == order_dir and not same_dir_add)
-        sl = 0.0
-        if attach_sl:
-            sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
         if self.dry_run:
-            slstr = f" SL={sl}" if sl else ""
-            print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f}){slstr}")
-            return sl
-        ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
+            print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f})")
+            return 0.0
+        # Open WITHOUT an inline SL: this broker REJECTS market DEALs that carry
+        # one (ret 10006 — observed live on metals). The stop is attached via the
+        # SLTP action by _ensure_stops in THIS SAME tick (step 4.5), which the
+        # broker accepts; ensure also never loosens an existing stop (only sets
+        # one when sl==0), so a same-direction add can't widen a trailed stop.
+        ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai")
         attempts = 1
         while (not ok) and _is_transient(res) and attempts < _MAX_ORDER_ATTEMPTS:
             attempts += 1   # re-quote: market_order pulls a fresh tick each call (E0.6)
-            ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
-        slstr = f" SL={sl}" if sl else ""
+            ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai")
         astr = f" (attempt {attempts})" if attempts > 1 else ""
-        print(f"   [LIVE] {side} {lots} {symbol}{slstr}{astr}{_rc(ok, res)}")
-        # E0.9: an established position must never be left without its failsafe
-        # stop. If we wanted one but couldn't price it pre-trade (no quote), retry
-        # post-fill via set_sl; warn loudly if it still couldn't be attached.
-        if ok and attach_sl and not sl:
-            sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
-            if sl:
-                ok2, res2 = self.client.set_sl(symbol, sl)
-                print(f"   [LIVE] SL-attach {symbol} -> {sl}{_rc(ok2, res2)}")
-                if not ok2:
-                    sl = 0.0
-            if not sl:
-                print(f"[{_ts()}]    !! {symbol} OPENED WITHOUT STOP-LOSS "
-                      f"(no quote) — relying on kill-switch")
-        return sl
+        print(f"   [LIVE] {side} {lots} {symbol}{astr}{_rc(ok, res)}")
+        return 0.0   # SL attached by _ensure_stops this same tick
 
     def _do_close(self, symbol, profit=0.0, reason=""):
         """Close `symbol`. Returns True if the close happened (or dry-run), False

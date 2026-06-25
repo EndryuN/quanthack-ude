@@ -76,18 +76,25 @@ class RiskLimits:
 
 @dataclass
 class ScalperConfig:
-    """Separate mean-reversion scalper (own process, own magic). OFF by default.
-    Its `symbols` are EXCLUSIVE: when enabled they are removed from the AI
-    engine's universe so the two never net into each other on this netting
-    account. Signal params are starting values, refined by the backtest gate."""
+    """The integrated scalper SLOT (engine-hosted, own magic for attribution).
+    OFF by default. Symbols are assigned at runtime via the panel and ceded from
+    the engine's universe. Phase 2 fills the slot with a crypto fast-momentum
+    strategy (per-tick, BTC->alt lead-lag, broker TP/SL); params are starting
+    values refined by the walk-forward arming gate (bot/crypto_backtest.py)."""
     enabled: bool = False
-    symbols: list = field(default_factory=lambda: ["EURUSD"])
-    lots: dict = field(default_factory=lambda: {"EURUSD": 0.5})
+    symbols: list = field(default_factory=lambda: ["BTCUSD"])
+    lots: dict = field(default_factory=lambda: {"BTCUSD": 1.0})
+    # crypto momentum params (the live strategy)
+    lookback: int = 5             # momentum/breakout window (bars)
+    entry_bps: float = 20.0       # breakout threshold (must clear crypto cost)
+    lead_lookback: int = 3        # BTC lookback for the alt lead-lag confirmation
+    lead_bps: float = 10.0        # min BTC move to count as a lead
+    tp_bps: float = 20.0          # broker take-profit (fast exit)
+    stop_bps: float = 20.0        # broker stop-loss
+    cooldown_secs: float = 30.0   # min seconds between opens/flips per symbol (anti-churn)
+    # legacy fade params (kept for the dormant scalp_backtest reference only)
     ema_period: int = 20
-    entry_bps: float = 5.0
     exit_bps: float = 1.0
-    tp_bps: float = 4.0
-    stop_bps: float = 8.0
     time_stop_bars: int = 10
     poll_secs: float = 2.0
     max_concurrent: int = 2
