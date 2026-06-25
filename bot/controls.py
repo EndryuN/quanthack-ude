@@ -13,11 +13,18 @@ DEFAULT_CONTROLS = {
     "block": [],            # symbols clamped toward flat (no new/increased risk)
     "allow": None,          # if a list, every symbol NOT listed is clamped toward flat
     "active_preset": "Default",
+    "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
+    "exposure_cap": None,   # None -> use CONFIG.use_exposure_cap; True/False -> override
+    "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
+    "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
+    "scalper_armed_force": False,  # override: arm even when a symbol hasn't cleared the gate
+    "scalper_gate": {},     # {sym: {cleared, reason, params, test, cost_bps}} from the backtest gate
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
+    "refresh_seq": 0,       # bump -> engine re-queries AI views NOW (skip the cadence)
 }
 
-DEFAULT_ACK = {"flatten_seq_done": 0, "apply_seq_done": 0}
+DEFAULT_ACK = {"flatten_seq_done": 0, "apply_seq_done": 0, "refresh_seq_done": 0}
 
 # Named risk postures along the existing sizer aggression axis (survival<->finals).
 DEFAULT_PRESETS = {
@@ -86,3 +93,30 @@ def blocked_set(controls: dict, all_symbols) -> set:
 def effective_aggression(controls: dict, default: float) -> float:
     a = controls.get("aggression")
     return default if a is None else float(a)
+
+
+SCALPER_MAX_SYMBOLS = 2   # at most 2 symbols may be scalped alongside the engine
+
+
+def scalper_assignments(controls, all_symbols, max_n=SCALPER_MAX_SYMBOLS) -> list:
+    """Symbols currently assigned to the scalper (from the panel), filtered to
+    valid instruments, de-duplicated in stable order, and capped at `max_n` so
+    the scalper can only ever run alongside the engine on up to 2 instruments."""
+    raw = (controls or {}).get("scalper_symbols") or []
+    seen, out = set(), []
+    for s in raw:
+        if s in all_symbols and s not in seen:
+            seen.add(s); out.append(s)
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def control_flag(controls, key: str, default: bool) -> bool:
+    """Effective boolean for a runtime toggle. A control override (True/False)
+    wins over the config `default`; `controls` may be None (panel gated off) ->
+    use the default. Used for `second_opinion` (does the algorithm act on
+    Nemotron's input) and `exposure_cap`."""
+    if controls is not None and controls.get(key) is not None:
+        return bool(controls[key])
+    return default

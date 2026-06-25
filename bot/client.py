@@ -39,6 +39,7 @@ class Position:
     profit: float
     sl: float = 0.0
     tp: float = 0.0
+    magic: int = 0
     @property
     def signed_lots(self) -> float:
         return self.volume if self.type == mt5.POSITION_TYPE_BUY else -self.volume
@@ -142,7 +143,8 @@ class MT5Client:
         for p in raw:
             out.append(Position(p.ticket, p.symbol, p.volume, p.type,
                                 p.price_open, p.price_current, p.profit,
-                                sl=getattr(p, "sl", 0.0), tp=getattr(p, "tp", 0.0)))
+                                sl=getattr(p, "sl", 0.0), tp=getattr(p, "tp", 0.0),
+                                magic=getattr(p, "magic", 0)))
         return out
 
     def position_for(self, symbol: str):
@@ -220,21 +222,49 @@ class MT5Client:
         self._filling[symbol] = mode
         return mode
 
+    def min_stop_distance(self, symbol: str) -> float:
+        """Broker minimum stop/TP distance in PRICE units (trade_stops_level *
+        point). 0.0 if unavailable. A SL/TP closer than this is rejected (10016)."""
+        info = mt5.symbol_info(symbol)
+        if not info:
+            return 0.0
+        level = getattr(info, "trade_stops_level", 0) or 0
+        point = getattr(info, "point", 0.0) or 0.0
+        return level * point
+
+    def clamp_stop_price(self, symbol: str, ref_price: float, desired: float, side: str):
+        """Round `desired` to the symbol's digits and push it to at least the
+        broker's minimum distance from `ref_price` on the required `side`
+        ('above' or 'below' the reference). Returns a broker-valid level, or 0.0
+        if uncomputable. Centralizes the min-distance rule so no path emits a
+        sub-minimum stop (spec C2)."""
+        info = mt5.symbol_info(symbol)
+        if not info or ref_price <= 0 or desired <= 0:
+            return 0.0
+        md = self.min_stop_distance(symbol)
+        buffer = md * 0.1   # a touch beyond the minimum so rounding can't cross back
+        if side == "below":
+            desired = min(desired, ref_price - md - buffer)
+        else:                # "above"
+            desired = max(desired, ref_price + md + buffer)
+        return round(desired, info.digits) if desired > 0 else 0.0
+
     def sl_price(self, symbol: str, is_buy: bool, pct: float):
-        """Stop-loss price `pct` away from current price, adverse direction,
-        rounded to the symbol's digits."""
+        """Stop-loss price `pct` away from current price (adverse direction),
+        rounded to digits AND clamped to the broker's minimum stop distance."""
         info = mt5.symbol_info(symbol)
         t = self.tick(symbol)
         if not info or not t or pct <= 0:
             return 0.0
         ref = t.ask if is_buy else t.bid
         raw = ref * (1 - pct) if is_buy else ref * (1 + pct)
-        return round(raw, info.digits)
+        return self.clamp_stop_price(symbol, ref, raw, "below" if is_buy else "above")
 
     def market_order(self, symbol: str, lots: float, is_buy: bool,
-                     comment: str = "bot", sl: float = 0.0):
-        """Send a market order, optionally with a broker-side stop-loss.
-        Returns (ok, result)."""
+                     comment: str = "bot", sl: float = 0.0, tp: float = 0.0):
+        """Send a market order, optionally with broker-side stop-loss AND
+        take-profit (both fill server-side at the level — the scalper's fast
+        exits). Returns (ok, result)."""
         t = self.tick(symbol)
         if not t:
             return False, "no tick"
@@ -253,6 +283,8 @@ class MT5Client:
         }
         if sl and sl > 0:
             req["sl"] = float(sl)
+        if tp and tp > 0:
+            req["tp"] = float(tp)
         res = mt5.order_send(req)
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
@@ -291,20 +323,20 @@ class MT5Client:
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
 
-    def close_symbol(self, symbol: str, comment: str = "flatten"):
-        """Fully close the net position on a symbol (netting account)."""
-        pos = self.position_for(symbol)
+    def _close_position(self, pos, comment: str = "flatten"):
+        """Close a SPECIFIC position by ticket, regardless of which magic opened
+        it. This is what lets the account-wide kill flatten the scalper's book
+        (a different magic) too — see flatten_all(all_account=True)."""
         if pos is None or pos.volume == 0:
             return True, "flat"
-        # opposite side of the existing position
-        is_buy = pos.type == mt5.POSITION_TYPE_SELL
-        t = self.tick(symbol)
+        is_buy = pos.type == mt5.POSITION_TYPE_SELL   # opposite side closes it
+        t = self.tick(pos.symbol)
         if not t:
             return False, "no tick"
         price = t.ask if is_buy else t.bid
         req = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
+            "symbol": pos.symbol,
             "volume": float(pos.volume),
             "type": mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL,
             "position": pos.ticket,
@@ -313,17 +345,25 @@ class MT5Client:
             "magic": self.magic,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": self._filling_mode(symbol),
+            "type_filling": self._filling_mode(pos.symbol),
         }
         res = mt5.order_send(req)
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
 
-    def flatten_all(self, comment: str = "KILL"):
-        """Close every open position. Returns list of (symbol, ok, result)."""
+    def close_symbol(self, symbol: str, comment: str = "flatten"):
+        """Fully close the net position on a symbol (netting account)."""
+        return self._close_position(self.position_for(symbol), comment)
+
+    def flatten_all(self, comment: str = "KILL", all_account: bool = False):
+        """Close open positions. By default only this client's own magic; with
+        all_account=True, EVERY position on the account regardless of magic — the
+        kill-switch path, so the scalper's book is flattened too (B1). Returns a
+        list of (symbol, ok, result)."""
+        raw = self.positions(magic=None) if all_account else self.positions()
         results = []
-        for p in self.positions():
-            ok, res = self.close_symbol(p.symbol, comment=comment)
+        for p in raw:
+            ok, res = self._close_position(p, comment=comment)
             results.append((p.symbol, ok, res))
             time.sleep(0.05)
         return results

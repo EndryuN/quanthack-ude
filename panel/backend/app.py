@@ -110,14 +110,40 @@ def equity():
     return {"series": data.equity_series(STATE_DIR)}
 
 
+@app.get("/api/symbols")
+def symbols():
+    """Tradable instruments (for the scalper assignment dropdown)."""
+    from bot.config import ALL_SYMBOLS
+    return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"]}
+
+
+@app.get("/api/scalper")
+def scalper_state():
+    """Per-symbol scalper status (state/scalper.json) for the inline progress
+    display under Positions. {} when the scalper hasn't emitted yet."""
+    import json as _json
+    path = os.path.join(STATE_DIR, "scalper.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return {"symbols": []}
+
+
 @app.get("/api/positions")
 def positions():
     c = _mt5()
     if c is None:
         return {"available": False, "positions": []}
     try:
+        from bot.config import SCALPER, ALL_SYMBOLS
+        # a position is "scalped" if its symbol is ASSIGNED to the scalper (the
+        # operator's intent) OR it's actually held under the scalper's magic.
+        assigned = set(ctrl.scalper_assignments(ctrl.load_controls(STATE_DIR), ALL_SYMBOLS))
         out = [{"symbol": p.symbol, "lots": p.signed_lots,
-                "profit": getattr(p, "profit", 0.0)} for p in c.positions()]
+                "profit": getattr(p, "profit", 0.0),
+                "scalped": p.symbol in assigned or getattr(p, "magic", 0) == SCALPER.magic}
+               for p in c.positions(magic=None)]
         return {"available": True, "positions": out}
     finally:
         try:
@@ -175,18 +201,65 @@ def get_controls():
 @app.post("/api/controls")
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
-    for k in ("paused", "aggression", "block", "allow", "active_preset"):
+    for k in ("paused", "aggression", "block", "allow", "active_preset",
+              "second_opinion", "exposure_cap", "scalper_symbols", "scalper_armed",
+              "scalper_armed_force"):
         if k in body:
             c[k] = body[k]
+    # gated arming (spec §3.2): refuse scalper_armed unless every assigned symbol
+    # cleared the backtest gate, unless force is set. The engine re-checks too.
+    arm_error = None
+    if c.get("scalper_armed") and not c.get("scalper_armed_force"):
+        from bot.config import ALL_SYMBOLS
+        gates = c.get("scalper_gate") or {}
+        uncleared = [s for s in ctrl.scalper_assignments(c, ALL_SYMBOLS)
+                     if not (gates.get(s) or {}).get("cleared")]
+        if uncleared:
+            c["scalper_armed"] = False                # reject the arm
+            arm_error = f"not gate-cleared: {', '.join(uncleared)}"
     c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
     ctrl.atomic_write_json(_controls_path(), c)
-    return c
+    return {**c, "arm_error": arm_error} if arm_error else c
+
+
+@app.get("/api/scalper/gate")
+def scalper_gate(symbol: str):
+    """Run the walk-forward backtest gate for `symbol` (the 'backtest as a step'
+    in arming) and persist the verdict + locked params into controls for the
+    engine's live-eligibility check (spec §3.1)."""
+    from bot.crypto_backtest import gate_for_symbol
+    eng_sharpe = 0.1
+    try:
+        last = data.latest_decision(data.load_decisions(LOG_DIR))
+        if last:
+            eng_sharpe = float(last["account"].get("sharpe", 0.1))
+    except Exception:
+        pass
+    res = gate_for_symbol(symbol.upper(), engine_sharpe=eng_sharpe)
+    c = ctrl.load_controls(STATE_DIR)
+    gates = dict(c.get("scalper_gate") or {})
+    gates[symbol.upper()] = {"cleared": bool(res.get("arm")), "reason": res.get("reason"),
+                             "params": res.get("params"), "test": res.get("test"),
+                             "cost_bps": res.get("cost_bps")}
+    c["scalper_gate"] = gates
+    ctrl.atomic_write_json(_controls_path(), c)
+    return res
 
 
 @app.post("/api/flatten")
 def post_flatten():
     c = ctrl.load_controls(STATE_DIR)
     c["flatten_seq"] = int(c.get("flatten_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
+@app.post("/api/refresh")
+def post_refresh():
+    """Operator 'refresh consensus now': bump refresh_seq so the engine re-queries
+    AI views on its next tick, bypassing the 15-min cadence."""
+    c = ctrl.load_controls(STATE_DIR)
+    c["refresh_seq"] = int(c.get("refresh_seq", 0)) + 1
     ctrl.atomic_write_json(_controls_path(), c)
     return c
 

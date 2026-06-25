@@ -22,7 +22,8 @@ from .risk import RiskEngine
 from .state import StateTracker
 from .strategy import HybridStrategy
 from .sizer import build_targets, SizerConfig
-from .config import CONFIG, INITIAL_EQUITY, sl_pct_for, trail_pct_for
+from .config import (CONFIG, INITIAL_EQUITY, sl_pct_for, trail_pct_for,
+                     trail_activate_pct_for)
 from .decision_log import DecisionLogger
 
 
@@ -30,6 +31,32 @@ def _round_to_step(symbol, lots):
     info = mt5.symbol_info(symbol)
     step = (info.volume_step if info else 0.01) or 0.01
     return round(round(lots / step) * step, 4)
+
+
+def _trail_candidate(is_long, price, price_open, cur_sl, activate_pct, trail_pct, digits):
+    """New trailing SL to set, or None if the trail isn't armed or wouldn't improve.
+
+    Arms only after price has moved `activate_pct` in the position's favor; then
+    trails `trail_pct` behind the exit-side `price`, ratchets monotonically
+    (never loosens), and never locks worse than break-even. Pure function."""
+    if is_long:
+        if price < price_open * (1 + activate_pct):
+            return None                                   # not armed yet
+        cand = round(price * (1 - trail_pct), digits)
+        if cand <= price_open:
+            return None                                   # would lock <= break-even
+        if cur_sl == 0 or cand > cur_sl + price * 0.001:  # ratchet up only
+            return cand
+        return None
+    # short
+    if price > price_open * (1 - activate_pct):
+        return None
+    cand = round(price * (1 + trail_pct), digits)
+    if cand <= 0 or cand >= price_open:
+        return None
+    if cur_sl == 0 or cand < cur_sl - price * 0.001:      # ratchet down only
+        return cand
+    return None
 
 
 # Human names for the MT5 trade retcodes we might actually hit on failure.
@@ -53,6 +80,17 @@ def _rc(ok, res) -> str:
     return f"  !! FAILED ret={rc}" + (f" ({name})" if name else "")
 
 
+# Retcodes worth an immediate re-quote: nothing filled, the quote just moved.
+# (Partial fill 10010, invalid volume/stops/money, autotrading-off are NOT here —
+# retrying those is pointless or unsafe.)
+_TRANSIENT_RETCODES = {10004, 10020, 10021}   # requote, prices changed, no quotes
+_MAX_ORDER_ATTEMPTS = 3
+
+
+def _is_transient(res) -> bool:
+    return getattr(res, "retcode", res) in _TRANSIENT_RETCODES
+
+
 class Engine:
     def __init__(self, cfg=CONFIG, dry_run=True):
         self.cfg = cfg
@@ -68,15 +106,27 @@ class Engine:
         self._regime = ""
         self._last_ai_attempt = 0.0 # epoch of last refresh attempt (any outcome)
         self._ai_backoff = 0.0      # grows on failure so we don't hammer a down API
+        self._force_refresh = False # operator "refresh now" one-shot (skip cadence)
         self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
         self._controls = None   # last-read operator controls (None when gated off)
         self._overrides = None   # last-read per-symbol overrides (None when gated off)
         self._last_positions = {}   # ticket -> {symbol, profit}; for stop-hit detection
+        self._scalper = None        # integrated scalper slot (lazily constructed)
+        self._active_symbols = list(cfg.symbols)   # engine universe minus ceded (per tick)
+        self._handed_off = set()    # symbols whose engine position was flattened for the scalper
 
     def start(self):
+        # H1: clean-open made use_broker_sl load-bearing — without it, live
+        # positions would carry NO stop (liquidation = elimination). Refuse fast.
+        if not self.dry_run and not self.cfg.use_broker_sl:
+            raise RuntimeError("use_broker_sl is OFF while live — positions would "
+                               "run with no stop-loss. Refusing to start.")
         self.client.connect()
+        from .config import SCALPER as _SCALPER, assert_symbol_partition
+        if _SCALPER.enabled:        # config-seeded assignments must be disjoint (G2)
+            assert_symbol_partition(self.cfg.symbols, _SCALPER.symbols)
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
         if self.cfg.use_second_opinion and self._second_opinion_off:
@@ -127,6 +177,24 @@ class Engine:
                 atomic_write_json(ack_path, ack)
                 self._print_status(acct, snap)
                 return
+            if self._controls.get("refresh_seq", 0) > ack.get("refresh_seq_done", 0):
+                # operator "refresh consensus NOW": re-query AI views this tick,
+                # bypassing the 15-min cadence and any failure backoff. Does NOT
+                # return — the tick continues and reconciles on the fresh views.
+                self._force_refresh = True
+                self._ai_backoff = 0.0
+                ack["refresh_seq_done"] = self._controls["refresh_seq"]
+                atomic_write_json(ack_path, ack)
+
+        # --- dynamic scalper assignment: cede assigned symbols from the engine's
+        #     live universe and hand off any engine position on them (spec §9.4) ---
+        from .config import live_engine_symbols, ALL_SYMBOLS as _ALL, SCALPER as _SCALPER
+        from .controls import scalper_assignments
+        assigned = (scalper_assignments(self._controls, _ALL) if self._controls is not None
+                    else (list(_SCALPER.symbols) if _SCALPER.enabled else []))
+        self._active_symbols = live_engine_symbols(assigned)
+        self._handoff(assigned)
+        paused = bool(self._controls and self._controls.get("paused"))
 
         # 2. state / metrics
         m = self.state.update(acct.equity)
@@ -135,16 +203,21 @@ class Engine:
         views_ts_before = self._views_ts
         if self.cfg.signal_source == "ai":
             now = time.time()
-            due = self._views is None or (now - self._views_ts) > self.cfg.ai_refresh_seconds
-            if due and (now - self._last_ai_attempt) >= self._ai_backoff:
+            due = (self._force_refresh or self._views is None
+                   or (now - self._views_ts) > self.cfg.ai_refresh_seconds)
+            if due and (self._force_refresh or (now - self._last_ai_attempt) >= self._ai_backoff):
                 self._refresh_ai_views()
+            self._force_refresh = False   # one-shot
         refreshed = self._views_ts != views_ts_before
 
         # 4. reconcile ONLY when the signal set has changed
         orders = []
         if self._signal_changed():
             targets = self._build_targets(acct)
-            paused = bool(self._controls and self._controls["paused"])
+            # graduated drawdown de-risk: scale the whole book down (E0.5)
+            _scale = getattr(snap, "risk_scale", 1.0)
+            if _scale < 1.0:
+                targets = {s: t * _scale for s, t in targets.items()}
             if paused or not snap.allow_new_risk:
                 targets = self._derisk_only(targets)
             if self._controls:
@@ -153,9 +226,16 @@ class Engine:
                 from .overrides import pinned_set
                 _pinned = pinned_set(self._overrides)
                 targets = {s: t for s, t in targets.items() if s not in _pinned}
+            from .controls import control_flag
+            if control_flag(self._controls, "exposure_cap", self.cfg.use_exposure_cap):
+                targets = self._clamp_currency_exposure(targets, acct.equity)
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
+
+        # 4.5 GUARANTEE a stop on every position FIRST (liquidation = elimination)
+        if self.cfg.use_broker_sl:
+            self._ensure_stops()
 
         # 5. trail stops into profit on meaningful winners (every loop)
         if self.cfg.use_trailing_stop:
@@ -173,6 +253,9 @@ class Engine:
         # an engine close this tick)
         self._report_stop_hits({o["symbol"] for o in orders if o.get("side") == "close"})
 
+        # 7. scalper slot — LAST, so a kill / operator-flatten early-return skips it
+        self._run_scalper(assigned, snap, paused)
+
         self._print_status(acct, snap, m, n_orders)
 
     def _signal_changed(self):
@@ -184,9 +267,9 @@ class Engine:
         if self.cfg.signal_source == "hybrid":
             held = {p.symbol: p.signed_lots for p in self.client.positions()}
             return self.strategy.target_positions(
-                self.client, self.cfg.symbols, acct.equity, held=held)
+                self.client, self._active_symbols, acct.equity, held=held)
         if not self._views:
-            return {s: 0.0 for s in self.cfg.symbols}
+            return {s: 0.0 for s in self._active_symbols}
         agg = self.cfg.aggression
         if self._controls is not None:
             from .controls import effective_aggression
@@ -202,26 +285,30 @@ class Engine:
         from .second_opinion import apply_consensus
         self._last_ai_attempt = time.time()
         try:
-            context = build_context(self.client, self.cfg.symbols)
+            context = build_context(self.client, self._active_symbols)
             claude_views, mv, claude_usage = get_ai_views(
-                self.client, self.cfg.symbols, effort=self.cfg.ai_effort,
+                self.client, self._active_symbols, effort=self.cfg.ai_effort,
                 context=context)
             claude_rationale = {v.symbol: v.rationale for v in mv.views}
 
+            # Nemotron is ALWAYS queried (so it's always recorded for the panel);
+            # the runtime toggle only controls whether the ALGORITHM uses its input.
             nemo_views, nemo_regime, nemo_usage = {}, None, None
             if self.cfg.use_second_opinion and not self._second_opinion_off:
                 from .second_opinion import get_second_opinion
                 try:
                     nemo_views, nemo_regime, nemo_usage = get_second_opinion(
-                        context, self.cfg.symbols, self.cfg.nemotron_model,
+                        context, self._active_symbols, self.cfg.nemotron_model,
                         timeout=self.cfg.second_opinion_timeout)
                 except Exception as e:
                     print(f"        [2nd] Nemotron second opinion failed: {e}")
                     nemo_views, nemo_regime, nemo_usage = {}, None, None
 
+            from .controls import control_flag
+            influence = control_flag(self._controls, "second_opinion", True)
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
-                gain=self.cfg.nemotron_consensus_gain)
+                gain=self.cfg.nemotron_consensus_gain, influence=influence)
 
             if self._overrides:
                 from .overrides import human_views
@@ -281,11 +368,42 @@ class Engine:
                 out[s] = tgt                              # reduction allowed
         return out
 
+    def _signed_notional(self, symbol, lots):
+        n = self.client.notional(symbol, abs(lots))
+        return n if lots >= 0 else -n
+
+    def _clamp_currency_exposure(self, targets, equity):
+        """Block-only currency-factor exposure cap (spec E1.2): hold any
+        exposure-worsening, weak-consensus add at its current size so the book
+        can't silently pile into one currency. Never reduces a position; strong
+        consensus always passes through. See bot/exposure.py."""
+        from .exposure import blocked_adds
+        cur_lots, cur_n, tgt_n, conf = {}, {}, {}, {}
+        for s, tlots in targets.items():
+            pos = self.client.position_for(s)
+            clots = pos.signed_lots if pos else 0.0
+            cur_lots[s] = clots
+            cur_n[s] = self._signed_notional(s, clots)
+            tgt_n[s] = self._signed_notional(s, tlots)
+            v = (self._views or {}).get(s)
+            conf[s] = v[1] if v else 0.0
+        blocked = blocked_adds(tgt_n, cur_n, conf, equity=equity,
+                               cap_frac=self.cfg.exposure_cap_frac,
+                               strong_conf=self.cfg.exposure_strong_conf)
+        if not blocked:
+            return targets
+        out = dict(targets)
+        for s in sorted(blocked):
+            out[s] = cur_lots[s]
+            print(f"[{_ts()}]    exposure-cap: holding {s} at {cur_lots[s]:+.2f} "
+                  f"(currency cap, weak consensus)")
+        return out
+
     def _clamp_blocked(self, targets):
         """Clamp blocked / not-allowed symbols toward flat (de-risk only).
         Never closes a position outright — just forbids new/increased risk."""
         from .controls import blocked_set, derisk_clamp
-        blocked = blocked_set(self._controls, self.cfg.symbols)
+        blocked = blocked_set(self._controls, self._active_symbols)
         if not blocked:
             return targets
         out = dict(targets)
@@ -295,6 +413,63 @@ class Engine:
                 cur = pos.signed_lots if pos else 0.0
                 out[s] = derisk_clamp(out[s], cur)
         return out
+
+    def _handoff(self, assigned):
+        """When a symbol is newly assigned to the scalper, flatten the engine's
+        own position on it so the scalper takes over cleanly (spec §9.4).
+        Re-arms if a symbol is later unassigned."""
+        for s in assigned:
+            if s in self._handed_off:
+                continue
+            pos = self.client.position_for(s)
+            if pos and pos.signed_lots != 0:
+                if self.dry_run:
+                    print(f"[{_ts()}] [DRY] handoff {s}: flatten engine position -> scalper")
+                else:
+                    ok, res = self.client.close_symbol(s, comment="handoff")
+                    print(f"[{_ts()}] handoff {s}: flattened engine position{_rc(ok, res)}")
+            self._handed_off.add(s)
+        self._handed_off &= set(assigned)
+
+    def _run_scalper(self, assigned, snap, paused):
+        """Tick the integrated scalper over its assigned symbols. Runs LAST in
+        tick() so a kill / operator-flatten early-return skips it. Stays dry-run
+        until the operator explicitly arms it (spec §9.5)."""
+        from .config import SCALPER as _SCALPER
+        if not assigned and not _SCALPER.enabled:
+            return
+        if self._scalper is None:
+            from .scalper import Scalper
+            self._scalper = Scalper(cfg=_SCALPER, dry_run=self.dry_run)
+            try:
+                self._scalper.connect()
+            except Exception as e:
+                print(f"[{_ts()}] [scalper] connect failed: {e}")
+                self._scalper = None
+                return
+        self._scalper.cfg.symbols = list(assigned)
+        self._scalper.state_dir = self.cfg.state_dir   # emit state/scalper.json for the panel
+        self._scalper.dry_run = self.dry_run
+        # Engine is the FINAL arming boundary (spec §3.3): a symbol trades LIVE
+        # only when armed AND gate-cleared (or force-armed) — never on the toggle
+        # alone, even if controls.json was hand-edited. Lock the gate's params.
+        armed = bool(self._controls and self._controls.get("scalper_armed"))
+        force = bool(self._controls and self._controls.get("scalper_armed_force"))
+        gates = (self._controls or {}).get("scalper_gate") or {}
+        live, params = set(), {}
+        if armed:
+            for s in assigned:
+                g = gates.get(s) or {}
+                if g.get("cleared") or force:
+                    live.add(s)
+                    if g.get("params"):
+                        params[s] = g["params"]
+        self._scalper.live_symbols = live
+        self._scalper.params_by_symbol = params
+        try:
+            self._scalper.step(allow_new_risk=snap.allow_new_risk and not paused)
+        except Exception as e:   # the scalper must NEVER take down the engine tick
+            print(f"[{_ts()}] [scalper] step failed (isolated): {e}")
 
     def _operator_flatten(self):
         """Operator-initiated flatten-all (panel 'Flatten now'). Additive to the
@@ -317,18 +492,18 @@ class Engine:
             vmin = info.volume_min if info else 0.01
             if abs(delta) < vmin:
                 if target == 0 and cur != 0:
-                    self._do_close(s, profit=getattr(pos, "profit", 0.0),
-                                   reason=self._close_reason(s, cur))
+                    if self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                                      reason=self._close_reason(s, cur)):
+                        orders.append({"symbol": s, "side": "close",
+                                       "lots": round(abs(cur), 4), "cur": cur,
+                                       "target": 0.0, "sl": 0.0})
+                continue
+            if target == 0 and cur != 0:
+                if self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                                  reason=self._close_reason(s, cur)):
                     orders.append({"symbol": s, "side": "close",
                                    "lots": round(abs(cur), 4), "cur": cur,
                                    "target": 0.0, "sl": 0.0})
-                continue
-            if target == 0 and cur != 0:
-                self._do_close(s, profit=getattr(pos, "profit", 0.0),
-                               reason=self._close_reason(s, cur))
-                orders.append({"symbol": s, "side": "close",
-                               "lots": round(abs(cur), 4), "cur": cur,
-                               "target": 0.0, "sl": 0.0})
             else:
                 sl = self._do_order(s, abs(delta), delta > 0, cur, target)
                 orders.append({"symbol": s, "side": "buy" if delta > 0 else "sell",
@@ -359,6 +534,40 @@ class Engine:
         self.logger.log_decision(record)
         self._pending_log = None
 
+    def _ensure_stops(self):
+        """GUARANTEE every open position has a broker stop. Liquidation = instant
+        elimination (competition red-line), so a position must never run naked.
+        Order-time SL attach can be silently dropped (broker ignores sl on the
+        DEAL, invalid-stops, or no quote); the trailing loop only ratchets stops
+        on already-profitable positions and never establishes a base one. This
+        sweep reads each position's ACTUAL sl and, if missing, attaches the
+        SL_PCT failsafe via the reliable SLTP action."""
+        import MetaTrader5 as _mt5
+        from .overrides import pinned_set as _pinned_set
+        _pinned = _pinned_set(self._overrides) if self._overrides else set()
+        for p in self.client.positions():
+            try:
+                if getattr(p, "sl", 0.0) or p.symbol in _pinned:
+                    continue                              # already protected (or operator-controlled)
+                is_long = p.type == _mt5.POSITION_TYPE_BUY
+                sl = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))
+                if not sl:
+                    print(f"[{_ts()}]    !! {p.symbol} has NO stop and no quote to set one")
+                    continue
+                if self.dry_run:
+                    print(f"   [DRY] ENSURE-SL {p.symbol} -> {sl}")
+                    continue
+                def _attach():
+                    if self.cfg.use_control_panel:
+                        return self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
+                    return self.client.set_sl(p.symbol, sl)
+                ok, res = _attach()
+                if not ok and _is_transient(res):
+                    ok, res = _attach()          # H2: one in-tick retry on a transient reject
+                print(f"[{_ts()}]    ENSURE-SL {p.symbol} -> {sl}{_rc(ok, res)}")
+            except Exception as e:   # never let an SL-ensure error stall the loop
+                print(f"[{_ts()}]    !! ensure-stop {getattr(p, 'symbol', '?')} failed: {e}")
+
     def _update_trailing_stops(self):
         """Ratchet each position's broker SL toward profit once it's a meaningful
         winner. Never loosens a stop; only locks gains behind the peak."""
@@ -371,22 +580,14 @@ class Engine:
             tick = self.client.tick(p.symbol)
             if not tick:
                 continue
-            tpct = trail_pct_for(p.symbol)
             is_long = p.type == _mt5.POSITION_TYPE_BUY
             price = tick.bid if is_long else tick.ask  # exit-side price
             info = _mt5.symbol_info(p.symbol)
             digits = info.digits if info else 5
-            cur_sl = self._pos_sl(p)
-            if is_long:
-                cand = round(price * (1 - tpct), digits)
-                # lock profit (above entry) and only ratchet the stop UP
-                better = cand > p.price_open and (cur_sl == 0 or cand > cur_sl + price * 0.001)
-            else:
-                cand = round(price * (1 + tpct), digits)
-                # lock profit (below entry) and only ratchet the stop DOWN
-                better = cand < p.price_open and cand > 0 and \
-                    (cur_sl == 0 or cand < cur_sl - price * 0.001)
-            if not better:
+            cand = _trail_candidate(
+                is_long, price, p.price_open, self._pos_sl(p),
+                trail_activate_pct_for(p.symbol), trail_pct_for(p.symbol), digits)
+            if cand is None:
                 continue
             if self.dry_run:
                 print(f"   [DRY] TRAIL {p.symbol} SL -> {cand}")
@@ -438,29 +639,40 @@ class Engine:
 
     def _do_order(self, symbol, lots, is_buy, cur, target):
         side = "BUY" if is_buy else "SELL"
-        order_dir = 1 if is_buy else -1
-        # only attach a stop-loss when this trade establishes/increases the
-        # target position (its direction matches the target), not when reducing
-        sl = 0.0
-        if self.cfg.use_broker_sl and target != 0 and np.sign(target) == order_dir:
-            sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
         if self.dry_run:
-            slstr = f" SL={sl}" if sl else ""
-            print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f}){slstr}")
-            return sl
-        ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
-        slstr = f" SL={sl}" if sl else ""
-        print(f"   [LIVE] {side} {lots} {symbol}{slstr}{_rc(ok, res)}")
-        return sl
+            print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f})")
+            return 0.0
+        # Open WITHOUT an inline SL: this broker REJECTS market DEALs that carry
+        # one (ret 10006 — observed live on metals). The stop is attached via the
+        # SLTP action by _ensure_stops in THIS SAME tick (step 4.5), which the
+        # broker accepts; ensure also never loosens an existing stop (only sets
+        # one when sl==0), so a same-direction add can't widen a trailed stop.
+        ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai")
+        attempts = 1
+        while (not ok) and _is_transient(res) and attempts < _MAX_ORDER_ATTEMPTS:
+            attempts += 1   # re-quote: market_order pulls a fresh tick each call (E0.6)
+            ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai")
+        astr = f" (attempt {attempts})" if attempts > 1 else ""
+        print(f"   [LIVE] {side} {lots} {symbol}{astr}{_rc(ok, res)}")
+        return 0.0   # SL attached by _ensure_stops this same tick
 
     def _do_close(self, symbol, profit=0.0, reason=""):
+        """Close `symbol`. Returns True if the close happened (or dry-run), False
+        on a live failure — the caller must NOT record a failed close as done
+        (spec E0.7), or the book/log diverges from reality."""
         pstr = f"  {profit:+,.0f}" if profit else ""
         rstr = f"  ({reason})" if reason else ""
         if self.dry_run:
             print(f"   [DRY] CLOSE {symbol}{pstr}{rstr}")
-            return
+            return True
         ok, res = self.client.close_symbol(symbol)
-        print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{_rc(ok, res)}")
+        attempts = 1
+        while (not ok) and _is_transient(res) and attempts < _MAX_ORDER_ATTEMPTS:
+            attempts += 1   # re-quote and retry a transient close failure (E0.6)
+            ok, res = self.client.close_symbol(symbol)
+        astr = f" (attempt {attempts})" if attempts > 1 else ""
+        print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{astr}{_rc(ok, res)}")
+        return ok
 
     def _close_reason(self, symbol, cur):
         """Why is this position being closed? Derived from the current AI view

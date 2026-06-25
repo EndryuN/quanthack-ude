@@ -16,11 +16,18 @@ from .ai_signal import SYSTEM, _DIR
 _DIR_STR = {1: "long", -1: "short", 0: "flat"}
 
 
-def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5):
+def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5,
+                    influence=True):
     """Merge Claude (primary, authoritative direction) with Nemotron (booster).
 
+    Nemotron is ALWAYS recorded for display (claude / nemotron / combined are all
+    stored per view). `influence` controls ONLY whether the SIZER uses the boosted
+    confidence: influence=False -> the algorithm ignores Nemotron's input (the
+    sizer sees Claude's confidence), but the combined value is still computed and
+    stored so the panel can show Claude-only / Nemotron-only / Combined over time.
+
     Returns (sizer_views, view_records):
-      sizer_views:  {sym: (dir_int, final_conf)}  -- fed to the sizer
+      sizer_views:  {sym: (dir_int, used_conf)}  -- fed to the sizer
       view_records: list of dicts in the decision-log `views[]` shape
     """
     available = bool(nemotron_views)
@@ -28,7 +35,7 @@ def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5)
     records = []
     for sym, (dc, cc) in claude_views.items():
         nv = nemotron_views.get(sym) if available else None
-        final = cc
+        combined = cc
         boosted = False
         if not available:
             agreement = "second_opinion_unavailable"
@@ -36,23 +43,27 @@ def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5)
             agreement = "nemotron_flat"
         elif nv[0] == dc and dc != 0:
             agreement = "agree"
-            final = cc + (1.0 - cc) * gain * nv[1]
+            combined = cc + (1.0 - cc) * gain * nv[1]
             boosted = True
         else:
             agreement = "disagree"
 
-        final = max(0.0, min(1.0, final))
-        sizer_views[sym] = (dc, final)
+        combined = max(0.0, min(1.0, combined))
+        used = combined if influence else cc      # what the sizer actually acts on
+        sizer_views[sym] = (dc, used)
         records.append({
             "symbol": sym,
             "direction": _DIR_STR[dc],
-            "confidence": round(final, 4),
+            "confidence": round(used, 4),         # the value the algorithm used
             "claude": {"direction": _DIR_STR[dc], "confidence": cc,
                        "rationale": claude_rationale.get(sym, "")},
             "nemotron": ({"direction": _DIR_STR[nv[0]], "confidence": nv[1],
                           "rationale": nv[2]} if nv is not None else None),
+            # combined direction is always Claude's (Nemotron never sets direction)
+            "combined": {"direction": _DIR_STR[dc], "confidence": round(combined, 4)},
             "agreement": agreement,
             "boosted": boosted,
+            "influence": influence,
         })
     return sizer_views, records
 

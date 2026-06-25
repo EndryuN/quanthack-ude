@@ -156,21 +156,45 @@ function renderPositions(pos){
   const list = pos.positions || [];
   if(!list.length){ el.innerHTML = '<div style="color:var(--muted)">(flat)</div>'; return; }
   const fmtPL = v => (v>=0?"+$":"-$")+Math.abs(Math.round(v)).toLocaleString();
-  const rows = list.map(p=>{
+  const row = p=>{
     const long = p.lots > 0, col = long ? C.long : C.short;
     const prof = (p.profit == null) ? null : p.profit;
     const pl = prof==null ? "" : fmtPL(prof);
     const plcol = (prof||0) >= 0 ? C.long : C.short;
-    return `<div style="display:flex;justify-content:space-between;gap:6px">`+
-      `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}</span>`+
-      `<span style="color:${plcol}">${pl}</span></div>`;
-  }).join("");
+    // scalped symbols get a hook marker + an inline status sub-line (spec §6.3)
+    const hook = p.scalped ? `<span class="scalp-hook" title="scalper">·s</span>` : "";
+    let sub = "";
+    if(p.scalped){
+      const st = _scalpState[p.symbol];
+      if(st){ const sig = (st.last_signal && st.last_signal.reason) || "";
+        sub = `<div class="scalp-sub">⤷ ${st.state}${sig?" · "+sig:""}</div>`; }
+    }
+    return `<div class="pos-row" data-sym="${p.symbol}" style="display:flex;justify-content:space-between;gap:6px">`+
+      `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}${hook}</span>`+
+      `<span style="color:${plcol}">${pl}</span></div>${sub}`;
+  };
+  // engine positions first, scalped pinned at the bottom (spec §9.6)
+  const eng = list.filter(p=>!p.scalped), scalp = list.filter(p=>p.scalped);
+  const rows = eng.map(row).join("") + scalp.map(row).join("");
   const total = list.reduce((s,p)=> s + (p.profit || 0), 0);
   const tcol = total >= 0 ? C.long : C.short;
   const totalRow = `<div class="pos-total">`+
     `<span style="color:${C.muted}">TOTAL P/L</span>`+
     `<span style="color:${tcol}">${fmtPL(total)}</span></div>`;
   el.innerHTML = rows + totalRow;
+  if(!el.dataset.hoverWired){ el.dataset.hoverWired = "1"; wirePositionHover(el); }
+}
+
+// Hover a position -> preview that symbol in the instrument chart; restore the
+// selected symbol on leave. Delegated, so it survives the 1s re-render.
+function wirePositionHover(el){
+  let restore = null;
+  el.addEventListener("mouseenter", ()=>{ restore = curSymbol; });
+  el.addEventListener("mouseleave", ()=>{ if(restore && restore !== curSymbol) plotSymbol(restore, curTF); restore = null; });
+  el.addEventListener("mouseover", (e)=>{
+    const r = e.target.closest(".pos-row");
+    if(r && r.dataset.sym && r.dataset.sym !== curSymbol) plotSymbol(r.dataset.sym, curTF);
+  });
 }
 
 function renderHistPL(realized){
@@ -242,15 +266,23 @@ function plotDumbbell(allRows){
      showlegend:false}, {displayModeBar:false});
 }
 
-let _lastHm = null, _conWired = false;
+let _lastHm = null, _conWired = false, _conLayer = "combined";
+// pick which view a cell shows: combined (used), Claude-only, or Nemotron-only
+function _cellLayer(c){
+  if(c==null) return null;
+  if(_conLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
+  if(_conLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
+  return c.combined || {direction:c.direction, confidence:c.confidence};
+}
 function plotHeatmap(hm){
   _lastHm = hm;
   const lum = c => c==null? 0 : c.confidence;             // 0..1
   const sign = c => c==null? 0 : (c.direction==="long"?1 : c.direction==="short"?-1 : 0);
-  // z = signed confidence (-1..1): red short, green long, dark flat
-  const z = hm.cells.map(row=> row.map(c=> c==null? null : sign(c)*Math.max(lum(c),0.05)));
-  const text = hm.cells.map(row=> row.map(c=> c==null? "" :
-    `${c.direction} ${c.confidence.toFixed(2)}${c.boosted?" ★":""}`));
+  // z = signed confidence (-1..1): red short, green long, dark flat — per selected layer
+  const z = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
+    return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
+  const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
+    return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_conLayer==="combined"?" ★":""}`; }));
   Plotly.react("heatmap", [{z, x:hm.timestamps, y:hm.symbols,
     type:"heatmap", text, hovertemplate:"%{y} %{x|%b %d %H:%M}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
@@ -362,6 +394,12 @@ function wireConsensusTabs(){
     if(ot) ot.hidden = which !== "overtime";
     if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
   });
+  const layers = document.querySelectorAll(".ot-layers .otlayer");
+  layers.forEach(btn=> btn.onclick = ()=>{
+    _conLayer = btn.dataset.layer;
+    layers.forEach(b=>b.classList.toggle("active", b===btn));
+    if(_lastHm) plotHeatmap(_lastHm);
+  });
   _conWired = true;
 }
 window.renderConsensus = async function(s){
@@ -392,6 +430,51 @@ async function loadControls(){
   const av = document.getElementById("aggr-val"); if(av) av.textContent = Number(a).toFixed(2);
   const pb = document.getElementById("pause-btn");
   if(pb){ pb.classList.toggle("on", !!_ctl.paused); pb.textContent = _ctl.paused ? "Paused" : "Pause"; }
+  const so = document.getElementById("so-btn");
+  if(so){ const on = _ctl.second_opinion !== false;   // null/true = used (default on)
+    so.classList.toggle("on", on); so.textContent = on ? "Nemotron input: ON" : "Nemotron input: OFF"; }
+  const ex = document.getElementById("expo-btn");
+  if(ex){ const on = _ctl.exposure_cap === true;       // null/false = off (config default is off)
+    ex.classList.toggle("on", on); ex.textContent = on ? "Exposure cap: ON" : "Exposure cap: OFF"; }
+  const arm = document.getElementById("scalp-arm");
+  if(arm){ const on = !!_ctl.scalper_armed;
+    arm.classList.toggle("on", on);
+    arm.textContent = on ? "Armed (live)" : (_scalpAllCleared() ? "Arm: dry-run" : "Arm (force)"); }
+  renderScalpAssigned();
+}
+
+// gate verdict per symbol comes from controls.scalper_gate (persisted by the
+// /api/scalper/gate backtest step); _gateRunning tracks in-flight runs.
+let _gateRunning = {};
+function _scalpGate(sym){ return ((_ctl && _ctl.scalper_gate) || {})[sym] || null; }
+function _scalpAllCleared(){
+  const syms = (_ctl && _ctl.scalper_symbols) || [];
+  return syms.length > 0 && syms.every(s => (_scalpGate(s) || {}).cleared);
+}
+
+async function runGate(sym){     // the "backtest as a step" when a symbol is assigned
+  _gateRunning[sym] = true; renderScalpAssigned();
+  try { await getJSON("/api/scalper/gate?symbol=" + encodeURIComponent(sym)); }
+  finally { _gateRunning[sym] = false; await loadControls(); }   // loadControls re-renders
+}
+
+function renderScalpAssigned(){
+  const el = document.getElementById("scalp-assigned"); if(!el) return;
+  const syms = (_ctl && _ctl.scalper_symbols) || [];
+  if(!syms.length){ el.innerHTML = '<span style="color:var(--muted);font-size:10px">none assigned (engine trades all)</span>'; return; }
+  el.innerHTML = syms.map(s=>{
+    const g = _scalpGate(s);
+    let verdict, cls;
+    if(_gateRunning[s]){ verdict = "backtesting…"; cls = "g-run"; }
+    else if(!g){ verdict = "no backtest yet"; cls = "g-none"; }
+    else if(g.cleared){ verdict = `clears ✓ (Sh ${(g.test&&g.test.sharpe!=null)?g.test.sharpe:"?"})`; cls = "g-ok"; }
+    else { verdict = "no edge — " + (g.reason || "dormant"); cls = "g-no"; }
+    return `<div class="scalp-row"><span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
+           `<span class="scalp-gate ${cls}">${verdict}</span></div>`;
+  }).join("");
+  el.querySelectorAll(".scalp-x").forEach(b=> b.onclick = ()=>{
+    const cur = ((_ctl && _ctl.scalper_symbols) || []).filter(x=>x!==b.dataset.sym);
+    postControls({scalper_symbols: cur}); });
 }
 
 async function postControls(patch){
@@ -423,6 +506,46 @@ function wireControls(){
   }
   const pb = document.getElementById("pause-btn");
   if(pb && !pb.dataset.w){ pb.dataset.w="1"; pb.onclick = ()=> postControls({paused: !(_ctl && _ctl.paused)}); }
+  const so = document.getElementById("so-btn");
+  if(so && !so.dataset.w){ so.dataset.w="1"; so.onclick = ()=>{
+    const on = _ctl && _ctl.second_opinion !== false;   // currently on -> turn off, and vice versa
+    postControls({second_opinion: !on}).then(()=> setStatus(
+      "Nemotron input "+(!on ? "ON" : "OFF")+" — applies at next AI refresh (still recorded)")); }; }
+  const ex = document.getElementById("expo-btn");
+  if(ex && !ex.dataset.w){ ex.dataset.w="1"; ex.onclick = ()=>{
+    const on = _ctl && _ctl.exposure_cap === true;       // currently on -> turn off, and vice versa
+    postControls({exposure_cap: !on}).then(()=> setStatus(
+      "Exposure cap "+(!on ? "ON" : "OFF"))); }; }
+  const ssel = document.getElementById("scalp-sym-sel");
+  if(ssel && !ssel.dataset.w){ ssel.dataset.w="1";
+    getJSON("/api/symbols").then(r=>{ if(r && r.symbols)
+      ssel.innerHTML = r.symbols.map(s=>`<option>${s}</option>`).join(""); }); }
+  const sasg = document.getElementById("scalp-assign");
+  if(sasg && !sasg.dataset.w){ sasg.dataset.w="1"; sasg.onclick = async ()=>{
+    const sel = document.getElementById("scalp-sym-sel"); if(!sel || !sel.value) return;
+    const sym = sel.value;
+    const cur = new Set((_ctl && _ctl.scalper_symbols) || []);
+    if(cur.size >= 2 && !cur.has(sym)){ setStatus("max 2 scalped symbols"); return; }
+    cur.add(sym);
+    await postControls({scalper_symbols: [...cur]});
+    setStatus(sym+" -> scalper (ceded from engine) — running backtest gate…");
+    runGate(sym);   // backtest-as-a-step: gate the newly assigned symbol
+  }; }
+  const sarm = document.getElementById("scalp-arm");
+  if(sarm && !sarm.dataset.w){ sarm.dataset.w="1"; sarm.onclick = ()=>{
+    if(_ctl && _ctl.scalper_armed){ postControls({scalper_armed: false, scalper_armed_force: false})
+      .then(()=> setStatus("Scalper disarmed (dry-run)")); return; }
+    if(_scalpAllCleared()){
+      postControls({scalper_armed: true, scalper_armed_force: false})
+        .then(()=> setStatus("Scalper ARMED (live) — gate-cleared"));
+    } else if(confirm("Some symbols have NOT cleared the backtest gate. Force-arm anyway (unvalidated)?")){
+      postControls({scalper_armed: true, scalper_armed_force: true})
+        .then(()=> setStatus("Scalper FORCE-ARMED (unvalidated)"));
+    } }; }
+  const rb = document.getElementById("refresh-btn");
+  if(rb && !rb.dataset.w){ rb.dataset.w="1"; rb.onclick = async ()=>{
+    await fetch("/api/refresh", {method:"POST"});
+    setStatus("Consensus refresh requested — re-querying AI now"); }; }
   const fb = document.getElementById("flatten-btn");
   if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
     if(!confirm("Flatten ALL positions now?")) return;
@@ -471,101 +594,20 @@ function wireRegimeModal(){
 }
 let _histSym = null, _navWired = false;
 function showView(name){
-  ["dashboard","history","scalper"].forEach(v=>{
+  ["dashboard","history"].forEach(v=>{
     const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
   const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
   document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   if(name === "history") initHistory();
-  if(name === "scalper") initScalper();
 }
 
-let _scalpWired = false;
-async function initScalper(){
-  const sel = document.getElementById("scalp-sym");
-  if(sel && !sel.options.length){
-    const d = await getJSON("/api/scalp/symbols");
-    const syms = (d && d.symbols) || [];
-    const needs = new Set((d && d.needs_mt5) || []);
-    sel.innerHTML = syms.map(s=>`<option value="${s}"${s==="EURUSD"?" selected":""}>${s}${needs.has(s)?" (MT5)":""}</option>`).join("");
-  }
-  if(!_scalpWired){
-    const go = document.getElementById("scalp-go");
-    if(go) go.onclick = runScalp;
-    const clr = document.getElementById("scalp-clear");
-    if(clr) clr.onclick = ()=>{ _scalpRuns={}; _scalpLast=null; renderScalp(); };
-    _scalpWired = true;
-  }
-  renderScalp();
-}
-// accumulate one result per symbol so candidates can be compared side-by-side
-// (you arm at most max_concurrent=2, so the table is how you pick your 2 slots).
-let _scalpRuns = {}, _scalpLast = null;
-const _armable = b => b && b.net_pnl_bps>0 && b.sharpe>0.1;   // net>0 AND Sharpe clears the AI engine's (~0.1)
-
-async function runScalp(){
-  const sel = document.getElementById("scalp-sym");
-  const st = document.getElementById("scalp-status");
-  const go = document.getElementById("scalp-go");
-  const sym = sel ? sel.value : "EURUSD";
-  if(st) st.textContent = `running ${sym}… (crypto pulls M1 from MT5, ~a few seconds)`;
-  if(go) go.disabled = true;
-  let r;
-  try { r = await getJSON("/api/scalp/backtest?symbol=" + encodeURIComponent(sym)); }
-  finally { if(go) go.disabled = false; }
-  if(!r || !r.available){
-    if(st) st.textContent = `no M1 data for ${sym} — for crypto, open the MT5 terminal and make sure the symbol is available.`;
-    return;
-  }
-  if(st) st.textContent = `${sym}: ${r.bars.toLocaleString()} M1 bars · cost ${r.cost_bps.toFixed(2)} bps/round-trip`;
-  _scalpRuns[sym] = r;   // overwrite same symbol, keep the others
-  _scalpLast = sym;
-  renderScalp();
-}
-
-function renderScalp(){
-  const out = document.getElementById("scalp-results");
-  if(!out) return;
-  const syms = Object.keys(_scalpRuns);
-  if(!syms.length){ out.innerHTML = '<p class="scalp-note">Pick a symbol and Run backtest. Results accumulate here so you can compare candidates and pick your 2 live slots.</p>'; return; }
-  // --- comparison table: best row per tested symbol, sorted by Sharpe ---
-  const ranked = syms.map(s=>_scalpRuns[s]).sort((a,b)=>((b.best?.sharpe??-9)-(a.best?.sharpe??-9)));
-  const chead = `<tr><th>symbol</th><th>bars</th><th>cost</th><th>entry/tp/stop</th><th>trades</th>`+
-                `<th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th><th>verdict</th></tr>`;
-  const crows = ranked.map(r=>{
-    const b=r.best;
-    const sel = r.symbol===_scalpLast ? " scalp-best" : "";
-    if(!b) return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td><td colspan="6" style="text-align:center;color:var(--muted)">&lt;30 trades</td><td class="scalp-no">no edge</td></tr>`;
-    const net = `<span style="color:var(--${b.net_pnl_bps>0?'long':'short'})">${b.net_pnl_bps.toFixed(1)}</span>`;
-    const ok=_armable(b);
-    return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td>`+
-      `<td>${b.entry}/${b.tp}/${b.stop}</td><td>${b.trades}</td><td>${(b.win_rate*100).toFixed(1)}</td>`+
-      `<td>${net}</td><td>${b.sharpe.toFixed(3)}</td><td>${b.max_dd_bps.toFixed(1)}</td>`+
-      `<td class="${ok?'scalp-ok':'scalp-no'}">${ok?'clears ✓':'dormant'}</td></tr>`;
-  }).join("");
-  let html = `<h3 class="scalp-cmp-h">Candidates (best params per symbol — pick 2 to arm)</h3>`+
-    `<table class="scalp-table scalp-cmp">${chead}${crows}</table>`;
-  // --- full grid for the most-recently run symbol ---
-  const last = _scalpRuns[_scalpLast];
-  if(last){
-    const b=last.best;
-    const ghead = `<tr><th>entry</th><th>tp</th><th>stop</th><th>trades</th><th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th></tr>`;
-    const grows = last.rows.map(x=>{
-      const isBest = b && x.entry===b.entry && x.tp===b.tp && x.stop===b.stop;
-      const net = `<span style="color:var(--${x.net_pnl_bps>0?'long':'short'})">${x.net_pnl_bps.toFixed(1)}</span>`;
-      return `<tr class="${isBest?'scalp-best':''}"><td>${x.entry}</td><td>${x.tp}</td><td>${x.stop}</td>`+
-        `<td>${x.trades}</td><td>${(x.win_rate*100).toFixed(1)}</td><td>${net}</td>`+
-        `<td>${x.sharpe.toFixed(3)}</td><td>${x.max_dd_bps.toFixed(1)}</td></tr>`;
-    }).join("");
-    html += `<h3 class="scalp-cmp-h">${_scalpLast} — full sweep</h3><table class="scalp-table">${ghead}${grows}</table>`;
-  }
-  html += `<p class="scalp-note">GATE: arm live only if net &gt; 0 after cost AND Sharpe clears the AI engine's (~0.1).</p>`;
-  out.innerHTML = html;
-}
 function wireNav(){
   if(_navWired) return;
   const h = document.getElementById("hamburger");
   if(h) h.onclick = (e)=>{ e.stopPropagation(); const nm=document.getElementById("navmenu"); if(nm) nm.hidden = !nm.hidden; };
   document.querySelectorAll(".navitem").forEach(b=> b.onclick = ()=> showView(b.dataset.view));
+  const brand = document.querySelector("#strip .brand");
+  if(brand){ brand.title = "back to dashboard"; brand.onclick = ()=> showView("dashboard"); }
   const more = document.getElementById("orders-more"); if(more) more.onclick = ()=> showView("history");
   const back = document.getElementById("hist-back"); if(back) back.onclick = ()=> showView("dashboard");
   const sel = document.getElementById("hist-symbol"); if(sel) sel.onchange = ()=>{ _histSym = sel.value; renderHistory(_histSym); };
@@ -687,7 +729,20 @@ loadOverrides(); wireOverride();
 
 // Positions refresh on a fast ~1s cadence (live P&L), independent of the 15s
 // tick. Self-scheduling (waits for each fetch) so requests never pile up.
+// Also pulls per-symbol scalper status for the inline ·s sub-lines (spec §6.3).
+let _scalpState = {};
 (async function pollPositions(){
+  try {
+    const sc = await getJSON("/api/scalper");
+    _scalpState = {}; ((sc && sc.symbols) || []).forEach(s => { _scalpState[s.symbol] = s; });
+  } catch(e){}
   try { renderPositions(await getJSON("/api/positions")); } catch(e){}
   setTimeout(pollPositions, 1000);
+})();
+
+// Instrument chart refreshes live on the same ~1s cadence (price keeps moving;
+// zoom is preserved via uirevision). Tracks whatever symbol is selected/previewed.
+(async function pollSymbol(){
+  try { if(curSymbol) await plotSymbol(curSymbol, curTF); } catch(e){}
+  setTimeout(pollSymbol, 1000);
 })();

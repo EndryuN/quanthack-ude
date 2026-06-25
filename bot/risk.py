@@ -31,6 +31,7 @@ class RiskSnapshot:
     largest_frac: float          # largest single-instrument / gross
     allow_new_risk: bool
     kill: bool                   # flatten-everything signal
+    risk_scale: float = 1.0      # target-size multiplier (<1 = graduated de-risk)
     reasons: list = field(default_factory=list)
 
 
@@ -40,6 +41,8 @@ class RiskEngine:
         self.lim = limits
         # continuous-duration tripwire timers: name -> epoch when condition began
         self._since = {}
+        # trailing equity peak for peak-to-trough drawdown (the scored metric)
+        self._peak = INITIAL_EQUITY
 
     def _track(self, name: str, active: bool, now: float) -> float:
         """Return seconds the named condition has been continuously true."""
@@ -53,7 +56,11 @@ class RiskEngine:
     def assess(self, now: float | None = None) -> RiskSnapshot:
         now = now if now is not None else time.time()
         acct = self.c.account()
-        positions = self.c.positions()
+        # Account-wide (all magics): competition tripwires (leverage, concentration,
+        # net-directional) are measured on the WHOLE account, and the margin/equity
+        # figures already are. Magic-filtering here understated risk once a second
+        # strategy (e.g. the scalper) trades the same account. (E0.11)
+        positions = self.c.positions(magic=None)
 
         gross = 0.0
         net = 0.0
@@ -78,6 +85,7 @@ class RiskEngine:
         reasons = []
         kill = False
         allow = True
+        risk_scale = 1.0
 
         # --- KILL-SWITCH: anti-liquidation. margin_level==0 means no positions. ---
         ml = acct.margin_level
@@ -85,11 +93,26 @@ class RiskEngine:
             kill = True
             reasons.append(f"KILL: margin_level {ml:.0f}% < {self.lim.kill_switch_margin_level:.0f}%")
 
-        # --- Drawdown circuit breaker ---
-        dd = (INITIAL_EQUITY - acct.equity) / INITIAL_EQUITY
-        if dd >= self.lim.daily_max_drawdown:
+        # --- Drawdown circuit breaker: GRADUATED de-risk on PEAK-to-trough DD ---
+        # Measured against the trailing equity peak (the competition's metric), not
+        # the round's starting equity. Instead of flatten-and-freeze-for-the-round
+        # (which forfeits the dominant return rank), step the book down as DD
+        # deepens; flatten only at an extreme backstop. Re-arms automatically as
+        # equity recovers and DD shrinks. (E0.4 + E0.5)
+        self._peak = max(self._peak, acct.equity)
+        dd = (self._peak - acct.equity) / self._peak if self._peak > 0 else 0.0
+        L = self.lim.daily_max_drawdown
+        if dd >= 2.0 * L:
             kill = True
-            reasons.append(f"KILL: round drawdown {dd*100:.1f}% >= {self.lim.daily_max_drawdown*100:.0f}%")
+            reasons.append(f"KILL: drawdown {dd*100:.1f}% >= {2*L*100:.0f}% (2x limit, hard backstop)")
+        elif dd >= 1.5 * L:
+            risk_scale = 0.25
+            reasons.append(f"de-risk to 25%: drawdown {dd*100:.1f}% >= {1.5*L*100:.0f}%")
+        elif dd >= L:
+            risk_scale = 0.5
+            reasons.append(f"de-risk to 50%: drawdown {dd*100:.1f}% >= {L*100:.0f}%")
+        if risk_scale < 1.0:
+            allow = False   # while de-risking, no new risk — only reductions
 
         # --- Block new risk (soft) ---
         if positions and 0 < ml < self.lim.warn_margin_level:
@@ -101,6 +124,17 @@ class RiskEngine:
         if margin_usage > self.lim.max_margin_usage:
             allow = False
             reasons.append(f"no-new-risk: margin usage {margin_usage*100:.0f}% > {self.lim.max_margin_usage*100:.0f}%")
+        # Concentration & net-directional caps (previously computed but never
+        # enforced — see engine-improvements spec E0.1). Block NEW risk when the
+        # book is too concentrated in one instrument or too one-sided overall.
+        if gross > 0 and largest_frac > self.lim.max_single_instrument_frac:
+            allow = False
+            reasons.append(f"no-new-risk: {largest_symbol} {largest_frac*100:.0f}% of gross "
+                           f"> {self.lim.max_single_instrument_frac*100:.0f}%")
+        if gross > 0 and net_frac > self.lim.max_net_directional_frac:
+            allow = False
+            reasons.append(f"no-new-risk: net directional {net_frac*100:.0f}% "
+                           f"> {self.lim.max_net_directional_frac*100:.0f}%")
 
         # --- Competition tripwire proximity (track duration, warn early) ---
         # >28x for >=30min = -20pts. Warn the moment we cross 25x.
@@ -119,7 +153,8 @@ class RiskEngine:
             margin_usage=margin_usage, gross_notional=gross, gross_leverage=gross_lev,
             net_notional=net, net_directional_frac=net_frac,
             largest_symbol=largest_symbol, largest_frac=largest_frac,
-            allow_new_risk=allow and not kill, kill=kill, reasons=reasons,
+            allow_new_risk=allow and not kill, kill=kill,
+            risk_scale=risk_scale, reasons=reasons,
         )
 
     def enforce(self, snap: RiskSnapshot, dry_run: bool):
@@ -128,5 +163,6 @@ class RiskEngine:
             return None
         if dry_run:
             return f"[DRY-RUN] would FLATTEN ALL: {'; '.join(snap.reasons)}"
-        results = self.c.flatten_all(comment="KILL")
+        # account-wide: the kill must flatten EVERY magic (incl. the scalper), B1
+        results = self.c.flatten_all(comment="KILL", all_account=True)
         return f"FLATTENED ALL ({len(results)} positions): {'; '.join(snap.reasons)}"

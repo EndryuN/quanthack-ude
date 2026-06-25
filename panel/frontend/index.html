@@ -24,7 +24,6 @@
   <nav id="navmenu" hidden>
     <button class="navitem active" data-view="dashboard">Dashboard</button>
     <button class="navitem" data-view="history">History</button>
-    <button class="navitem" data-view="scalper">Scalper</button>
   </nav>
   <main id="view-dashboard" class="view">
     <section class="col-left">
@@ -49,7 +48,17 @@
           <span id="aggr-val" class="mono">—</span></div>
         <div class="ctl-row">
           <button id="pause-btn" class="ctl-btn">Pause</button>
-          <button id="flatten-btn" class="ctl-btn danger">Flatten now</button></div>
+          <button id="flatten-btn" class="ctl-btn danger">Flatten now</button>
+          <button id="refresh-btn" class="ctl-btn" title="Re-query the AI consensus now, skipping the 15-min cadence">Refresh views</button></div>
+        <div class="ctl-row"><label>2nd opinion</label>
+          <button id="so-btn" class="ctl-btn" title="Nemotron always runs and is recorded for the panel. This toggle only controls whether the ALGORITHM acts on its input (sizing). Off = Claude-only sizing, Nemotron still shown.">Nemotron input: —</button></div>
+        <div class="ctl-row"><label>Exposure cap</label>
+          <button id="expo-btn" class="ctl-btn" title="Block-only currency-exposure cap: stops weak-consensus trades that pile into an already-concentrated currency. Never closes a position; strong signals pass.">Exposure cap: —</button></div>
+        <div class="ctl-row"><label>Scalper</label>
+          <select id="scalp-sym-sel" title="assign a symbol to the scalper (ceded from the engine)"></select>
+          <button id="scalp-assign" class="ctl-btn">Assign</button>
+          <button id="scalp-arm" class="ctl-btn" title="Arm = go live. Until armed the scalper runs dry-run.">Arm: —</button></div>
+        <div id="scalp-assigned" class="scalp-assigned"></div>
         <div id="ctl-status" class="ctl-status"></div>
       </div>
       <div class="card" id="gauges-card"><h2>Risk</h2><div id="gauges"></div><div id="tripwires"></div></div>
@@ -99,7 +108,14 @@
           <div id="dumbbell"></div>
         </div>
         <div id="con-overtime" class="con-pane" hidden>
-          <div class="dir-legend ot-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div>
+          <div class="ot-head">
+            <div class="ot-layers">
+              <button class="otlayer active" data-layer="combined">Combined</button>
+              <button class="otlayer" data-layer="claude">Claude</button>
+              <button class="otlayer" data-layer="nemotron">Nemotron</button>
+            </div>
+            <div class="dir-legend ot-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div>
+          </div>
           <div id="heatmap"></div>
         </div>
       </div>
@@ -117,45 +133,6 @@
       <div id="hist-chart"></div>
       <h2 style="margin-top:14px">Order history</h2>
       <div id="hist-orders"></div>
-    </div>
-  </section>
-  <section id="view-scalper" class="view" hidden>
-    <div class="card scalp-card">
-      <h2>Scalper — mean-reversion (separate system)</h2>
-      <div class="scalp-badge">DORMANT · not armed</div>
-      <p>A standalone process (own magic <b>990624</b>) that fades short-term deviations from a
-         short EMA on its configured symbols (default <b>EURUSD</b>, zero spread). It is fully
-         built and unit-tested, but ships <b>disabled</b> — it only trades after the evidence gate.</p>
-      <div class="scalp-run">
-        <label>Backtest</label>
-        <select id="scalp-sym"></select>
-        <button id="scalp-go" class="ctl-btn">Run backtest</button>
-        <button id="scalp-clear" class="ctl-btn">Clear</button>
-        <span id="scalp-status" class="scalp-status"></span>
-      </div>
-      <div id="scalp-results"></div>
-      <div class="scalp-grid">
-        <div class="scalp-box">
-          <h3>Backtest gate &mdash; last run (EURUSD, ~1 month M1)</h3>
-          <div class="scalp-verdict short">NO DURABLE EDGE &rarr; stays dormant</div>
-          <ul>
-            <li>Active (entry 3bps, ~540 trades): net <b>&minus;11 to &minus;17 bps</b>, Sharpe &asymp; 0</li>
-            <li>Best by Sharpe (&ge;30 trades): entry 8 / tp 3 / stop 12 &rarr; net <b>+14 bps</b>, Sharpe <b>0.08</b>, win 61.8% &mdash; only 34 trades (overfit)</li>
-            <li>Edge doesn't clear cost; Sharpe &asymp; the AI engine's, not better</li>
-          </ul>
-        </div>
-        <div class="scalp-box">
-          <h3>Config</h3>
-          <ul>
-            <li>magic <b>990624</b> &middot; symbol <b>EURUSD</b> (zero spread)</li>
-            <li>EMA 20 &middot; entry 5bps &middot; tp 4bps &middot; stop 8bps &middot; time-stop 10 bars</li>
-            <li>max concurrent 2 &middot; daily-loss kill $2,000</li>
-            <li>status <b>enabled = False</b> (dry-run default)</li>
-          </ul>
-        </div>
-      </div>
-      <p class="scalp-note">Re-run <code>python run_scalp_backtest.py &lt;SYMBOL&gt;</code> to test another symbol/variant.
-         A live scalper view (price + bands + scalps + P&amp;L) appears here only if it's armed and emitting state.</p>
     </div>
   </section>
   <div id="regime-modal" class="modal-backdrop" hidden>
