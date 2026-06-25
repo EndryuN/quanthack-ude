@@ -129,6 +129,7 @@ class Engine:
             assert_symbol_partition(self.cfg.symbols, _SCALPER.symbols)
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
+        self._reset_scalper_session()   # never auto-resume a saved armed/running scalper
         if self.cfg.use_second_opinion and self._second_opinion_off:
             print("[engine] NVIDIA_API_KEY not set - second opinion disabled (Claude-only).")
         if not self.dry_run and not self.client.algo_allowed():
@@ -396,6 +397,30 @@ class Engine:
                     print(f"[{_ts()}] handoff {s}: flattened engine position{_rc(ok, res)}")
             self._handed_off.add(s)
         self._handed_off &= set(assigned)
+
+    def _reset_scalper_session(self):
+        """On launch the scalper starts the assign->gate->arm process OVER rather
+        than resuming a persisted 'armed/running' state — a saved live-arm must
+        never auto-fire on restart. Clears assignments, gate verdicts, and arm
+        flags in controls.json plus the stale state/scalper.json."""
+        if not self.cfg.use_control_panel:
+            return
+        from .controls import load_controls, atomic_write_json
+        c = load_controls(self.cfg.state_dir)
+        if (c.get("scalper_symbols") or c.get("scalper_armed")
+                or c.get("scalper_armed_force") or c.get("scalper_gate")):
+            c["scalper_symbols"] = []
+            c["scalper_armed"] = False
+            c["scalper_armed_force"] = False
+            c["scalper_gate"] = {}
+            atomic_write_json(os.path.join(self.cfg.state_dir, "controls.json"), c)
+            print("[engine] scalper session reset on launch "
+                  "(re-assign + re-gate + re-arm to scalp)")
+        try:
+            atomic_write_json(os.path.join(self.cfg.state_dir, "scalper.json"),
+                              {"symbols": []})
+        except Exception:
+            pass
 
     def _run_scalper(self, assigned, snap, paused):
         """Tick the integrated scalper over its assigned symbols. Runs LAST in
