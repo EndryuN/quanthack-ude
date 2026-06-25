@@ -189,8 +189,16 @@ class Scalper:
                         profit=float(getattr(pos, "profit", 0.0)),
                         allow_new_risk=allow_new_risk)
 
+    def _lots_for(self, sym):
+        """Lots for `sym` from the per-symbol USD risk budget (spec §5). 0.0 means
+        not sized -> the open is skipped and surfaced (never a silent no-op)."""
+        try:
+            return self.client.lots_for_notional(sym, self.cfg.notional_per_symbol)
+        except Exception:
+            return 0.0
+
     def _apply(self, sym, cur, target, price, reason, *, profit=0.0, allow_new_risk=True):
-        lots = self.cfg.lots.get(sym, 0.0)
+        lots = self._lots_for(sym)
         if target == 0:                       # exit (rare: usually broker TP/SL exits)
             if self.dry_run:
                 print(f"   [DRY] scalp CLOSE {sym} ({reason})"); return
@@ -205,7 +213,10 @@ class Scalper:
             if self._foreign_position(sym):
                 print(f"[{_ts()}] [scalper] {sym} held by another system -- standing down")
                 return
-            if self._open_count() >= self.cfg.max_concurrent or lots <= 0:
+            if lots <= 0:
+                print(f"[{_ts()}] [scalper] {sym} not sized (budget -> 0 lots) -- skipping")
+                return
+            if self._open_count() >= self.cfg.max_concurrent:
                 return
             if self.dry_run:
                 print(f"   [DRY] scalp {'BUY' if target>0 else 'SELL'} {lots} {sym} ({reason})")

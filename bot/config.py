@@ -92,6 +92,7 @@ class ScalperConfig:
     tp_bps: float = 20.0          # broker take-profit (fast exit)
     stop_bps: float = 20.0        # broker stop-loss
     cooldown_secs: float = 30.0   # min seconds between opens/flips per symbol (anti-churn)
+    notional_per_symbol: float = 50_000.0   # USD risk budget per scalped symbol -> lots
     # legacy fade params (kept for the dormant scalp_backtest reference only)
     ema_period: int = 20
     exit_bps: float = 1.0

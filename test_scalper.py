@@ -21,7 +21,7 @@ class FakeClient:
     def __init__(self):
         self._pos = []; self.orders = []; self.closed = []; self.sltp = []
         self._closes = {}; self._realized = 0.0
-        self._fill = 60000.0; self.order_ok = True; self.sltp_ok = True
+        self._fill = 60000.0; self.order_ok = True; self.sltp_ok = True; self._lots = 1.0
     def positions(self, magic=OWN):
         return list(self._pos) if magic is None else [p for p in self._pos if getattr(p, "magic", OWN) == magic]
     def position_for(self, s):
@@ -43,6 +43,7 @@ class FakeClient:
                 if p.symbol == s: p.sl = sl; p.tp = tp
         return self.sltp_ok, None
     def realized_profit(self, magic=OWN, days=None): return self._realized
+    def lots_for_notional(self, symbol, usd): return self._lots
     def clamp_stop_price(self, symbol, ref_price, desired, side):
         if ref_price <= 0 or desired <= 0: return 0.0
         desired = min(desired, ref_price) if side == "below" else max(desired, ref_price)
@@ -105,6 +106,12 @@ fc = fc_flat(); fc.sltp_ok = False
 s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
 with redirect_stdout(io.StringIO()): s.step()
 assert len(fc.orders) == 1 and "BTCUSD" in fc.closed, (fc.orders, fc.closed)
+
+# 8b) §5 sizing: a symbol that sizes to 0 lots (no budget) is NOT opened
+fc = fc_flat(); fc._lots = 0.0
+s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
+with redirect_stdout(io.StringIO()): s.step()
+assert fc.orders == [], "unsized symbol must not open"
 
 # 9) C1 sweep: a pre-existing scalper position with NO stop gets protected
 fc = fc_flat(); fc._pos = [P("BTCUSD", 1.0, 0, sl=0.0, price_open=60000.0)]
