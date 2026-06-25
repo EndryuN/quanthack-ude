@@ -3,7 +3,7 @@ import bot.config as cfg
 
 # defaults: disabled, EURUSD default scalp symbol, magic 990624
 assert cfg.SCALPER.enabled is False
-assert "EURUSD" in cfg.SCALPER.symbols
+assert "BTCUSD" in cfg.SCALPER.symbols   # Phase 2 default slot symbol
 assert cfg.SCALPER.magic == 990624 and cfg.SCALPER.magic != cfg.CONFIG.magic
 
 # scalper OFF (default) -> engine universe is UNCHANGED (still trades EURUSD)
