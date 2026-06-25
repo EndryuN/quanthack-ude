@@ -211,11 +211,10 @@ class Engine:
                 context=context)
             claude_rationale = {v.symbol: v.rationale for v in mv.views}
 
-            from .controls import second_opinion_on
-            so_on = second_opinion_on(self._controls, self.cfg.use_second_opinion,
-                                      not self._second_opinion_off)
+            # Nemotron is ALWAYS queried (so it's always recorded for the panel);
+            # the runtime toggle only controls whether the ALGORITHM uses its input.
             nemo_views, nemo_regime, nemo_usage = {}, None, None
-            if so_on:
+            if self.cfg.use_second_opinion and not self._second_opinion_off:
                 from .second_opinion import get_second_opinion
                 try:
                     nemo_views, nemo_regime, nemo_usage = get_second_opinion(
@@ -225,9 +224,11 @@ class Engine:
                     print(f"        [2nd] Nemotron second opinion failed: {e}")
                     nemo_views, nemo_regime, nemo_usage = {}, None, None
 
+            from .controls import control_flag
+            influence = control_flag(self._controls, "second_opinion", True)
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
-                gain=self.cfg.nemotron_consensus_gain)
+                gain=self.cfg.nemotron_consensus_gain, influence=influence)
 
             if self._overrides:
                 from .overrides import human_views

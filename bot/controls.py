@@ -93,13 +93,8 @@ def effective_aggression(controls: dict, default: float) -> float:
 def control_flag(controls, key: str, default: bool) -> bool:
     """Effective boolean for a runtime toggle. A control override (True/False)
     wins over the config `default`; `controls` may be None (panel gated off) ->
-    use the default."""
+    use the default. Used for `second_opinion` (does the algorithm act on
+    Nemotron's input) and `exposure_cap`."""
     if controls is not None and controls.get(key) is not None:
         return bool(controls[key])
     return default
-
-
-def second_opinion_on(controls, config_default: bool, key_present: bool) -> bool:
-    """Effective Nemotron second-opinion setting: the runtime toggle, but never on
-    without an API key."""
-    return control_flag(controls, "second_opinion", config_default) and key_present
