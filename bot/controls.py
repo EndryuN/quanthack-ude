@@ -19,9 +19,10 @@ DEFAULT_CONTROLS = {
     "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
+    "refresh_seq": 0,       # bump -> engine re-queries AI views NOW (skip the cadence)
 }
 
-DEFAULT_ACK = {"flatten_seq_done": 0, "apply_seq_done": 0}
+DEFAULT_ACK = {"flatten_seq_done": 0, "apply_seq_done": 0, "refresh_seq_done": 0}
 
 # Named risk postures along the existing sizer aggression axis (survival<->finals).
 DEFAULT_PRESETS = {

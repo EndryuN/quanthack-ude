@@ -163,7 +163,7 @@ function renderPositions(pos){
     const plcol = (prof||0) >= 0 ? C.long : C.short;
     // scalped symbols get a hook marker on the name
     const hook = p.scalped ? `<span class="scalp-hook" title="scalper">·s</span>` : "";
-    return `<div style="display:flex;justify-content:space-between;gap:6px">`+
+    return `<div class="pos-row" data-sym="${p.symbol}" style="display:flex;justify-content:space-between;gap:6px">`+
       `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}${hook}</span>`+
       `<span style="color:${plcol}">${pl}</span></div>`;
   };
@@ -176,6 +176,19 @@ function renderPositions(pos){
     `<span style="color:${C.muted}">TOTAL P/L</span>`+
     `<span style="color:${tcol}">${fmtPL(total)}</span></div>`;
   el.innerHTML = rows + totalRow;
+  if(!el.dataset.hoverWired){ el.dataset.hoverWired = "1"; wirePositionHover(el); }
+}
+
+// Hover a position -> preview that symbol in the instrument chart; restore the
+// selected symbol on leave. Delegated, so it survives the 1s re-render.
+function wirePositionHover(el){
+  let restore = null;
+  el.addEventListener("mouseenter", ()=>{ restore = curSymbol; });
+  el.addEventListener("mouseleave", ()=>{ if(restore && restore !== curSymbol) plotSymbol(restore, curTF); restore = null; });
+  el.addEventListener("mouseover", (e)=>{
+    const r = e.target.closest(".pos-row");
+    if(r && r.dataset.sym && r.dataset.sym !== curSymbol) plotSymbol(r.dataset.sym, curTF);
+  });
 }
 
 function renderHistPL(realized){
@@ -488,6 +501,10 @@ function wireControls(){
     const on = _ctl && _ctl.scalper_armed;
     postControls({scalper_armed: !on}).then(()=> setStatus(
       "Scalper "+(!on ? "ARMED (live)" : "disarmed (dry-run)"))); }; }
+  const rb = document.getElementById("refresh-btn");
+  if(rb && !rb.dataset.w){ rb.dataset.w="1"; rb.onclick = async ()=>{
+    await fetch("/api/refresh", {method:"POST"});
+    setStatus("Consensus refresh requested — re-querying AI now"); }; }
   const fb = document.getElementById("flatten-btn");
   if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
     if(!confirm("Flatten ALL positions now?")) return;
@@ -757,4 +774,11 @@ loadOverrides(); wireOverride();
 (async function pollPositions(){
   try { renderPositions(await getJSON("/api/positions")); } catch(e){}
   setTimeout(pollPositions, 1000);
+})();
+
+// Instrument chart refreshes live on the same ~1s cadence (price keeps moving;
+// zoom is preserved via uirevision). Tracks whatever symbol is selected/previewed.
+(async function pollSymbol(){
+  try { if(curSymbol) await plotSymbol(curSymbol, curTF); } catch(e){}
+  setTimeout(pollSymbol, 1000);
 })();

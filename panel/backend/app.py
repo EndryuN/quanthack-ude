@@ -205,6 +205,16 @@ def post_flatten():
     return c
 
 
+@app.post("/api/refresh")
+def post_refresh():
+    """Operator 'refresh consensus now': bump refresh_seq so the engine re-queries
+    AI views on its next tick, bypassing the 15-min cadence."""
+    c = ctrl.load_controls(STATE_DIR)
+    c["refresh_seq"] = int(c.get("refresh_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
+    return c
+
+
 def _presets_path():
     return os.path.join(STATE_DIR, "presets.json")
 

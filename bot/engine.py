@@ -106,6 +106,7 @@ class Engine:
         self._regime = ""
         self._last_ai_attempt = 0.0 # epoch of last refresh attempt (any outcome)
         self._ai_backoff = 0.0      # grows on failure so we don't hammer a down API
+        self._force_refresh = False # operator "refresh now" one-shot (skip cadence)
         self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
@@ -176,6 +177,14 @@ class Engine:
                 atomic_write_json(ack_path, ack)
                 self._print_status(acct, snap)
                 return
+            if self._controls.get("refresh_seq", 0) > ack.get("refresh_seq_done", 0):
+                # operator "refresh consensus NOW": re-query AI views this tick,
+                # bypassing the 15-min cadence and any failure backoff. Does NOT
+                # return — the tick continues and reconciles on the fresh views.
+                self._force_refresh = True
+                self._ai_backoff = 0.0
+                ack["refresh_seq_done"] = self._controls["refresh_seq"]
+                atomic_write_json(ack_path, ack)
 
         # --- dynamic scalper assignment: cede assigned symbols from the engine's
         #     live universe and hand off any engine position on them (spec §9.4) ---
@@ -194,9 +203,11 @@ class Engine:
         views_ts_before = self._views_ts
         if self.cfg.signal_source == "ai":
             now = time.time()
-            due = self._views is None or (now - self._views_ts) > self.cfg.ai_refresh_seconds
-            if due and (now - self._last_ai_attempt) >= self._ai_backoff:
+            due = (self._force_refresh or self._views is None
+                   or (now - self._views_ts) > self.cfg.ai_refresh_seconds)
+            if due and (self._force_refresh or (now - self._last_ai_attempt) >= self._ai_backoff):
                 self._refresh_ai_views()
+            self._force_refresh = False   # one-shot
         refreshed = self._views_ts != views_ts_before
 
         # 4. reconcile ONLY when the signal set has changed
