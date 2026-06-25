@@ -417,6 +417,21 @@ async function loadControls(){
   const ex = document.getElementById("expo-btn");
   if(ex){ const on = _ctl.exposure_cap === true;       // null/false = off (config default is off)
     ex.classList.toggle("on", on); ex.textContent = on ? "Exposure cap: ON" : "Exposure cap: OFF"; }
+  const arm = document.getElementById("scalp-arm");
+  if(arm){ const on = !!_ctl.scalper_armed;
+    arm.classList.toggle("on", on); arm.textContent = on ? "Armed (live)" : "Arm: dry-run"; }
+  renderScalpAssigned();
+}
+
+function renderScalpAssigned(){
+  const el = document.getElementById("scalp-assigned"); if(!el) return;
+  const syms = (_ctl && _ctl.scalper_symbols) || [];
+  el.innerHTML = syms.length
+    ? syms.map(s=>`<span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`).join("")
+    : '<span style="color:var(--muted);font-size:10px">none assigned (engine trades all)</span>';
+  el.querySelectorAll(".scalp-x").forEach(b=> b.onclick = ()=>{
+    const cur = ((_ctl && _ctl.scalper_symbols) || []).filter(x=>x!==b.dataset.sym);
+    postControls({scalper_symbols: cur}); });
 }
 
 async function postControls(patch){
@@ -458,6 +473,21 @@ function wireControls(){
     const on = _ctl && _ctl.exposure_cap === true;       // currently on -> turn off, and vice versa
     postControls({exposure_cap: !on}).then(()=> setStatus(
       "Exposure cap "+(!on ? "ON" : "OFF"))); }; }
+  const ssel = document.getElementById("scalp-sym-sel");
+  if(ssel && !ssel.dataset.w){ ssel.dataset.w="1";
+    getJSON("/api/symbols").then(r=>{ if(r && r.symbols)
+      ssel.innerHTML = r.symbols.map(s=>`<option>${s}</option>`).join(""); }); }
+  const sasg = document.getElementById("scalp-assign");
+  if(sasg && !sasg.dataset.w){ sasg.dataset.w="1"; sasg.onclick = ()=>{
+    const sel = document.getElementById("scalp-sym-sel"); if(!sel || !sel.value) return;
+    const cur = new Set((_ctl && _ctl.scalper_symbols) || []); cur.add(sel.value);
+    postControls({scalper_symbols: [...cur]}).then(()=> setStatus(
+      sel.value+" -> scalper (ceded from engine)")); }; }
+  const sarm = document.getElementById("scalp-arm");
+  if(sarm && !sarm.dataset.w){ sarm.dataset.w="1"; sarm.onclick = ()=>{
+    const on = _ctl && _ctl.scalper_armed;
+    postControls({scalper_armed: !on}).then(()=> setStatus(
+      "Scalper "+(!on ? "ARMED (live)" : "disarmed (dry-run)"))); }; }
   const fb = document.getElementById("flatten-btn");
   if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
     if(!confirm("Flatten ALL positions now?")) return;

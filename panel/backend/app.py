@@ -110,6 +110,13 @@ def equity():
     return {"series": data.equity_series(STATE_DIR)}
 
 
+@app.get("/api/symbols")
+def symbols():
+    """Tradable instruments (for the scalper assignment dropdown)."""
+    from bot.config import ALL_SYMBOLS
+    return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"]}
+
+
 @app.get("/api/positions")
 def positions():
     c = _mt5()
@@ -180,7 +187,7 @@ def get_controls():
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
     for k in ("paused", "aggression", "block", "allow", "active_preset",
-              "second_opinion", "exposure_cap"):
+              "second_opinion", "exposure_cap", "scalper_symbols", "scalper_armed"):
         if k in body:
             c[k] = body[k]
     c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
