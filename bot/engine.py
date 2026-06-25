@@ -320,18 +320,18 @@ class Engine:
             vmin = info.volume_min if info else 0.01
             if abs(delta) < vmin:
                 if target == 0 and cur != 0:
-                    self._do_close(s, profit=getattr(pos, "profit", 0.0),
-                                   reason=self._close_reason(s, cur))
+                    if self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                                      reason=self._close_reason(s, cur)):
+                        orders.append({"symbol": s, "side": "close",
+                                       "lots": round(abs(cur), 4), "cur": cur,
+                                       "target": 0.0, "sl": 0.0})
+                continue
+            if target == 0 and cur != 0:
+                if self._do_close(s, profit=getattr(pos, "profit", 0.0),
+                                  reason=self._close_reason(s, cur)):
                     orders.append({"symbol": s, "side": "close",
                                    "lots": round(abs(cur), 4), "cur": cur,
                                    "target": 0.0, "sl": 0.0})
-                continue
-            if target == 0 and cur != 0:
-                self._do_close(s, profit=getattr(pos, "profit", 0.0),
-                               reason=self._close_reason(s, cur))
-                orders.append({"symbol": s, "side": "close",
-                               "lots": round(abs(cur), 4), "cur": cur,
-                               "target": 0.0, "sl": 0.0})
             else:
                 sl = self._do_order(s, abs(delta), delta > 0, cur, target)
                 orders.append({"symbol": s, "side": "buy" if delta > 0 else "sell",
@@ -454,16 +454,34 @@ class Engine:
         ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
         slstr = f" SL={sl}" if sl else ""
         print(f"   [LIVE] {side} {lots} {symbol}{slstr}{_rc(ok, res)}")
+        # E0.9: an established position must never be left without its failsafe
+        # stop. If we wanted one but couldn't price it pre-trade (no quote), retry
+        # post-fill via set_sl; warn loudly if it still couldn't be attached.
+        wanted_sl = self.cfg.use_broker_sl and target != 0 and np.sign(target) == order_dir
+        if ok and wanted_sl and not sl:
+            sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
+            if sl:
+                ok2, res2 = self.client.set_sl(symbol, sl)
+                print(f"   [LIVE] SL-attach {symbol} -> {sl}{_rc(ok2, res2)}")
+                if not ok2:
+                    sl = 0.0
+            if not sl:
+                print(f"[{_ts()}]    !! {symbol} OPENED WITHOUT STOP-LOSS "
+                      f"(no quote) — relying on kill-switch")
         return sl
 
     def _do_close(self, symbol, profit=0.0, reason=""):
+        """Close `symbol`. Returns True if the close happened (or dry-run), False
+        on a live failure — the caller must NOT record a failed close as done
+        (spec E0.7), or the book/log diverges from reality."""
         pstr = f"  {profit:+,.0f}" if profit else ""
         rstr = f"  ({reason})" if reason else ""
         if self.dry_run:
             print(f"   [DRY] CLOSE {symbol}{pstr}{rstr}")
-            return
+            return True
         ok, res = self.client.close_symbol(symbol)
         print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{_rc(ok, res)}")
+        return ok
 
     def _close_reason(self, symbol, cur):
         """Why is this position being closed? Derived from the current AI view
