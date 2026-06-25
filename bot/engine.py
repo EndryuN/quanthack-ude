@@ -80,6 +80,17 @@ def _rc(ok, res) -> str:
     return f"  !! FAILED ret={rc}" + (f" ({name})" if name else "")
 
 
+# Retcodes worth an immediate re-quote: nothing filled, the quote just moved.
+# (Partial fill 10010, invalid volume/stops/money, autotrading-off are NOT here —
+# retrying those is pointless or unsafe.)
+_TRANSIENT_RETCODES = {10004, 10020, 10021}   # requote, prices changed, no quotes
+_MAX_ORDER_ATTEMPTS = 3
+
+
+def _is_transient(res) -> bool:
+    return getattr(res, "retcode", res) in _TRANSIENT_RETCODES
+
+
 class Engine:
     def __init__(self, cfg=CONFIG, dry_run=True):
         self.cfg = cfg
@@ -517,8 +528,13 @@ class Engine:
             print(f"   [DRY] {side} {lots} {symbol}  (cur={cur:+.2f} -> tgt={target:+.2f}){slstr}")
             return sl
         ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
+        attempts = 1
+        while (not ok) and _is_transient(res) and attempts < _MAX_ORDER_ATTEMPTS:
+            attempts += 1   # re-quote: market_order pulls a fresh tick each call (E0.6)
+            ok, res = self.client.market_order(symbol, lots, is_buy, comment="ai", sl=sl)
         slstr = f" SL={sl}" if sl else ""
-        print(f"   [LIVE] {side} {lots} {symbol}{slstr}{_rc(ok, res)}")
+        astr = f" (attempt {attempts})" if attempts > 1 else ""
+        print(f"   [LIVE] {side} {lots} {symbol}{slstr}{astr}{_rc(ok, res)}")
         # E0.9: an established position must never be left without its failsafe
         # stop. If we wanted one but couldn't price it pre-trade (no quote), retry
         # post-fill via set_sl; warn loudly if it still couldn't be attached.
@@ -544,7 +560,12 @@ class Engine:
             print(f"   [DRY] CLOSE {symbol}{pstr}{rstr}")
             return True
         ok, res = self.client.close_symbol(symbol)
-        print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{_rc(ok, res)}")
+        attempts = 1
+        while (not ok) and _is_transient(res) and attempts < _MAX_ORDER_ATTEMPTS:
+            attempts += 1   # re-quote and retry a transient close failure (E0.6)
+            ok, res = self.client.close_symbol(symbol)
+        astr = f" (attempt {attempts})" if attempts > 1 else ""
+        print(f"   [LIVE] CLOSE {symbol}{pstr}{rstr}{astr}{_rc(ok, res)}")
         return ok
 
     def _close_reason(self, symbol, cur):
