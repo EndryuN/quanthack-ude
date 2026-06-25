@@ -101,6 +101,17 @@ class RiskEngine:
         if margin_usage > self.lim.max_margin_usage:
             allow = False
             reasons.append(f"no-new-risk: margin usage {margin_usage*100:.0f}% > {self.lim.max_margin_usage*100:.0f}%")
+        # Concentration & net-directional caps (previously computed but never
+        # enforced — see engine-improvements spec E0.1). Block NEW risk when the
+        # book is too concentrated in one instrument or too one-sided overall.
+        if gross > 0 and largest_frac > self.lim.max_single_instrument_frac:
+            allow = False
+            reasons.append(f"no-new-risk: {largest_symbol} {largest_frac*100:.0f}% of gross "
+                           f"> {self.lim.max_single_instrument_frac*100:.0f}%")
+        if gross > 0 and net_frac > self.lim.max_net_directional_frac:
+            allow = False
+            reasons.append(f"no-new-risk: net directional {net_frac*100:.0f}% "
+                           f"> {self.lim.max_net_directional_frac*100:.0f}%")
 
         # --- Competition tripwire proximity (track duration, warn early) ---
         # >28x for >=30min = -20pts. Warn the moment we cross 25x.
