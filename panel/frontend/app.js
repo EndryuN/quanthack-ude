@@ -188,12 +188,12 @@ function renderPositions(pos){
 // Hover a position -> preview that symbol in the instrument chart; restore the
 // selected symbol on leave. Delegated, so it survives the 1s re-render.
 function wirePositionHover(el){
-  let restore = null;
-  el.addEventListener("mouseenter", ()=>{ restore = curSymbol; });
-  el.addEventListener("mouseleave", ()=>{ if(restore && restore !== curSymbol) plotSymbol(restore, curTF); restore = null; });
-  el.addEventListener("mouseover", (e)=>{
+  // Hover only HIGHLIGHTS the row (via CSS .pos-row:hover) — it no longer
+  // previews on the chart. CLICK selects the symbol on the Instrument &
+  // Projection panel (chart + list + overrides stay in sync, accurate state).
+  el.addEventListener("click", (e)=>{
     const r = e.target.closest(".pos-row");
-    if(r && r.dataset.sym && r.dataset.sym !== curSymbol) plotSymbol(r.dataset.sym, curTF);
+    if(r && r.dataset.sym) selectSymbol(r.dataset.sym);
   });
 }
 
@@ -283,11 +283,27 @@ function plotHeatmap(hm){
     return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
   const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
     return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_conLayer==="combined"?" ★":""}`; }));
-  Plotly.react("heatmap", [{z, x:hm.timestamps, y:hm.symbols,
-    type:"heatmap", text, hovertemplate:"%{y} %{x|%b %d %H:%M}: %{text}<extra></extra>",
+  // Each refresh is ONE evenly-spaced column (a heatmap must be categorical) —
+  // a continuous date axis distorts widths/gaps when refreshes are irregular
+  // (15-min cadence + manual "Refresh views"). x = column index; the real
+  // timestamp is shown via subset ticks + per-cell hover.
+  const ts = hm.timestamps || [];
+  const n = ts.length;
+  const fmtT = iso => { const d = new Date(iso);   // naive ISO parsed as local -> logged time
+    const p = x => String(x).padStart(2,"0");
+    return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const xi = ts.map((_, i) => i);
+  const step = Math.max(1, Math.ceil(n / 10));      // ~10 readable ticks
+  const tickvals = [], ticktext = [];
+  for(let i = 0; i < n; i += step){ tickvals.push(i); ticktext.push(fmtT(ts[i])); }
+  const ctime = hm.symbols.map(()=> ts.map(fmtT));  // real time per cell (hover)
+  Plotly.react("heatmap", [{z, x:xi, y:hm.symbols, customdata:ctime,
+    type:"heatmap", text, xgap:1, ygap:1,
+    hovertemplate:"%{y} · %{customdata}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
-    {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:24},
-     xaxis:{type:"date", tickangle:-45, tickformat:"%H:%M", color:C.muted, automargin:true},
+    {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:30},
+     xaxis:{tickmode:"array", tickvals, ticktext, tickangle:-45, color:C.muted,
+       automargin:true, range:[-0.5, Math.max(0.5, n-0.5)]},
      dragmode:"pan", uirevision:"heatmap"},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
      modeBarButtonsToRemove:["select2d","lasso2d"]});
@@ -337,6 +353,18 @@ async function plotSymbol(symbol, tf){
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
 
+// Single entry point for "show this symbol on the Instrument & Projection panel":
+// redraws the chart AND syncs the panel's state (symbol-list highlight + the
+// override/AI controls) so everything reflects the selected symbol. Used by both
+// the instrument list and a click on a position row.
+function selectSymbol(sym){
+  if(!sym) return;
+  plotSymbol(sym, curTF);
+  const list = document.getElementById("symbol-list");
+  if(list) list.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===sym));
+  renderOverride();   // Pin / conf / take-profit / AI rationale for the new symbol
+}
+
 // asset-class grouping for the symbol list (crypto kept separate from FX/metals)
 const _CRYPTO = new Set(["BTCUSD","ETHUSD","SOLUSD","XRPUSD","BARUSD"]);
 const _METALS = new Set(["XAGUSD","XAUUSD"]);
@@ -367,8 +395,7 @@ function buildSymbolList(symbols){
         postControls({block: [...cur]});
         return;
       }
-      el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x===node));
-      plotSymbol(node.dataset.sym, curTF);
+      selectSymbol(node.dataset.sym);
     });
   } else if(el){
     el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===curSymbol));
