@@ -17,6 +17,8 @@ DEFAULT_CONTROLS = {
     "exposure_cap": None,   # None -> use CONFIG.use_exposure_cap; True/False -> override
     "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
     "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
+    "scalper_armed_force": False,  # override: arm even when a symbol hasn't cleared the gate
+    "scalper_gate": {},     # {sym: {cleared, reason, params, test, cost_bps}} from the backtest gate
     "flatten_seq": 0,       # bump -> engine flattens all once
     "apply_seq": 0,         # bump -> engine forces a reconcile next tick (apply knobs now)
     "refresh_seq": 0,       # bump -> engine re-queries AI views NOW (skip the cadence)

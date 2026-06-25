@@ -39,6 +39,24 @@ class Scalper:
         self._realized_pnl = 0.0
         self._halted = False
         self._last_action = {}   # symbol -> epoch of last open/flip (anti-churn cooldown)
+        self.live_symbols = None      # set by engine: symbols cleared to trade LIVE
+        self.params_by_symbol = {}    # set by engine: gate-locked params per symbol
+
+    def _p(self, sym):
+        """Effective strategy params for `sym`: the gate-locked params if the
+        engine armed it, else the config defaults (spec §3.4)."""
+        g = self.params_by_symbol.get(sym) or {}
+        return (int(g.get("lookback", self.cfg.lookback)),
+                float(g.get("entry", self.cfg.entry_bps)),
+                float(g.get("tp", self.cfg.tp_bps)),
+                float(g.get("stop", self.cfg.stop_bps)))
+
+    def _is_dry(self, sym):
+        """A symbol trades live only if the engine put it in live_symbols
+        (None = no per-symbol gate -> follow the global dry_run)."""
+        if self.dry_run:
+            return True
+        return self.live_symbols is not None and sym not in self.live_symbols
 
     # ---- lifecycle -----------------------------------------------------
     def connect(self):
@@ -51,7 +69,8 @@ class Scalper:
     # ---- default strategy: crypto fast-momentum ------------------------
     def _crypto_decide(self, sym, closes, cur, btc_closes):
         from .crypto_signal import crypto_decision, CryptoParams
-        p = CryptoParams(lookback=self.cfg.lookback, entry_bps=self.cfg.entry_bps,
+        lookback, entry_bps, _tp, _stop = self._p(sym)
+        p = CryptoParams(lookback=lookback, entry_bps=entry_bps,
                          lead_lookback=self.cfg.lead_lookback, lead_bps=self.cfg.lead_bps)
         return crypto_decision(closes, cur, btc_closes=btc_closes, p=p)
 
@@ -90,7 +109,8 @@ class Scalper:
         Returns (sl, tp); 0.0 for either if uncomputable."""
         if ref_price <= 0:
             return 0.0, 0.0
-        sbps, tbps = self.cfg.stop_bps / 1e4, self.cfg.tp_bps / 1e4
+        _lb, _e, tp_bps, stop_bps = self._p(sym)
+        sbps, tbps = stop_bps / 1e4, tp_bps / 1e4
         if is_buy:
             sl = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 - sbps), "below")
             tp = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 + tbps), "above")
@@ -199,8 +219,9 @@ class Scalper:
 
     def _apply(self, sym, cur, target, price, reason, *, profit=0.0, allow_new_risk=True):
         lots = self._lots_for(sym)
+        dry = self._is_dry(sym)               # global OR not gate-cleared for live
         if target == 0:                       # exit (rare: usually broker TP/SL exits)
-            if self.dry_run:
+            if dry:
                 print(f"   [DRY] scalp CLOSE {sym} ({reason})"); return
             ok, _ = self.client.close_symbol(sym, comment="scalp")
             if ok:
@@ -218,7 +239,7 @@ class Scalper:
                 return
             if self._open_count() >= self.cfg.max_concurrent:
                 return
-            if self.dry_run:
+            if dry:
                 print(f"   [DRY] scalp {'BUY' if target>0 else 'SELL'} {lots} {sym} ({reason})")
                 self._last_action[sym] = time.time(); return
             # Open WITHOUT inline SL/TP (this broker rejects DEALs carrying them,
@@ -230,7 +251,7 @@ class Scalper:
         else:                                 # reverse-breakout flip: close (re-open next tick)
             if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
                 return                        # anti-churn cooldown
-            if self.dry_run:
+            if dry:
                 print(f"   [DRY] scalp FLIP-CLOSE {sym} ({reason})")
                 self._last_action[sym] = time.time(); return
             ok, _ = self.client.close_symbol(sym, comment="scalp-flip")

@@ -189,12 +189,48 @@ def get_controls():
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
     for k in ("paused", "aggression", "block", "allow", "active_preset",
-              "second_opinion", "exposure_cap", "scalper_symbols", "scalper_armed"):
+              "second_opinion", "exposure_cap", "scalper_symbols", "scalper_armed",
+              "scalper_armed_force"):
         if k in body:
             c[k] = body[k]
+    # gated arming (spec §3.2): refuse scalper_armed unless every assigned symbol
+    # cleared the backtest gate, unless force is set. The engine re-checks too.
+    arm_error = None
+    if c.get("scalper_armed") and not c.get("scalper_armed_force"):
+        from bot.config import ALL_SYMBOLS
+        gates = c.get("scalper_gate") or {}
+        uncleared = [s for s in ctrl.scalper_assignments(c, ALL_SYMBOLS)
+                     if not (gates.get(s) or {}).get("cleared")]
+        if uncleared:
+            c["scalper_armed"] = False                # reject the arm
+            arm_error = f"not gate-cleared: {', '.join(uncleared)}"
     c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick
     ctrl.atomic_write_json(_controls_path(), c)
-    return c
+    return {**c, "arm_error": arm_error} if arm_error else c
+
+
+@app.get("/api/scalper/gate")
+def scalper_gate(symbol: str):
+    """Run the walk-forward backtest gate for `symbol` (the 'backtest as a step'
+    in arming) and persist the verdict + locked params into controls for the
+    engine's live-eligibility check (spec §3.1)."""
+    from bot.crypto_backtest import gate_for_symbol
+    eng_sharpe = 0.1
+    try:
+        last = data.latest_decision(data.load_decisions(LOG_DIR))
+        if last:
+            eng_sharpe = float(last["account"].get("sharpe", 0.1))
+    except Exception:
+        pass
+    res = gate_for_symbol(symbol.upper(), engine_sharpe=eng_sharpe)
+    c = ctrl.load_controls(STATE_DIR)
+    gates = dict(c.get("scalper_gate") or {})
+    gates[symbol.upper()] = {"cleared": bool(res.get("arm")), "reason": res.get("reason"),
+                             "params": res.get("params"), "test": res.get("test"),
+                             "cost_bps": res.get("cost_bps")}
+    c["scalper_gate"] = gates
+    ctrl.atomic_write_json(_controls_path(), c)
+    return res
 
 
 @app.post("/api/flatten")

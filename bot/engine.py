@@ -448,8 +448,23 @@ class Engine:
                 self._scalper = None
                 return
         self._scalper.cfg.symbols = list(assigned)
+        self._scalper.dry_run = self.dry_run
+        # Engine is the FINAL arming boundary (spec §3.3): a symbol trades LIVE
+        # only when armed AND gate-cleared (or force-armed) — never on the toggle
+        # alone, even if controls.json was hand-edited. Lock the gate's params.
         armed = bool(self._controls and self._controls.get("scalper_armed"))
-        self._scalper.dry_run = self.dry_run or not armed   # dry-run unless armed
+        force = bool(self._controls and self._controls.get("scalper_armed_force"))
+        gates = (self._controls or {}).get("scalper_gate") or {}
+        live, params = set(), {}
+        if armed:
+            for s in assigned:
+                g = gates.get(s) or {}
+                if g.get("cleared") or force:
+                    live.add(s)
+                    if g.get("params"):
+                        params[s] = g["params"]
+        self._scalper.live_symbols = live
+        self._scalper.params_by_symbol = params
         self._scalper.step(allow_new_risk=snap.allow_new_risk and not paused)
 
     def _operator_flatten(self):
