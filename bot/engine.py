@@ -129,6 +129,7 @@ class Engine:
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
         self._reset_scalper_session()   # never auto-resume a saved armed/running scalper
+        self._sync_control_ack()        # stale ack must not swallow apply/flatten/refresh
         if self.cfg.use_second_opinion and self._second_opinion_off:
             print("[engine] NVIDIA_API_KEY not set - second opinion disabled (Claude-only).")
         if not self.dry_run and not self.client.algo_allowed():
@@ -423,6 +424,22 @@ class Engine:
                               {"symbols": []})
         except Exception:
             pass
+
+    def _sync_control_ack(self):
+        """On launch, set the control-ack counters to match controls.json. The ack
+        file persists across restarts but controls.json's *_seq can reset lower
+        (fresh file / churn); if ack ends up AHEAD, the handlers (apply/flatten/
+        refresh use `seq > seq_done`) silently swallow every future operator
+        action — e.g. 'Apply preset' does nothing. Re-syncing guarantees the next
+        bump is seen, without firing a phantom flatten on startup."""
+        if not self.cfg.use_control_panel:
+            return
+        from .controls import load_controls, atomic_write_json
+        c = load_controls(self.cfg.state_dir)
+        ack = {"flatten_seq_done": int(c.get("flatten_seq", 0)),
+               "apply_seq_done": int(c.get("apply_seq", 0)),
+               "refresh_seq_done": int(c.get("refresh_seq", 0))}
+        atomic_write_json(os.path.join(self.cfg.state_dir, "control_ack.json"), ack)
 
     def _run_scalper(self, assigned, snap, paused):
         """Tick the integrated scalper over its assigned symbols. Runs LAST in
