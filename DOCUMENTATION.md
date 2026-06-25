@@ -128,9 +128,9 @@ The result: even at maximum aggression, the system stays comfortably inside ever
 
 ## The operator control panel (opt-in)
 
-A separate web app — **SIGNAL//LAYER** — turns the decision log into a live monitoring and control surface, without ever being able to compromise the engine. It is built in three layers, all **off by default** (`use_control_panel=False`); with the flag off the engine is byte-for-byte unchanged.
+A separate web app — **SIGNAL//LAYER** — turns the decision log into a live monitoring and control surface, without ever being able to compromise the engine. It is built in three layers and is **off by default**: the engine only honours its controls when `use_control_panel` is on, which the launcher's *With panel* choice sets via `QUANTHACK_PANEL=1` (the standalone watch-only launcher never sets it). With the flag off the engine is byte-for-byte unchanged.
 
-- **Watch (read-only):** the Claude×Nemotron consensus as a dumbbell + an over-time heatmap, the equity curve with the risk-floor lines drawn on it, risk gauges + 30-minute tripwire clocks, a rolling orders feed, and per-symbol price with per-model forward **projection cones** (an honest rendering of direction×confidence, not a fabricated price target). It runs as a *separate process* that only reads `logs/`, `state/`, and live MT5 — it cannot place an order.
+- **Watch (read-only):** a header strip with live KPIs (equity, return, leverage, margin level, drawdown, Sharpe), clickable **Claude / Nemotron regime pills** that open each model's full reasoning, a currency-strength ribbon, and a staleness badge on the AI read. The dashboard shows the Claude×Nemotron consensus as a dumbbell (split FX / Crypto / Metals) + an over-time heatmap, the equity curve with the risk-floor line drawn on it, live-reacting risk gauges + 30-minute tripwire clocks, an open-positions/orders feed, and per-symbol price (1m / 15m / 1h) with per-model forward **projection cones** (an honest rendering of direction×confidence, not a fabricated price target). Separate **History** and **Scalper** pages give a per-symbol stance timeline and the dormant scalper's status. It runs as a *separate process* that only reads `logs/`, `state/`, and live MT5 — it cannot place an order.
 - **Steer (global):** aggression, pause, panic-flatten, and per-symbol allow/block, saved as named **presets** (`Default` / `Survival` / `Finals` along the existing aggression axis) — written to a one-way control file the engine reads each tick.
 - **Weigh in (per-position):** pin/lock a position, **override the AI's view** for a symbol (a deciding "third opinion" that can flip direction), or set a per-position take-profit, plus per-ticker objective notes.
 
@@ -167,6 +167,13 @@ In short: it's a working demonstration of how to combine the *adaptability of AI
 ---
 
 ## How to see it run
+
+The intended entry point is the **interactive launcher** — double-click `run_live.bat`. It asks two questions and starts everything accordingly:
+
+1. **Mode** — `[L]ive trading` or `[D]ry-run` (dry-run computes & logs intended trades but sends nothing).
+2. **Panel** — `[W]ith panel` or `[N]o panel`. *With panel* opens the SIGNAL//LAYER dashboard at `http://127.0.0.1:8800` and enables operator steering; *No panel* runs the engine exactly as it would with no panel code at all.
+
+Or invoke the engine directly:
 
 ```bash
 # dry-run: computes and logs intended trades, sends nothing

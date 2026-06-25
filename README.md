@@ -45,7 +45,7 @@ Every 15-min refresh is persisted to per-day files — `logs/ai_decisions_YYYY-M
 
 ## Operator control panel
 
-A separate, opt-in web dashboard (**SIGNAL//LAYER**) reads the logs + live MT5 and lets you watch — and optionally steer — the engine: the consensus dumbbell/heatmap, equity vs the risk floor, risk gauges, per-symbol projection cones, global knobs + presets, and per-position pin / human-override / take-profit. It's **off by default** (`use_control_panel=False`); the engine is byte-for-byte unchanged until you enable it. Full details: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
+A separate, opt-in web dashboard (**SIGNAL//LAYER**) reads the logs + live MT5 and lets you watch — and optionally steer — the engine: a live KPI header with clickable Claude/Nemotron reasoning, the consensus dumbbell/heatmap, equity vs the risk floor, live risk gauges, per-symbol projection cones, History + Scalper pages, global knobs + presets, and per-position pin / human-override / take-profit. Steering is **off by default**; the launcher's *With panel* choice enables it (via `QUANTHACK_PANEL=1`) and otherwise the engine is byte-for-byte unchanged. Full details: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
 
 ---
 
@@ -107,17 +107,24 @@ pip install -r requirements.txt
 # 2. configure your keys
 cp .env.example .env        # then edit .env: ANTHROPIC_API_KEY (required),
                             # NVIDIA_API_KEY (optional, enables the second opinion)
+```
 
-# 3. run in dry-run (computes & logs intended trades, sends NO orders)
-python -m bot.engine        # or:  .\run_live.ps1
+**3. launch.** The simplest path is the interactive launcher — double-click **`run_live.bat`** (or run it from a terminal). It asks two questions:
 
-# 4. run live (actually places orders)
-python -m bot.engine --live #     .\run_live.ps1 -Live
+1. **Mode** — `[L]ive trading` or `[D]ry-run` (dry-run computes & logs intended trades but sends NO orders).
+2. **Panel** — `[W]ith panel` or `[N]o panel`. *With panel* opens the **SIGNAL//LAYER** dashboard at `http://127.0.0.1:8800` in its own window and enables operator steering (it sets `QUANTHACK_PANEL=1`, which flips `use_control_panel` on); *No panel* runs the engine exactly as it would with no panel code at all.
+
+Prefer the CLI / PowerShell directly:
+
+```bash
+python -m bot.engine          # dry-run, no panel   (or:  .\run_live.ps1)
+python -m bot.engine --live   # LIVE, no panel      (or:  .\run_live.ps1 -Live)
+.\panel\run_panel.ps1         # watch-only dashboard (read-only; never steers the engine)
 ```
 
 Each loop prints a one-line health summary (equity, leverage, margin, return, drawdown, Sharpe). Every 15 minutes it prints the fresh market read with per-instrument direction and confidence (Claude + the Nemotron consensus), plus the API token cost, and writes the full decision to `logs/`.
 
-**Watch it live (optional):** `.\panel\run_panel.ps1` → open `http://127.0.0.1:8800`. The dashboard is read-only by default; see [docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md) to enable operator controls.
+The dashboard is **read-only unless launched with `QUANTHACK_PANEL=1`** (which the launcher's *With panel* choice sets for you). Standalone `run_panel.ps1` never sets it, so it can only watch. Full details: [docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md).
 
 ---
 
