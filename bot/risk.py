@@ -163,5 +163,6 @@ class RiskEngine:
             return None
         if dry_run:
             return f"[DRY-RUN] would FLATTEN ALL: {'; '.join(snap.reasons)}"
-        results = self.c.flatten_all(comment="KILL")
+        # account-wide: the kill must flatten EVERY magic (incl. the scalper), B1
+        results = self.c.flatten_all(comment="KILL", all_account=True)
         return f"FLATTENED ALL ({len(results)} positions): {'; '.join(snap.reasons)}"

@@ -234,9 +234,10 @@ class MT5Client:
         return round(raw, info.digits)
 
     def market_order(self, symbol: str, lots: float, is_buy: bool,
-                     comment: str = "bot", sl: float = 0.0):
-        """Send a market order, optionally with a broker-side stop-loss.
-        Returns (ok, result)."""
+                     comment: str = "bot", sl: float = 0.0, tp: float = 0.0):
+        """Send a market order, optionally with broker-side stop-loss AND
+        take-profit (both fill server-side at the level — the scalper's fast
+        exits). Returns (ok, result)."""
         t = self.tick(symbol)
         if not t:
             return False, "no tick"
@@ -255,6 +256,8 @@ class MT5Client:
         }
         if sl and sl > 0:
             req["sl"] = float(sl)
+        if tp and tp > 0:
+            req["tp"] = float(tp)
         res = mt5.order_send(req)
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
@@ -293,20 +296,20 @@ class MT5Client:
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
 
-    def close_symbol(self, symbol: str, comment: str = "flatten"):
-        """Fully close the net position on a symbol (netting account)."""
-        pos = self.position_for(symbol)
+    def _close_position(self, pos, comment: str = "flatten"):
+        """Close a SPECIFIC position by ticket, regardless of which magic opened
+        it. This is what lets the account-wide kill flatten the scalper's book
+        (a different magic) too — see flatten_all(all_account=True)."""
         if pos is None or pos.volume == 0:
             return True, "flat"
-        # opposite side of the existing position
-        is_buy = pos.type == mt5.POSITION_TYPE_SELL
-        t = self.tick(symbol)
+        is_buy = pos.type == mt5.POSITION_TYPE_SELL   # opposite side closes it
+        t = self.tick(pos.symbol)
         if not t:
             return False, "no tick"
         price = t.ask if is_buy else t.bid
         req = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
+            "symbol": pos.symbol,
             "volume": float(pos.volume),
             "type": mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL,
             "position": pos.ticket,
@@ -315,17 +318,25 @@ class MT5Client:
             "magic": self.magic,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": self._filling_mode(symbol),
+            "type_filling": self._filling_mode(pos.symbol),
         }
         res = mt5.order_send(req)
         ok = res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
         return ok, res
 
-    def flatten_all(self, comment: str = "KILL"):
-        """Close every open position. Returns list of (symbol, ok, result)."""
+    def close_symbol(self, symbol: str, comment: str = "flatten"):
+        """Fully close the net position on a symbol (netting account)."""
+        return self._close_position(self.position_for(symbol), comment)
+
+    def flatten_all(self, comment: str = "KILL", all_account: bool = False):
+        """Close open positions. By default only this client's own magic; with
+        all_account=True, EVERY position on the account regardless of magic — the
+        kill-switch path, so the scalper's book is flattened too (B1). Returns a
+        list of (symbol, ok, result)."""
+        raw = self.positions(magic=None) if all_account else self.positions()
         results = []
-        for p in self.positions():
-            ok, res = self.close_symbol(p.symbol, comment=comment)
+        for p in raw:
+            ok, res = self._close_position(p, comment=comment)
             results.append((p.symbol, ok, res))
             time.sleep(0.05)
         return results
