@@ -47,6 +47,38 @@ assert any("net directional" in r for r in b.reasons), b.reasons
 
 # C) Diversified & balanced: largest 33%, net 33% -> new risk allowed
 c = assess({"EURUSD": +200_000, "GBPUSD": -200_000, "USDJPY": +200_000})
-assert c.allow_new_risk and not c.kill, c.reasons
+assert c.allow_new_risk and not c.kill and c.risk_scale == 1.0, c.reasons
+
+
+# --- Drawdown breaker: peak-to-trough + graduated de-risk (E0.4 + E0.5) ---
+class DDClient:
+    """No positions -> drawdown is the only thing under test. Equity is mutable."""
+    def __init__(self): self.eq = INITIAL_EQUITY
+    def account(self): return FakeAcct(self.eq, 0.0, 0.0)
+    def positions(self): return []
+    def notional(self, s, v): return 0.0
+
+
+re = RiskEngine(DDClient(), lim)   # lim.daily_max_drawdown = L = 0.20 (tiers: L, 1.5L, 2L)
+re.c.eq = 1_300_000; s = re.assess(now=0.0)              # set trailing peak = 1.3M
+assert s.risk_scale == 1.0 and not s.kill and s.allow_new_risk
+
+re.c.eq = 1_000_000; s = re.assess(now=0.0)              # dd = 0.231 in [L,1.5L) -> 50%
+assert abs(s.risk_scale - 0.5) < 1e-9 and not s.kill and not s.allow_new_risk
+
+re.c.eq = 900_000; s = re.assess(now=0.0)                # dd = 0.308 in [1.5L,2L) -> 25%
+assert abs(s.risk_scale - 0.25) < 1e-9 and not s.kill and not s.allow_new_risk
+
+re.c.eq = 750_000; s = re.assess(now=0.0)                # dd = 0.423 >= 2L -> hard kill
+assert s.kill
+
+# trailing peak holds; a recovery shrinks DD and RE-ARMS to full size (no freeze)
+re.c.eq = 1_300_000; s = re.assess(now=0.0)
+assert s.risk_scale == 1.0 and not s.kill and s.allow_new_risk
+
+# measured vs PEAK, not initial equity: peaked at 1.3M then back to 1.0M (= start)
+# still de-risks, whereas the old (vs INITIAL_EQUITY) code would see 0 drawdown.
+re.c.eq = 1_000_000; s = re.assess(now=0.0)
+assert abs(s.risk_scale - 0.5) < 1e-9
 
 print("OK")

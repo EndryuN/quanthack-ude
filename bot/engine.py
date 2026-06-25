@@ -171,6 +171,10 @@ class Engine:
         orders = []
         if self._signal_changed():
             targets = self._build_targets(acct)
+            # graduated drawdown de-risk: scale the whole book down (E0.5)
+            _scale = getattr(snap, "risk_scale", 1.0)
+            if _scale < 1.0:
+                targets = {s: t * _scale for s, t in targets.items()}
             paused = bool(self._controls and self._controls["paused"])
             if paused or not snap.allow_new_risk:
                 targets = self._derisk_only(targets)
