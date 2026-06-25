@@ -56,7 +56,11 @@ class RiskEngine:
     def assess(self, now: float | None = None) -> RiskSnapshot:
         now = now if now is not None else time.time()
         acct = self.c.account()
-        positions = self.c.positions()
+        # Account-wide (all magics): competition tripwires (leverage, concentration,
+        # net-directional) are measured on the WHOLE account, and the margin/equity
+        # figures already are. Magic-filtering here understated risk once a second
+        # strategy (e.g. the scalper) trades the same account. (E0.11)
+        positions = self.c.positions(magic=None)
 
         gross = 0.0
         net = 0.0

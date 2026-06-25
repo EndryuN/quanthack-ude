@@ -22,7 +22,7 @@ class FakeClient:
         self._n = notionals
     def account(self):
         return FakeAcct(INITIAL_EQUITY, margin=100_000.0, margin_level=900.0)
-    def positions(self):
+    def positions(self, magic=None):
         return [FakePos(s, abs(n), 0 if n > 0 else 1) for s, n in self._n.items()]
     def notional(self, symbol, volume):
         return abs(self._n[symbol])
@@ -55,7 +55,7 @@ class DDClient:
     """No positions -> drawdown is the only thing under test. Equity is mutable."""
     def __init__(self): self.eq = INITIAL_EQUITY
     def account(self): return FakeAcct(self.eq, 0.0, 0.0)
-    def positions(self): return []
+    def positions(self, magic=None): return []
     def notional(self, s, v): return 0.0
 
 
