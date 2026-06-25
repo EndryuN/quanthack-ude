@@ -150,5 +150,13 @@ class EngineConfig:
     nemotron_consensus_gain: float = 0.5      # agreement boost strength, [0,1]
     second_opinion_timeout: float = 30.0      # seconds; failure -> Claude-only
 
+    # --- multi-model ensemble via the Pydantic AI Gateway (Logfire/Doubleword) ---
+    # OFF by default. When on, each gateway model votes additively on Claude's
+    # direction (bot/ensemble.py); needs GATEWAY_BASE_URL + GATEWAY_API_KEY env.
+    use_ensemble: bool = False
+    ensemble_models: list = field(default_factory=list)   # gateway model ids to poll
+    ensemble_gain: float = 0.5                # voter agree/disagree strength, [0,1]
+    ensemble_timeout: float = 30.0
+
 
 CONFIG = EngineConfig()
