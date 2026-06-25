@@ -186,3 +186,48 @@ Existing tests to update: `test_scalper.py` (step-driven API, real P&L accumulat
 
 - **Bid vs mid:** live M1 bars are bid-based; the backtest uses mid. The deviation signal is largely invariant to a constant half-spread shift, and the cost model already charges a full round-trip spread, so this is a minor residual; the implementation should pick one definition and apply it consistently in both paths and document the choice.
 - **One MT5 session, two client wrappers:** confirm `mt5.initialize()` called by both `MT5Client.connect()` instances in one process is idempotent (expected) and that symbol warmup isn't duplicated wastefully.
+
+---
+
+## 9. Revision 2 — strategy-agnostic slot, dynamic selection, fast exits
+
+A three-agent review (viability / alternatives / architecture) reframed this work. The **integration mechanism stays; the strategy changes.** This section supersedes the parts of §1–§8 it touches.
+
+### 9.1 Strategy pivot (why)
+- **The mean-reversion fade has no edge** and is scrapped as a live strategy: on **zero-spread EURUSD** it still loses **11–17 bps** over ~540 trades — a *signal* problem, not a cost problem. The lone "profitable" cell (+14 bps, 34 trades) is in-sample argmax overfit at the gate floor. It is also same-universe with the AI engine, so it *cannibalizes* rather than diversifies.
+- The build splits into two phases:
+  - **Phase 1 (this spec): a strategy-agnostic, cadence-agnostic "scalper slot"** — the integration mechanism + UI, shipped **dry-run/disabled**, running no edged strategy.
+  - **Phase 2 (separate plan): crypto fast-momentum** — 5–10s cadence, volatility-breakout + BTC→alt lead-lag, where minute-scale moves dwarf spread. Backtest harness (max MT5 crypto history) → walk-forward → arming gate; arm only if it beats the engine's Sharpe net of cost (observed target ≈ **0.88** for ~5–10s, 1-BTC BTCUSD trades).
+
+### 9.2 Cadence-agnostic slot
+The engine calls `scalper.step()` **every engine tick (~5s)**; the **strategy decides whether to act** — per-closed-bar (reversion-like) or **per-tick (~5s, fast crypto)**. The per-M1-bar rule (D2) becomes a *strategy* choice, not a slot constraint. (A dedicated ~1s scalper poll can be added in Phase 2 if entry timing needs to be finer than 5s.)
+
+### 9.3 Fast exits are broker-side (the key change for short trades)
+A 5–10s trade cannot wait for the loop to detect its exit. The scalper attaches **both a take-profit AND a stop-loss order at entry** (`tp_bps` / `stop_bps` from the fill, via `set_sltp` / the order request). The broker fills them **server-side, instantly, at the exact level**, independent of loop cadence — this is how P/L is captured on a few-second trade. The loop-based time-stop/revert remain only as backstops.
+
+### 9.4 Dynamic symbol selection + live handoff (replaces static config partition)
+Symbol assignment is **runtime**, via a panel control written to `state/controls.json` (a `scalper_symbols` assignment list, same mechanism as the other controls):
+- The engine computes its **effective universe each tick** = `ALL_SYMBOLS − assigned` (no longer import-time only), so a newly assigned symbol is **ceded live**.
+- **Handoff:** when a symbol is assigned to the scalper, the engine **flattens its own position** on that symbol (it's now out of the engine's universe → de-risked to flat), then the scalper takes it. Reversible: unassigning returns it to the engine.
+- The startup partition assertion (§3.2) still holds for any config-seeded assignments.
+
+### 9.5 Explicit, visible arming (fixes "I waited for arm and it never went off")
+Arming must never be an opaque passive wait:
+- The panel shows the slot's **status** (dormant / dry-run / armed) and, per symbol, whether the strategy has **cleared the arming gate** and its current backtest stats — so the user can see *why* it hasn't armed.
+- Arming is an **explicit panel action** (dry-run ↔ live), **guarded** by the gate (can't arm a strategy that hasn't cleared net-positive-after-cost + Sharpe-above-engine). The automated gate decides *eligibility*; the operator decides *go-live*. No more silent waiting.
+
+### 9.6 Positions-panel hook
+Scalped symbols are **pinned at the bottom** of the Positions panel, below the engine's, with a **marker appended to the symbol name** (e.g. `EURUSD ·s`) so they're visually distinct.
+
+### 9.7 Required safety fixes (from the architecture review — before arming)
+- **B1 (critical):** account-wide kill must flatten the scalper. `flatten_all` gains an all-account mode (`positions(magic=None)`) and `close_symbol` closes by symbol/ticket **regardless of the client's magic** (today the kill triggers on scalper-inflated exposure but cannot clean it up).
+- **B2:** source the scalper's realized P&L from **broker deal history** (`client.realized_profit(magic=..., days=1)`), not self-accumulation — so the daily-loss halt counts **broker SL stop-outs** (its main case).
+- **B4:** post-fill SL/TP retry + loud warning if a stop can't be attached (no silent stop-less open).
+- **B6:** fail **closed** (skip the symbol) when a bar timestamp is unavailable, so a malformed feed can't silently revert to per-loop over-trading.
+- **G1:** engine hosts the scalper — construct when assigned/enabled, `step(allow_new_risk=…)` at the **end of tick**, **skipped on the kill / operator-flatten early-returns** (or it re-opens right after a kill).
+- **G2:** startup partition assertion (`SCALPER`/assigned ⊆ `ALL_SYMBOLS`, disjoint from the engine).
+- **G3:** report scalper broker-SL/TP fills (today neither engine nor scalper logs them).
+- **G4:** rewrite `test_scalper.py` to the new step API + the §6 cases (new-bar gating, per-bar time-stop, realized-P&L-from-deals, account-kill-flattens-scalper, partition assertion, new-risk gating, foreign-symbol guard, broker TP/SL on entry).
+
+### 9.8 What's already correct in the rewrite (keep)
+New-bar gating, per-bar `bars_held`, entry basis from `pos.price_open` (restart-safe), foreign-symbol guard, new-risk gating, and the one-process/two-magic structure (D1/D5) were all reviewed as sound.
