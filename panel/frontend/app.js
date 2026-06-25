@@ -686,23 +686,28 @@ async function renderHistory(sym){
   const d = await getJSON("/api/decisions");
   const recs = ((d && d.records) || []).filter(r=>r.event!=="refresh_failed");
   const sgn = dir => dir==="long"?1:dir==="short"?-1:0;
-  const xs=[], ys=[], eX=[], eY=[], eT=[], cX=[], cY=[], cT=[];
+  // entries split by direction: green diamond = LONG (buy), red diamond = SHORT
+  // (sell); closes are a neutral grey x so they don't read as a red sell.
+  const xs=[], ys=[], lX=[], lY=[], lT=[], sX=[], sY=[], sT=[], cX=[], cY=[], cT=[];
   for(const rec of recs){
     const v = (rec.views||[]).find(x=>x.symbol===sym);
     if(v){ xs.push(rec.ts); ys.push(sgn(v.direction)*(v.confidence||0)); }
     for(const o of (rec.orders||[])) if(o.symbol===sym){
-      const lbl = (o.side||"").toUpperCase()+" "+(o.lots||"");
-      if(o.side==="close"){ cX.push(rec.ts); cY.push(0); cT.push(lbl); }
-      else { eX.push(rec.ts); eY.push(0); eT.push(lbl); }
+      const lots = o.lots||"";
+      if(o.side==="close"){ cX.push(rec.ts); cY.push(0); cT.push("CLOSE "+lots); }
+      else if(o.side==="buy"){ lX.push(rec.ts); lY.push(0); lT.push("LONG · BUY "+lots); }
+      else { sX.push(rec.ts); sY.push(0); sT.push("SHORT · SELL "+lots); }
     }
   }
   const traces=[
     {x:xs, y:ys, type:"scatter", mode:"lines+markers", line:{color:C.chartreuse,width:2}, marker:{size:5},
      name:"stance", hovertemplate:"%{x|%b %d %H:%M}<br>%{y:.2f}<extra></extra>"},
-    {x:eX, y:eY, type:"scatter", mode:"markers", marker:{color:C.human,size:11,symbol:"diamond"},
-     text:eT, name:"entries", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+    {x:lX, y:lY, type:"scatter", mode:"markers", marker:{color:C.long,size:11,symbol:"diamond",line:{color:C.ink,width:1}},
+     text:lT, name:"long (buy)", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
+    {x:sX, y:sY, type:"scatter", mode:"markers", marker:{color:C.short,size:11,symbol:"diamond",line:{color:C.ink,width:1}},
+     text:sT, name:"short (sell)", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
     {x:cX, y:cY, type:"scatter", mode:"markers",
-     marker:{color:C.short,size:11,symbol:"x",line:{color:C.ink,width:1}},
+     marker:{color:C.muted,size:11,symbol:"x",line:{color:C.ink,width:1}},
      text:cT, name:"closes", hovertemplate:"%{x|%b %d %H:%M}<br>%{text}<extra></extra>"},
   ];
   Plotly.react("hist-chart", traces, {...PLOT_BG, height:440, hovermode:"x unified", showlegend:true,
@@ -718,7 +723,9 @@ async function renderHistory(sym){
       const t = rec.ts ? rec.ts.slice(5,16).replace("T"," ") : "";
       const side=(o.side||"").toUpperCase();
       const col = o.side==="close"?C.muted:(o.side==="buy"?C.long:C.short);
-      items.push(`<div><span style="color:var(--muted)">${t}</span> <span style="color:${col}">${side}</span> ${o.lots||""} ${o.symbol}</div>`);
+      const dir = o.side==="close" ? "" : (o.side==="buy"?" · LONG":" · SHORT");
+      items.push(`<div><span style="color:var(--muted)">${t}</span> <span style="color:${col}">${side}</span> `+
+        `${o.lots||""} ${o.symbol}<span style="color:${col};font-size:9px;opacity:.8">${dir}</span></div>`);
     }
     if(items.length>=40) break;
   }
