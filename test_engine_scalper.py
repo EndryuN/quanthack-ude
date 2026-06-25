@@ -47,7 +47,7 @@ def _engine(d, **controls):
     e.client = FakeClient({"EURUSD": Pos("EURUSD", 2.0)})   # engine holds EURUSD long
     e.risk = FakeRisk()
     e._views = {}; e._views_ts = time.time(); e._last_acted_ts = e._views_ts
-    e.cfg.use_trailing_stop = False; e.logger = None
+    e.cfg.use_trailing_stop = False; e.cfg.use_broker_sl = False; e.logger = None
     e._scalper = FakeScalper()                              # inject -> _run_scalper skips real connect
     base = {"paused": False, "aggression": None, "block": [], "allow": None,
             "active_preset": "Default", "flatten_seq": 0, "apply_seq": 0,

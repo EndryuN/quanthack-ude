@@ -217,6 +217,10 @@ class Engine:
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
 
+        # 4.5 GUARANTEE a stop on every position FIRST (liquidation = elimination)
+        if self.cfg.use_broker_sl:
+            self._ensure_stops()
+
         # 5. trail stops into profit on meaningful winners (every loop)
         if self.cfg.use_trailing_stop:
             self._update_trailing_stops()
@@ -494,6 +498,37 @@ class Engine:
         }
         self.logger.log_decision(record)
         self._pending_log = None
+
+    def _ensure_stops(self):
+        """GUARANTEE every open position has a broker stop. Liquidation = instant
+        elimination (competition red-line), so a position must never run naked.
+        Order-time SL attach can be silently dropped (broker ignores sl on the
+        DEAL, invalid-stops, or no quote); the trailing loop only ratchets stops
+        on already-profitable positions and never establishes a base one. This
+        sweep reads each position's ACTUAL sl and, if missing, attaches the
+        SL_PCT failsafe via the reliable SLTP action."""
+        import MetaTrader5 as _mt5
+        from .overrides import pinned_set as _pinned_set
+        _pinned = _pinned_set(self._overrides) if self._overrides else set()
+        for p in self.client.positions():
+            try:
+                if getattr(p, "sl", 0.0) or p.symbol in _pinned:
+                    continue                              # already protected (or operator-controlled)
+                is_long = p.type == _mt5.POSITION_TYPE_BUY
+                sl = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))
+                if not sl:
+                    print(f"[{_ts()}]    !! {p.symbol} has NO stop and no quote to set one")
+                    continue
+                if self.dry_run:
+                    print(f"   [DRY] ENSURE-SL {p.symbol} -> {sl}")
+                    continue
+                if self.cfg.use_control_panel:
+                    ok, res = self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
+                else:
+                    ok, res = self.client.set_sl(p.symbol, sl)
+                print(f"[{_ts()}]    ENSURE-SL {p.symbol} -> {sl}{_rc(ok, res)}")
+            except Exception as e:   # never let an SL-ensure error stall the loop
+                print(f"[{_ts()}]    !! ensure-stop {getattr(p, 'symbol', '?')} failed: {e}")
 
     def _update_trailing_stops(self):
         """Ratchet each position's broker SL toward profit once it's a meaningful
