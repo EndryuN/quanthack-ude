@@ -175,7 +175,7 @@ def get_controls():
 @app.post("/api/controls")
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
-    for k in ("paused", "aggression", "block", "allow", "active_preset"):
+    for k in ("paused", "aggression", "block", "allow", "active_preset", "second_opinion"):
         if k in body:
             c[k] = body[k]
     c["apply_seq"] = int(c.get("apply_seq", 0)) + 1   # apply knobs within one tick

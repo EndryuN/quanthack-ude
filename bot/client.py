@@ -39,6 +39,7 @@ class Position:
     profit: float
     sl: float = 0.0
     tp: float = 0.0
+    magic: int = 0
     @property
     def signed_lots(self) -> float:
         return self.volume if self.type == mt5.POSITION_TYPE_BUY else -self.volume
@@ -142,7 +143,8 @@ class MT5Client:
         for p in raw:
             out.append(Position(p.ticket, p.symbol, p.volume, p.type,
                                 p.price_open, p.price_current, p.profit,
-                                sl=getattr(p, "sl", 0.0), tp=getattr(p, "tp", 0.0)))
+                                sl=getattr(p, "sl", 0.0), tp=getattr(p, "tp", 0.0),
+                                magic=getattr(p, "magic", 0)))
         return out
 
     def position_for(self, symbol: str):

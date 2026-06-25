@@ -392,6 +392,9 @@ async function loadControls(){
   const av = document.getElementById("aggr-val"); if(av) av.textContent = Number(a).toFixed(2);
   const pb = document.getElementById("pause-btn");
   if(pb){ pb.classList.toggle("on", !!_ctl.paused); pb.textContent = _ctl.paused ? "Paused" : "Pause"; }
+  const so = document.getElementById("so-btn");
+  if(so){ const on = _ctl.second_opinion !== false;   // null/true = on (config default is on)
+    so.classList.toggle("on", on); so.textContent = on ? "Nemotron: ON" : "Nemotron: OFF"; }
 }
 
 async function postControls(patch){
@@ -423,6 +426,11 @@ function wireControls(){
   }
   const pb = document.getElementById("pause-btn");
   if(pb && !pb.dataset.w){ pb.dataset.w="1"; pb.onclick = ()=> postControls({paused: !(_ctl && _ctl.paused)}); }
+  const so = document.getElementById("so-btn");
+  if(so && !so.dataset.w){ so.dataset.w="1"; so.onclick = ()=>{
+    const on = _ctl && _ctl.second_opinion !== false;   // currently on -> turn off, and vice versa
+    postControls({second_opinion: !on}).then(()=> setStatus(
+      (!on ? "Nemotron ON" : "Nemotron OFF")+" — applies at next AI refresh")); }; }
   const fb = document.getElementById("flatten-btn");
   if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
     if(!confirm("Flatten ALL positions now?")) return;
@@ -566,6 +574,8 @@ function wireNav(){
   const h = document.getElementById("hamburger");
   if(h) h.onclick = (e)=>{ e.stopPropagation(); const nm=document.getElementById("navmenu"); if(nm) nm.hidden = !nm.hidden; };
   document.querySelectorAll(".navitem").forEach(b=> b.onclick = ()=> showView(b.dataset.view));
+  const brand = document.querySelector("#strip .brand");
+  if(brand){ brand.title = "back to dashboard"; brand.onclick = ()=> showView("dashboard"); }
   const more = document.getElementById("orders-more"); if(more) more.onclick = ()=> showView("history");
   const back = document.getElementById("hist-back"); if(back) back.onclick = ()=> showView("dashboard");
   const sel = document.getElementById("hist-symbol"); if(sel) sel.onchange = ()=>{ _histSym = sel.value; renderHistory(_histSym); };

@@ -208,8 +208,11 @@ class Engine:
                 context=context)
             claude_rationale = {v.symbol: v.rationale for v in mv.views}
 
+            from .controls import second_opinion_on
+            so_on = second_opinion_on(self._controls, self.cfg.use_second_opinion,
+                                      not self._second_opinion_off)
             nemo_views, nemo_regime, nemo_usage = {}, None, None
-            if self.cfg.use_second_opinion and not self._second_opinion_off:
+            if so_on:
                 from .second_opinion import get_second_opinion
                 try:
                     nemo_views, nemo_regime, nemo_usage = get_second_opinion(
