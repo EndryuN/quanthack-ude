@@ -478,8 +478,15 @@ function _scalpAllCleared(){
 
 async function runGate(sym){     // the "backtest as a step" when a symbol is assigned
   _gateRunning[sym] = true; renderScalpAssigned();
-  try { await getJSON("/api/scalper/gate?symbol=" + encodeURIComponent(sym)); }
-  finally { _gateRunning[sym] = false; await loadControls(); }   // loadControls re-renders
+  try {
+    const r = await getJSON("/api/scalper/gate?symbol=" + encodeURIComponent(sym));
+    if(r && r.arm) setStatus(`${sym} backtest gate: clears ✓ — ready to arm`);
+    else setStatus(`${sym} backtest gate: no edge — ${(r && r.reason) || "stays dry-run"}`);
+  } catch(e){
+    setStatus(`${sym} backtest gate failed — ${e}`);
+  } finally {
+    _gateRunning[sym] = false; await loadControls();   // loadControls re-renders the chip
+  }
 }
 
 function renderScalpAssigned(){
