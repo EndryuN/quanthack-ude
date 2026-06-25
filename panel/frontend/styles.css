@@ -16,6 +16,14 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .rchip.long{color:var(--long);border-color:rgba(46,204,113,.35)}
 .rchip.short{color:var(--short);border-color:rgba(255,77,77,.35)}
 .rchip.flat{color:var(--muted)}
+/* currency-strength ribbon in its own row under the header */
+#ribbon{display:flex;gap:6px;align-items:center;padding:6px 18px;background:var(--canvas);
+  border-bottom:1px solid var(--lift);overflow-x:auto;white-space:nowrap;position:sticky;top:56px;z-index:9}
+#ribbon::-webkit-scrollbar{height:5px}
+/* keep the Claude/Nemotron regime pills compact + truncated, full text on hover */
+#regimes{flex:none;max-width:46%}
+.regime{max-width:230px}
+.regime span{overflow:hidden;text-overflow:ellipsis;max-width:230px;display:block}
 .regime{display:flex;flex-direction:column;min-width:0}
 .regime label{font-size:10px;letter-spacing:.12em;color:var(--muted)}
 .regime.claude span{color:var(--claude)} .regime.nemo span{color:var(--nemo)}
@@ -212,3 +220,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .scalp-table td{text-align:right;padding:3px 8px;color:var(--ink)}
 .scalp-table tr.scalp-best{background:var(--lift)}
 .scalp-table tr.scalp-best td{font-weight:600}
+.scalp-cmp-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
+.scalp-cmp td:first-child,.scalp-cmp th:first-child{text-align:left}
+.scalp-cmp .scalp-ok{color:var(--long);font-weight:600}
+.scalp-cmp .scalp-no{color:var(--muted)}

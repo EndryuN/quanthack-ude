@@ -29,8 +29,16 @@ function renderStrip(s){
     const ar = str > 0.02 ? "▲" : str < -0.02 ? "▼" : "·";
     return `<span class="rchip ${cls}" title="net strength ${str.toFixed(2)} across its pairs">${c} ${ar}</span>`;
   }).join("");
-  const _reg = document.getElementById("regimes");
-  if(_reg) _reg.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
+  // currency ribbon lives in its OWN row (#ribbon) so it never clobbers the
+  // Claude/Nemotron regime pills in the header (#regimes).
+  const _rib = document.getElementById("ribbon");
+  if(_rib) _rib.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
+  // header regime pills: each model's one-line read, full text on hover.
+  const _rg = (s.regime) || {};
+  const _cl = document.getElementById("regime-claude");
+  if(_cl){ _cl.textContent = _rg.claude || "—"; _cl.parentElement.title = _rg.claude || "Claude — no market read yet"; }
+  const _nm = document.getElementById("regime-nemo");
+  if(_nm){ _nm.textContent = _rg.nemotron || "—"; _nm.parentElement.title = _rg.nemotron || "Nemotron — unavailable (Claude-only)"; }
   const a = s.account || {};
   const kpis = [
     ["EQUITY", fmt(a.equity)], ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—"],
@@ -252,16 +260,19 @@ async function plotSymbol(symbol, tf){
   const lastT = tms.length ? tms[tms.length - 1] : 0;
   const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
   const price = [{x:tms, y:b.closes, type:"scatter", mode:"lines", line:{color:C.ink,width:1.5}, name:curSymbol, hovertemplate:"%{y:,.6g}<extra></extra>"}];
-  const coneTrace=(cone,color,name)=> cone? [
+  const coneTrace=(cone,color,name,dash)=> cone? [
     {x:cone.upper.map(p=>lastT+p[0]*dt), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
     {x:cone.lower.map(p=>lastT+p[0]*dt), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
       fillcolor:color+"22", showlegend:false, hoverinfo:"skip"},
-    {x:cone.mid.map(p=>lastT+p[0]*dt), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2}, name:name, hovertemplate:"%{y:,.6g}<extra></extra>"},
+    {x:cone.mid.map(p=>lastT+p[0]*dt), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2,dash:dash||"solid"}, name:name, hovertemplate:"%{y:,.6g}<extra></extra>"},
   ] : [];
+  // Consensus is drawn last (on top) and DASHED so that when no Nemotron is
+  // running — consensus == Claude, perfectly overlapping — the solid Claude
+  // line shows through the gaps instead of being hidden under it.
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
-    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus")];
+    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
@@ -463,18 +474,24 @@ async function initScalper(){
   if(!_scalpWired){
     const go = document.getElementById("scalp-go");
     if(go) go.onclick = runScalp;
+    const clr = document.getElementById("scalp-clear");
+    if(clr) clr.onclick = ()=>{ _scalpRuns={}; _scalpLast=null; renderScalp(); };
     _scalpWired = true;
   }
+  renderScalp();
 }
+// accumulate one result per symbol so candidates can be compared side-by-side
+// (you arm at most max_concurrent=2, so the table is how you pick your 2 slots).
+let _scalpRuns = {}, _scalpLast = null;
+const _armable = b => b && b.net_pnl_bps>0 && b.sharpe>0.1;   // net>0 AND Sharpe clears the AI engine's (~0.1)
+
 async function runScalp(){
   const sel = document.getElementById("scalp-sym");
   const st = document.getElementById("scalp-status");
-  const out = document.getElementById("scalp-results");
   const go = document.getElementById("scalp-go");
   const sym = sel ? sel.value : "EURUSD";
-  if(st) st.textContent = "running… (crypto pulls M1 from MT5, ~a few seconds)";
+  if(st) st.textContent = `running ${sym}… (crypto pulls M1 from MT5, ~a few seconds)`;
   if(go) go.disabled = true;
-  if(out) out.innerHTML = "";
   let r;
   try { r = await getJSON("/api/scalp/backtest?symbol=" + encodeURIComponent(sym)); }
   finally { if(go) go.disabled = false; }
@@ -482,30 +499,50 @@ async function runScalp(){
     if(st) st.textContent = `no M1 data for ${sym} — for crypto, open the MT5 terminal and make sure the symbol is available.`;
     return;
   }
-  if(st) st.textContent = `${r.bars.toLocaleString()} M1 bars · cost ${r.cost_bps.toFixed(2)} bps/round-trip`;
-  const best = r.best;
-  const hdr = `<tr><th>entry</th><th>tp</th><th>stop</th><th>trades</th><th>win%</th>`+
-              `<th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th></tr>`;
-  const rows = r.rows.map(x=>{
-    const isBest = best && x.entry===best.entry && x.tp===best.tp && x.stop===best.stop;
-    const net = x.net_pnl_bps>0 ? `<span style="color:var(--long)">${x.net_pnl_bps.toFixed(1)}</span>`
-              : `<span style="color:var(--short)">${x.net_pnl_bps.toFixed(1)}</span>`;
-    return `<tr class="${isBest?"scalp-best":""}"><td>${x.entry}</td><td>${x.tp}</td><td>${x.stop}</td>`+
-      `<td>${x.trades}</td><td>${(x.win_rate*100).toFixed(1)}</td><td>${net}</td>`+
-      `<td>${x.sharpe.toFixed(3)}</td><td>${x.max_dd_bps.toFixed(1)}</td></tr>`;
+  if(st) st.textContent = `${sym}: ${r.bars.toLocaleString()} M1 bars · cost ${r.cost_bps.toFixed(2)} bps/round-trip`;
+  _scalpRuns[sym] = r;   // overwrite same symbol, keep the others
+  _scalpLast = sym;
+  renderScalp();
+}
+
+function renderScalp(){
+  const out = document.getElementById("scalp-results");
+  if(!out) return;
+  const syms = Object.keys(_scalpRuns);
+  if(!syms.length){ out.innerHTML = '<p class="scalp-note">Pick a symbol and Run backtest. Results accumulate here so you can compare candidates and pick your 2 live slots.</p>'; return; }
+  // --- comparison table: best row per tested symbol, sorted by Sharpe ---
+  const ranked = syms.map(s=>_scalpRuns[s]).sort((a,b)=>((b.best?.sharpe??-9)-(a.best?.sharpe??-9)));
+  const chead = `<tr><th>symbol</th><th>bars</th><th>cost</th><th>entry/tp/stop</th><th>trades</th>`+
+                `<th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th><th>verdict</th></tr>`;
+  const crows = ranked.map(r=>{
+    const b=r.best;
+    const sel = r.symbol===_scalpLast ? " scalp-best" : "";
+    if(!b) return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td><td colspan="6" style="text-align:center;color:var(--muted)">&lt;30 trades</td><td class="scalp-no">no edge</td></tr>`;
+    const net = `<span style="color:var(--${b.net_pnl_bps>0?'long':'short'})">${b.net_pnl_bps.toFixed(1)}</span>`;
+    const ok=_armable(b);
+    return `<tr class="${sel}"><td>${r.symbol}</td><td>${r.bars.toLocaleString()}</td><td>${r.cost_bps.toFixed(2)}</td>`+
+      `<td>${b.entry}/${b.tp}/${b.stop}</td><td>${b.trades}</td><td>${(b.win_rate*100).toFixed(1)}</td>`+
+      `<td>${net}</td><td>${b.sharpe.toFixed(3)}</td><td>${b.max_dd_bps.toFixed(1)}</td>`+
+      `<td class="${ok?'scalp-ok':'scalp-no'}">${ok?'clears ✓':'dormant'}</td></tr>`;
   }).join("");
-  let verdict;
-  if(best){
-    const armable = best.net_pnl_bps>0 && best.sharpe>0.1;   // gate: positive AND clears the AI engine's ~0.1
-    verdict = `<div class="scalp-verdict ${armable?"":"short"}">`+
-      `BEST (Sharpe, ≥30 trades): entry ${best.entry} / tp ${best.tp} / stop ${best.stop} → `+
-      `net ${best.net_pnl_bps.toFixed(1)} bps, Sharpe ${best.sharpe.toFixed(3)}, win ${(best.win_rate*100).toFixed(1)}% — `+
-      `${armable?"clears the gate":"no durable edge → stays dormant"}</div>`;
-  } else {
-    verdict = `<div class="scalp-verdict short">no parameter set produced ≥30 trades — no edge to arm.</div>`;
+  let html = `<h3 class="scalp-cmp-h">Candidates (best params per symbol — pick 2 to arm)</h3>`+
+    `<table class="scalp-table scalp-cmp">${chead}${crows}</table>`;
+  // --- full grid for the most-recently run symbol ---
+  const last = _scalpRuns[_scalpLast];
+  if(last){
+    const b=last.best;
+    const ghead = `<tr><th>entry</th><th>tp</th><th>stop</th><th>trades</th><th>win%</th><th>net&nbsp;bps</th><th>sharpe</th><th>maxDD</th></tr>`;
+    const grows = last.rows.map(x=>{
+      const isBest = b && x.entry===b.entry && x.tp===b.tp && x.stop===b.stop;
+      const net = `<span style="color:var(--${x.net_pnl_bps>0?'long':'short'})">${x.net_pnl_bps.toFixed(1)}</span>`;
+      return `<tr class="${isBest?'scalp-best':''}"><td>${x.entry}</td><td>${x.tp}</td><td>${x.stop}</td>`+
+        `<td>${x.trades}</td><td>${(x.win_rate*100).toFixed(1)}</td><td>${net}</td>`+
+        `<td>${x.sharpe.toFixed(3)}</td><td>${x.max_dd_bps.toFixed(1)}</td></tr>`;
+    }).join("");
+    html += `<h3 class="scalp-cmp-h">${_scalpLast} — full sweep</h3><table class="scalp-table">${ghead}${grows}</table>`;
   }
-  if(out) out.innerHTML = verdict + `<table class="scalp-table">${hdr}${rows}</table>`+
-    `<p class="scalp-note">GATE: arm live only if net &gt; 0 after cost AND Sharpe clears the AI engine's (~0.1).</p>`;
+  html += `<p class="scalp-note">GATE: arm live only if net &gt; 0 after cost AND Sharpe clears the AI engine's (~0.1).</p>`;
+  out.innerHTML = html;
 }
 function wireNav(){
   if(_navWired) return;

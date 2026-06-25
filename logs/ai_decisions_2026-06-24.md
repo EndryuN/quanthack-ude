@@ -2530,3 +2530,170 @@
 - (none)
 
 ---
+## 20:35:30 · DRY-RUN
+**Regime (Claude):** Broad risk-off with strong USD bid; metals and crypto in steep multi-day selloff (oversold), liquid-FX trending USD-positive but several pairs stretched.
+**Account:** eq=1,051,839 · lev=3.6x · margin=12% · ML=826% · sharpe=0.20
+**Cost:** Claude in=2491 out=1493 ~$0.050 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDJPY | LONG 0.55 | long 0.55 | — | ⚪ no second opinion |
+| EURUSD | SHORT 0.50 | short 0.50 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.48 | long 0.48 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.45 | long 0.45 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- BUY 3.64 USDJPY  (+6.78 → +10.42)  SL=153.739
+
+---
+## 21:03:44 · DRY-RUN
+**Regime (Claude):** Risk-off with broad USD strength; metals and crypto selling off hard but deeply oversold near range lows
+**Account:** eq=1,051,258 · lev=3.6x · margin=12% · ML=826% · sharpe=0.19
+**Cost:** Claude in=2492 out=1385 ~$0.047 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDJPY | LONG 0.50 | long 0.50 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| EURUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- SELL 0.07 XAGUSD  (-0.13 → -0.20)  SL=61.9963
+
+---
+## 23:02:40 · DRY-RUN
+**Regime (Claude):** Broad USD strength with risk-off tone: metals and crypto under pressure, USD up against majors
+**Account:** eq=1,040,554 · lev=3.9x · margin=13% · ML=770% · sharpe=0.15
+**Cost:** Claude in=2490 out=1381 ~$0.047 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURUSD | SHORT 0.52 | short 0.52 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.52 | long 0.52 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.50 | short 0.50 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.50 | long 0.50 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.50 | long 0.50 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.35 | short 0.35 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.35 | short 0.35 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- SELL 0.9 BTCUSD  (+0.00 → -0.90)  SL=70299.655
+
+---
+## 23:18:04 · DRY-RUN
+**Regime (Claude):** Broad USD strength dominates — USD up against EUR/GBP/AUD; risk-off in metals and crypto, though both are oversold and bouncing intraday.
+**Account:** eq=1,042,071 · lev=4.0x · margin=13% · ML=760% · sharpe=0.15
+**Cost:** Claude in=2489 out=1517 ~$0.050 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.33 | long 0.33 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.32 | short 0.32 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.22 | short 0.22 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.22 | short 0.22 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- CLOSE BTCUSD
+- CLOSE XRPUSD
+
+---
+## 23:33:29 · DRY-RUN
+**Regime (Claude):** Broad USD strength with risk-off tone — dollar bid across FX, metals and crypto under pressure though showing short-term bounces off lows.
+**Account:** eq=1,041,842 · lev=4.0x · margin=13% · ML=759% · sharpe=0.15
+**Cost:** Claude in=2491 out=1551 ~$0.051 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURUSD | SHORT 0.52 | short 0.52 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.50 | short 0.50 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.48 | short 0.48 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.43 | short 0.43 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.38 | long 0.38 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.35 | short 0.35 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.30 | short 0.30 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- SELL 14.31 ETHUSD  (-25.00 → -39.31)  SL=1858.639
+
+---
+## 23:48:50 · DRY-RUN
+**Regime (Claude):** Broad USD strength with risk-off: metals and crypto selling off sharply while USD trends higher across majors
+**Account:** eq=1,042,059 · lev=4.1x · margin=14% · ML=733% · sharpe=0.15
+**Cost:** Claude in=2491 out=1267 ~$0.044 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURUSD | SHORT 0.48 | short 0.48 | — | ⚪ no second opinion |
+| AUDUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.35 | long 0.35 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- SELL 33.98 SOLUSD  (-66.02 → -100.00)  SL=77.82
+
+---
+## 23:58:03 · DRY-RUN
+**Regime (Claude):** Broad USD strength with risk-off tone: metals and crypto selling off while USD pairs trend in dollar's favor across timeframes
+**Account:** eq=1,042,799 · lev=4.1x · margin=14% · ML=731% · sharpe=0.15
+**Cost:** Claude in=2490 out=1446 ~$0.049 · Nemotron unavailable
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.50 | short 0.50 | — | ⚪ no second opinion |
+| EURUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| GBPUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| XAUUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| BTCUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| ETHUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| SOLUSD | SHORT 0.45 | short 0.45 | — | ⚪ no second opinion |
+| USDCHF | LONG 0.42 | long 0.42 | — | ⚪ no second opinion |
+| XRPUSD | SHORT 0.42 | short 0.42 | — | ⚪ no second opinion |
+| USDCAD | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| USDJPY | LONG 0.40 | long 0.40 | — | ⚪ no second opinion |
+| XAGUSD | SHORT 0.40 | short 0.40 | — | ⚪ no second opinion |
+
+**Orders placed:**
+- (none)
+
+---
