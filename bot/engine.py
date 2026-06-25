@@ -112,9 +112,15 @@ class Engine:
         self._controls = None   # last-read operator controls (None when gated off)
         self._overrides = None   # last-read per-symbol overrides (None when gated off)
         self._last_positions = {}   # ticket -> {symbol, profit}; for stop-hit detection
+        self._scalper = None        # integrated scalper slot (lazily constructed)
+        self._active_symbols = list(cfg.symbols)   # engine universe minus ceded (per tick)
+        self._handed_off = set()    # symbols whose engine position was flattened for the scalper
 
     def start(self):
         self.client.connect()
+        from .config import SCALPER as _SCALPER, assert_symbol_partition
+        if _SCALPER.enabled:        # config-seeded assignments must be disjoint (G2)
+            assert_symbol_partition(self.cfg.symbols, _SCALPER.symbols)
         mode = "DRY-RUN (no orders)" if self.dry_run else "*** LIVE TRADING ***"
         print(f"[engine] connected. mode={mode}")
         if self.cfg.use_second_opinion and self._second_opinion_off:
@@ -166,6 +172,16 @@ class Engine:
                 self._print_status(acct, snap)
                 return
 
+        # --- dynamic scalper assignment: cede assigned symbols from the engine's
+        #     live universe and hand off any engine position on them (spec §9.4) ---
+        from .config import live_engine_symbols, ALL_SYMBOLS as _ALL, SCALPER as _SCALPER
+        from .controls import scalper_assignments
+        assigned = (scalper_assignments(self._controls, _ALL) if self._controls is not None
+                    else (list(_SCALPER.symbols) if _SCALPER.enabled else []))
+        self._active_symbols = live_engine_symbols(assigned)
+        self._handoff(assigned)
+        paused = bool(self._controls and self._controls.get("paused"))
+
         # 2. state / metrics
         m = self.state.update(acct.equity)
 
@@ -186,7 +202,6 @@ class Engine:
             _scale = getattr(snap, "risk_scale", 1.0)
             if _scale < 1.0:
                 targets = {s: t * _scale for s, t in targets.items()}
-            paused = bool(self._controls and self._controls["paused"])
             if paused or not snap.allow_new_risk:
                 targets = self._derisk_only(targets)
             if self._controls:
@@ -218,6 +233,9 @@ class Engine:
         # an engine close this tick)
         self._report_stop_hits({o["symbol"] for o in orders if o.get("side") == "close"})
 
+        # 7. scalper slot — LAST, so a kill / operator-flatten early-return skips it
+        self._run_scalper(assigned, snap, paused)
+
         self._print_status(acct, snap, m, n_orders)
 
     def _signal_changed(self):
@@ -229,9 +247,9 @@ class Engine:
         if self.cfg.signal_source == "hybrid":
             held = {p.symbol: p.signed_lots for p in self.client.positions()}
             return self.strategy.target_positions(
-                self.client, self.cfg.symbols, acct.equity, held=held)
+                self.client, self._active_symbols, acct.equity, held=held)
         if not self._views:
-            return {s: 0.0 for s in self.cfg.symbols}
+            return {s: 0.0 for s in self._active_symbols}
         agg = self.cfg.aggression
         if self._controls is not None:
             from .controls import effective_aggression
@@ -247,9 +265,9 @@ class Engine:
         from .second_opinion import apply_consensus
         self._last_ai_attempt = time.time()
         try:
-            context = build_context(self.client, self.cfg.symbols)
+            context = build_context(self.client, self._active_symbols)
             claude_views, mv, claude_usage = get_ai_views(
-                self.client, self.cfg.symbols, effort=self.cfg.ai_effort,
+                self.client, self._active_symbols, effort=self.cfg.ai_effort,
                 context=context)
             claude_rationale = {v.symbol: v.rationale for v in mv.views}
 
@@ -260,7 +278,7 @@ class Engine:
                 from .second_opinion import get_second_opinion
                 try:
                     nemo_views, nemo_regime, nemo_usage = get_second_opinion(
-                        context, self.cfg.symbols, self.cfg.nemotron_model,
+                        context, self._active_symbols, self.cfg.nemotron_model,
                         timeout=self.cfg.second_opinion_timeout)
                 except Exception as e:
                     print(f"        [2nd] Nemotron second opinion failed: {e}")
@@ -365,7 +383,7 @@ class Engine:
         """Clamp blocked / not-allowed symbols toward flat (de-risk only).
         Never closes a position outright — just forbids new/increased risk."""
         from .controls import blocked_set, derisk_clamp
-        blocked = blocked_set(self._controls, self.cfg.symbols)
+        blocked = blocked_set(self._controls, self._active_symbols)
         if not blocked:
             return targets
         out = dict(targets)
@@ -375,6 +393,44 @@ class Engine:
                 cur = pos.signed_lots if pos else 0.0
                 out[s] = derisk_clamp(out[s], cur)
         return out
+
+    def _handoff(self, assigned):
+        """When a symbol is newly assigned to the scalper, flatten the engine's
+        own position on it so the scalper takes over cleanly (spec §9.4).
+        Re-arms if a symbol is later unassigned."""
+        for s in assigned:
+            if s in self._handed_off:
+                continue
+            pos = self.client.position_for(s)
+            if pos and pos.signed_lots != 0:
+                if self.dry_run:
+                    print(f"[{_ts()}] [DRY] handoff {s}: flatten engine position -> scalper")
+                else:
+                    ok, res = self.client.close_symbol(s, comment="handoff")
+                    print(f"[{_ts()}] handoff {s}: flattened engine position{_rc(ok, res)}")
+            self._handed_off.add(s)
+        self._handed_off &= set(assigned)
+
+    def _run_scalper(self, assigned, snap, paused):
+        """Tick the integrated scalper over its assigned symbols. Runs LAST in
+        tick() so a kill / operator-flatten early-return skips it. Stays dry-run
+        until the operator explicitly arms it (spec §9.5)."""
+        from .config import SCALPER as _SCALPER
+        if not assigned and not _SCALPER.enabled:
+            return
+        if self._scalper is None:
+            from .scalper import Scalper
+            self._scalper = Scalper(cfg=_SCALPER, dry_run=self.dry_run)
+            try:
+                self._scalper.connect()
+            except Exception as e:
+                print(f"[{_ts()}] [scalper] connect failed: {e}")
+                self._scalper = None
+                return
+        self._scalper.cfg.symbols = list(assigned)
+        armed = bool(self._controls and self._controls.get("scalper_armed"))
+        self._scalper.dry_run = self.dry_run or not armed   # dry-run unless armed
+        self._scalper.step(allow_new_risk=snap.allow_new_risk and not paused)
 
     def _operator_flatten(self):
         """Operator-initiated flatten-all (panel 'Flatten now'). Additive to the
