@@ -115,7 +115,6 @@ class Engine:
         self._last_positions = {}   # ticket -> {symbol, profit}; for stop-hit detection
         self._scalper = None        # integrated scalper slot (lazily constructed)
         self._active_symbols = list(cfg.symbols)   # engine universe minus ceded (per tick)
-        self._handed_off = set()    # symbols whose engine position was flattened for the scalper
 
     def start(self):
         # H1: clean-open made use_broker_sl load-bearing — without it, live
@@ -272,7 +271,12 @@ class Engine:
         if self._controls is not None:
             from .controls import effective_aggression
             agg = effective_aggression(self._controls, self.cfg.aggression)
-        return build_targets(self.client, self._views, acct.equity, agg, self.sizer_cfg)
+        # Only target the engine's LIVE universe — never a symbol ceded to the
+        # scalper (else the engine re-opens it from stale views and the scalper
+        # stands down on "held by another system").
+        active = set(self._active_symbols)
+        views = {s: v for s, v in self._views.items() if s in active}
+        return build_targets(self.client, views, acct.equity, agg, self.sizer_cfg)
 
     # failure backoff: 30s, then doubling up to a 5-min cap between retries
     _AI_BACKOFF_MIN = 30.0
@@ -382,12 +386,12 @@ class Engine:
         return out
 
     def _handoff(self, assigned):
-        """When a symbol is newly assigned to the scalper, flatten the engine's
-        own position on it so the scalper takes over cleanly (spec §9.4).
-        Re-arms if a symbol is later unassigned."""
+        """Flatten the ENGINE's own position on any scalper-assigned symbol so the
+        scalper takes over cleanly (spec §9.4). position_for is magic-filtered to
+        the engine, so this NEVER touches the scalper's own position. Runs every
+        tick (cheap) so a ceded symbol can't linger if it ever reappears — once
+        flat, position_for returns None and this is a no-op."""
         for s in assigned:
-            if s in self._handed_off:
-                continue
             pos = self.client.position_for(s)
             if pos and pos.signed_lots != 0:
                 if self.dry_run:
@@ -395,8 +399,6 @@ class Engine:
                 else:
                     ok, res = self.client.close_symbol(s, comment="handoff")
                     print(f"[{_ts()}] handoff {s}: flattened engine position{_rc(ok, res)}")
-            self._handed_off.add(s)
-        self._handed_off &= set(assigned)
 
     def _reset_scalper_session(self):
         """On launch the scalper starts the assign->gate->arm process OVER rather
