@@ -14,7 +14,6 @@ DEFAULT_CONTROLS = {
     "allow": None,          # if a list, every symbol NOT listed is clamped toward flat
     "active_preset": "Default",
     "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
-    "exposure_cap": None,   # None -> use CONFIG.use_exposure_cap; True/False -> override
     "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
     "scalper_armed": False, # operator arm: dry-run (False) vs live (True) for the scalper
     "scalper_armed_force": False,  # override: arm even when a symbol hasn't cleared the gate
@@ -116,7 +115,7 @@ def control_flag(controls, key: str, default: bool) -> bool:
     """Effective boolean for a runtime toggle. A control override (True/False)
     wins over the config `default`; `controls` may be None (panel gated off) ->
     use the default. Used for `second_opinion` (does the algorithm act on
-    Nemotron's input) and `exposure_cap`."""
+    Nemotron's input)."""
     if controls is not None and controls.get(key) is not None:
         return bool(controls[key])
     return default

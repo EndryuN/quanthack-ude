@@ -202,7 +202,7 @@ def get_controls():
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
     for k in ("paused", "aggression", "block", "allow", "active_preset",
-              "second_opinion", "exposure_cap", "scalper_symbols", "scalper_armed",
+              "second_opinion", "scalper_symbols", "scalper_armed",
               "scalper_armed_force"):
         if k in body:
             c[k] = body[k]

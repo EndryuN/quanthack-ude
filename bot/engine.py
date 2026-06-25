@@ -226,9 +226,6 @@ class Engine:
                 from .overrides import pinned_set
                 _pinned = pinned_set(self._overrides)
                 targets = {s: t for s, t in targets.items() if s not in _pinned}
-            from .controls import control_flag
-            if control_flag(self._controls, "exposure_cap", self.cfg.use_exposure_cap):
-                targets = self._clamp_currency_exposure(targets, acct.equity)
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
@@ -366,37 +363,6 @@ class Engine:
                 out[s] = cur                              # don't increase
             else:
                 out[s] = tgt                              # reduction allowed
-        return out
-
-    def _signed_notional(self, symbol, lots):
-        n = self.client.notional(symbol, abs(lots))
-        return n if lots >= 0 else -n
-
-    def _clamp_currency_exposure(self, targets, equity):
-        """Block-only currency-factor exposure cap (spec E1.2): hold any
-        exposure-worsening, weak-consensus add at its current size so the book
-        can't silently pile into one currency. Never reduces a position; strong
-        consensus always passes through. See bot/exposure.py."""
-        from .exposure import blocked_adds
-        cur_lots, cur_n, tgt_n, conf = {}, {}, {}, {}
-        for s, tlots in targets.items():
-            pos = self.client.position_for(s)
-            clots = pos.signed_lots if pos else 0.0
-            cur_lots[s] = clots
-            cur_n[s] = self._signed_notional(s, clots)
-            tgt_n[s] = self._signed_notional(s, tlots)
-            v = (self._views or {}).get(s)
-            conf[s] = v[1] if v else 0.0
-        blocked = blocked_adds(tgt_n, cur_n, conf, equity=equity,
-                               cap_frac=self.cfg.exposure_cap_frac,
-                               strong_conf=self.cfg.exposure_strong_conf)
-        if not blocked:
-            return targets
-        out = dict(targets)
-        for s in sorted(blocked):
-            out[s] = cur_lots[s]
-            print(f"[{_ts()}]    exposure-cap: holding {s} at {cur_lots[s]:+.2f} "
-                  f"(currency cap, weak consensus)")
         return out
 
     def _clamp_blocked(self, targets):

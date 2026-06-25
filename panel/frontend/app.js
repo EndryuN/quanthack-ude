@@ -433,9 +433,6 @@ async function loadControls(){
   const so = document.getElementById("so-btn");
   if(so){ const on = _ctl.second_opinion !== false;   // null/true = used (default on)
     so.classList.toggle("on", on); so.textContent = on ? "Nemotron input: ON" : "Nemotron input: OFF"; }
-  const ex = document.getElementById("expo-btn");
-  if(ex){ const on = _ctl.exposure_cap === true;       // null/false = off (config default is off)
-    ex.classList.toggle("on", on); ex.textContent = on ? "Exposure cap: ON" : "Exposure cap: OFF"; }
   const arm = document.getElementById("scalp-arm");
   if(arm){ const on = !!_ctl.scalper_armed;
     arm.classList.toggle("on", on);
@@ -511,11 +508,6 @@ function wireControls(){
     const on = _ctl && _ctl.second_opinion !== false;   // currently on -> turn off, and vice versa
     postControls({second_opinion: !on}).then(()=> setStatus(
       "Nemotron input "+(!on ? "ON" : "OFF")+" — applies at next AI refresh (still recorded)")); }; }
-  const ex = document.getElementById("expo-btn");
-  if(ex && !ex.dataset.w){ ex.dataset.w="1"; ex.onclick = ()=>{
-    const on = _ctl && _ctl.exposure_cap === true;       // currently on -> turn off, and vice versa
-    postControls({exposure_cap: !on}).then(()=> setStatus(
-      "Exposure cap "+(!on ? "ON" : "OFF"))); }; }
   const ssel = document.getElementById("scalp-sym-sel");
   if(ssel && !ssel.dataset.w){ ssel.dataset.w="1";
     getJSON("/api/symbols").then(r=>{ if(r && r.symbols)
