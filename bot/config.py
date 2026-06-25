@@ -36,6 +36,13 @@ def asset_class(symbol: str) -> str:
     return "FX"
 
 
+def is_crypto_alt(symbol: str) -> bool:
+    """Crypto alts (ETH/SOL/XRP/...) use the BTC lead-lag confirmation. BTC
+    itself leads (no self lead-lag) and FX/metals are uncorrelated to BTC, so
+    they scalp on pure momentum — applying the lead-lag to them just adds noise."""
+    return symbol in CRYPTO and symbol != "BTCUSD"
+
+
 def sl_pct_for(symbol: str) -> float:
     return SL_PCT[asset_class(symbol)]
 

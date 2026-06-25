@@ -112,11 +112,12 @@ def gate_for_symbol(symbol: str, *, engine_sharpe=0.1) -> dict:
     """Pull M1 for `symbol` (and BTCUSD for the lead-lag on alts) from MT5 and run
     the walk-forward gate. {available: False} when no data."""
     from .scalp_backtest import m1_bars_mt5
+    from .config import is_crypto_alt
     closes, cost_frac = m1_bars_mt5(symbol)
     if not closes:
         return {"available": False, "symbol": symbol}
     btc_closes = None
-    if symbol != "BTCUSD":
+    if is_crypto_alt(symbol):   # lead-lag only for crypto alts; FX/metals scalp pure momentum
         btc, _ = m1_bars_mt5("BTCUSD")
         btc_closes = btc or None
         if btc_closes and len(btc_closes) != len(closes):   # align lengths conservatively

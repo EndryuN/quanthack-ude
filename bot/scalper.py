@@ -196,9 +196,11 @@ class Scalper:
         if self.client is None or not self._risk_ok():
             self._write_state(); return
         self._ensure_stops()   # backstop: no scalper position runs naked
-        # BTC closes once per pass for the alt lead-lag tilt
+        # BTC closes once per pass for the crypto-alt lead-lag tilt (only fetched
+        # if a crypto alt is assigned; FX/metals scalp on pure momentum)
+        from .config import is_crypto_alt
         btc = None
-        if any(s != "BTCUSD" for s in self.cfg.symbols):
+        if any(is_crypto_alt(s) for s in self.cfg.symbols):
             btc = self._bars("BTCUSD", max(self.cfg.lead_lookback + 2, 30))
         for sym in self.cfg.symbols:
             try:
@@ -211,9 +213,10 @@ class Scalper:
         closes = self._bars(sym, max(self.cfg.lookback + 2, 30))   # latest incl forming bar
         if closes is None:
             return
+        from .config import is_crypto_alt
         pos = self.client.position_for(sym)
         cur = self._signed(pos)
-        btc_closes = btc if sym != "BTCUSD" else None
+        btc_closes = btc if is_crypto_alt(sym) else None
         target, reason = self._decide(sym, closes, cur, btc_closes)
         self._capture(sym, pos, cur, target, reason)
         if target != cur:
