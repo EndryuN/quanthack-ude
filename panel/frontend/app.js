@@ -522,14 +522,28 @@ function renderScalpAssigned(){
     const armCls = isArmed ? " on" : "";
     const dis = _gateRunning[s] ? " disabled" : "";
     return `<div class="scalp-row">`+
-      `<span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
-      `<span class="scalp-gate ${cls}">${verdict}</span>`+
-      `<button class="scalp-arm1${armCls}" data-arm="${s}"${dis}>${armLabel}</button></div>`;
+      `<div class="scalp-row-top">`+
+        `<span class="scalp-chip">${s}<button class="scalp-x" data-sym="${s}">&times;</button></span>`+
+        `<span class="scalp-gate ${cls}">${verdict}</span>`+
+        `<button class="scalp-arm1${armCls}" data-arm="${s}"${dis}>${armLabel}</button></div>`+
+      `<div class="scalp-live" data-live="${s}"></div></div>`;
   }).join("");
   el.querySelectorAll(".scalp-x").forEach(b=> b.onclick = ()=>{
     const cur = ((_ctl && _ctl.scalper_symbols) || []).filter(x=>x!==b.dataset.sym);
     postControls({scalper_symbols: cur}); });
   el.querySelectorAll(".scalp-arm1").forEach(b=> b.onclick = ()=> toggleArm(b.dataset.arm));
+  updateScalpLive();
+}
+
+// Live per-symbol scalper state (watching / in_position / cooldown · reason),
+// refreshed on the 1s positions poll WITHOUT rebuilding the buttons.
+function updateScalpLive(){
+  document.querySelectorAll("[data-live]").forEach(node=>{
+    const st = _scalpState[node.dataset.live];
+    if(!st || !st.state){ node.textContent = ""; return; }
+    const reason = (st.last_signal && st.last_signal.reason) || "";
+    node.textContent = `⤷ ${st.state}${reason ? " · " + reason : ""}`;
+  });
 }
 
 async function postControls(patch){
@@ -776,6 +790,7 @@ let _scalpState = {};
   try {
     const sc = await getJSON("/api/scalper");
     _scalpState = {}; ((sc && sc.symbols) || []).forEach(s => { _scalpState[s.symbol] = s; });
+    updateScalpLive();   // refresh the per-symbol live state under each assigned chip
   } catch(e){}
   try { renderPositions(await getJSON("/api/positions")); } catch(e){}
   setTimeout(pollPositions, 1000);
