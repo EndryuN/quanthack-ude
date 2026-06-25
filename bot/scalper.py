@@ -85,13 +85,44 @@ class Scalper:
 
     def _sl_tp_for(self, sym, is_buy, ref_price):
         """Broker stop (`stop_bps` adverse) and take-profit (`tp_bps` favorable)
-        from `ref_price` — server-side fast exits. (sl, tp); 0.0 if uncomputable."""
+        from `ref_price` — server-side fast exits. Both are clamped to the broker's
+        minimum stop distance (spec C2) so the tight bps levels aren't rejected.
+        Returns (sl, tp); 0.0 for either if uncomputable."""
         if ref_price <= 0:
             return 0.0, 0.0
-        sbps, tbps, digits = self.cfg.stop_bps / 1e4, self.cfg.tp_bps / 1e4, self._digits(sym)
+        sbps, tbps = self.cfg.stop_bps / 1e4, self.cfg.tp_bps / 1e4
         if is_buy:
-            return round(ref_price * (1 - sbps), digits), round(ref_price * (1 + tbps), digits)
-        return round(ref_price * (1 + sbps), digits), round(ref_price * (1 - tbps), digits)
+            sl = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 - sbps), "below")
+            tp = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 + tbps), "above")
+        else:
+            sl = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 + sbps), "above")
+            tp = self.client.clamp_stop_price(sym, ref_price, ref_price * (1 - tbps), "below")
+        return sl, tp
+
+    def _protect(self, sym, is_buy):
+        """Attach server-side SL+TP to the just-opened position, anchored to the
+        ACTUAL fill price (M1). Check the retcode and retry once; if a valid STOP
+        still can't be attached, CLOSE the position — a naked few-second scalp is
+        worse than no trade (C1)."""
+        pos = self.client.position_for(sym)
+        ref = float(getattr(pos, "price_open", 0.0)) if pos else 0.0
+        sl, tp = self._sl_tp_for(sym, is_buy, ref)
+        if sl:
+            ok, _ = self.client.set_sltp(sym, sl, tp)
+            if not ok:
+                ok, _ = self.client.set_sltp(sym, sl, tp)   # one retry on a fresh attempt
+            if ok:
+                return
+        print(f"[{_ts()}] [scalper] !! {sym} could not attach a stop -- closing position")
+        self.client.close_symbol(sym, comment="scalp-nostop")
+
+    def _ensure_stops(self):
+        """Backstop sweep: any of THIS scalper's positions missing a broker stop
+        gets one (or is closed). The engine's _ensure_stops is magic-filtered and
+        cannot see scalper-magic positions, so the scalper guards its own (C1)."""
+        for p in self.client.positions():               # own magic
+            if p.symbol in self.cfg.symbols and not getattr(p, "sl", 0.0):
+                self._protect(p.symbol, p.type == 0)
 
     def _flatten_own(self, comment):
         for p in self.client.positions():
@@ -134,6 +165,7 @@ class Scalper:
         close/reduce but not open."""
         if self.client is None or not self._risk_ok():
             return
+        self._ensure_stops()   # backstop: no scalper position runs naked
         # BTC closes once per pass for the alt lead-lag tilt
         btc = None
         if any(s != "BTCUSD" for s in self.cfg.symbols):
@@ -183,11 +215,7 @@ class Scalper:
             ok, _ = self.client.market_order(sym, lots, target > 0, comment="scalp")
             if ok:
                 self._last_action[sym] = time.time()
-                sl, tp = self._sl_tp_for(sym, target > 0, price)
-                if sl or tp:
-                    self.client.set_sltp(sym, sl, tp)
-                else:
-                    print(f"[{_ts()}] [scalper] !! {sym} opened without TP/SL -- check quotes")
+                self._protect(sym, target > 0)
         else:                                 # reverse-breakout flip: close (re-open next tick)
             if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
                 return                        # anti-churn cooldown

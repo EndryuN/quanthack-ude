@@ -222,16 +222,43 @@ class MT5Client:
         self._filling[symbol] = mode
         return mode
 
+    def min_stop_distance(self, symbol: str) -> float:
+        """Broker minimum stop/TP distance in PRICE units (trade_stops_level *
+        point). 0.0 if unavailable. A SL/TP closer than this is rejected (10016)."""
+        info = mt5.symbol_info(symbol)
+        if not info:
+            return 0.0
+        level = getattr(info, "trade_stops_level", 0) or 0
+        point = getattr(info, "point", 0.0) or 0.0
+        return level * point
+
+    def clamp_stop_price(self, symbol: str, ref_price: float, desired: float, side: str):
+        """Round `desired` to the symbol's digits and push it to at least the
+        broker's minimum distance from `ref_price` on the required `side`
+        ('above' or 'below' the reference). Returns a broker-valid level, or 0.0
+        if uncomputable. Centralizes the min-distance rule so no path emits a
+        sub-minimum stop (spec C2)."""
+        info = mt5.symbol_info(symbol)
+        if not info or ref_price <= 0 or desired <= 0:
+            return 0.0
+        md = self.min_stop_distance(symbol)
+        buffer = md * 0.1   # a touch beyond the minimum so rounding can't cross back
+        if side == "below":
+            desired = min(desired, ref_price - md - buffer)
+        else:                # "above"
+            desired = max(desired, ref_price + md + buffer)
+        return round(desired, info.digits) if desired > 0 else 0.0
+
     def sl_price(self, symbol: str, is_buy: bool, pct: float):
-        """Stop-loss price `pct` away from current price, adverse direction,
-        rounded to the symbol's digits."""
+        """Stop-loss price `pct` away from current price (adverse direction),
+        rounded to digits AND clamped to the broker's minimum stop distance."""
         info = mt5.symbol_info(symbol)
         t = self.tick(symbol)
         if not info or not t or pct <= 0:
             return 0.0
         ref = t.ask if is_buy else t.bid
         raw = ref * (1 - pct) if is_buy else ref * (1 + pct)
-        return round(raw, info.digits)
+        return self.clamp_stop_price(symbol, ref, raw, "below" if is_buy else "above")
 
     def market_order(self, symbol: str, lots: float, is_buy: bool,
                      comment: str = "bot", sl: float = 0.0, tp: float = 0.0):

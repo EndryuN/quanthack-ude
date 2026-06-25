@@ -11,15 +11,17 @@ OWN = 990624
 
 
 class P:
-    def __init__(self, symbol, vol, typ, profit=0.0, magic=OWN):
+    def __init__(self, symbol, vol, typ, profit=0.0, magic=OWN, sl=1.0, price_open=100.0):
         self.symbol = symbol; self.volume = vol; self.type = typ
         self.profit = profit; self.magic = magic; self.ticket = id(self)
+        self.sl = sl; self.price_open = price_open    # sl=1.0 default -> "already protected"
 
 
 class FakeClient:
     def __init__(self):
         self._pos = []; self.orders = []; self.closed = []; self.sltp = []
         self._closes = {}; self._realized = 0.0
+        self._fill = 60000.0; self.order_ok = True; self.sltp_ok = True
     def positions(self, magic=OWN):
         return list(self._pos) if magic is None else [p for p in self._pos if getattr(p, "magic", OWN) == magic]
     def position_for(self, s):
@@ -29,11 +31,22 @@ class FakeClient:
         rec = np.empty(len(c), dtype=[("close", "f8")]); rec["close"] = c; return rec
     def market_order(self, s, lots, is_buy, comment="", sl=0.0, tp=0.0):
         self.orders.append({"symbol": s, "is_buy": is_buy, "sl": sl, "tp": tp, "lots": lots})
-        return True, None
+        if self.order_ok:    # a fill creates a position with NO stop yet
+            self._pos.append(P(s, lots, 0 if is_buy else 1, magic=OWN, sl=0.0, price_open=self._fill))
+        return self.order_ok, None
     def close_symbol(self, s, comment=""):
         self.closed.append(s); self._pos = [p for p in self._pos if p.symbol != s]; return True, None
-    def set_sltp(self, s, sl, tp): self.sltp.append((s, sl, tp)); return True, None
+    def set_sltp(self, s, sl, tp):
+        self.sltp.append((s, sl, tp))
+        if self.sltp_ok:
+            for p in self._pos:
+                if p.symbol == s: p.sl = sl; p.tp = tp
+        return self.sltp_ok, None
     def realized_profit(self, magic=OWN, days=None): return self._realized
+    def clamp_stop_price(self, symbol, ref_price, desired, side):
+        if ref_price <= 0 or desired <= 0: return 0.0
+        desired = min(desired, ref_price) if side == "below" else max(desired, ref_price)
+        return round(desired, 5)
 
 
 CFG = ScalperConfig(enabled=True, symbols=["BTCUSD"], lots={"BTCUSD": 1.0},
@@ -85,5 +98,18 @@ assert "BTCUSD" in fc.closed
 fc = FakeClient(); fc._closes["BTCUSD"] = [60000.0 * (1.001 ** i) for i in range(30)]
 s = Scalper(CFG, client=fc, dry_run=False); s.step()
 assert len(fc.orders) == 1 and fc.orders[0]["is_buy"] is True
+
+# 8) C1: if the stop can't be attached (set_sltp rejected), the position is CLOSED
+#    rather than left naked
+fc = fc_flat(); fc.sltp_ok = False
+s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
+with redirect_stdout(io.StringIO()): s.step()
+assert len(fc.orders) == 1 and "BTCUSD" in fc.closed, (fc.orders, fc.closed)
+
+# 9) C1 sweep: a pre-existing scalper position with NO stop gets protected
+fc = fc_flat(); fc._pos = [P("BTCUSD", 1.0, 0, sl=0.0, price_open=60000.0)]
+s = Scalper(CFG, client=fc, dry_run=False, decide=lambda *a: (1, "hold"))  # already long -> no new order
+with redirect_stdout(io.StringIO()): s.step()
+assert any(t[0] == "BTCUSD" for t in fc.sltp), "naked scalper position must be swept a stop"
 
 print("OK")
