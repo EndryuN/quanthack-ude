@@ -22,7 +22,8 @@ from .risk import RiskEngine
 from .state import StateTracker
 from .strategy import HybridStrategy
 from .sizer import build_targets, SizerConfig
-from .config import CONFIG, INITIAL_EQUITY, sl_pct_for, trail_pct_for
+from .config import (CONFIG, INITIAL_EQUITY, sl_pct_for, trail_pct_for,
+                     trail_activate_pct_for)
 from .decision_log import DecisionLogger
 
 
@@ -30,6 +31,32 @@ def _round_to_step(symbol, lots):
     info = mt5.symbol_info(symbol)
     step = (info.volume_step if info else 0.01) or 0.01
     return round(round(lots / step) * step, 4)
+
+
+def _trail_candidate(is_long, price, price_open, cur_sl, activate_pct, trail_pct, digits):
+    """New trailing SL to set, or None if the trail isn't armed or wouldn't improve.
+
+    Arms only after price has moved `activate_pct` in the position's favor; then
+    trails `trail_pct` behind the exit-side `price`, ratchets monotonically
+    (never loosens), and never locks worse than break-even. Pure function."""
+    if is_long:
+        if price < price_open * (1 + activate_pct):
+            return None                                   # not armed yet
+        cand = round(price * (1 - trail_pct), digits)
+        if cand <= price_open:
+            return None                                   # would lock <= break-even
+        if cur_sl == 0 or cand > cur_sl + price * 0.001:  # ratchet up only
+            return cand
+        return None
+    # short
+    if price > price_open * (1 - activate_pct):
+        return None
+    cand = round(price * (1 + trail_pct), digits)
+    if cand <= 0 or cand >= price_open:
+        return None
+    if cur_sl == 0 or cand < cur_sl - price * 0.001:      # ratchet down only
+        return cand
+    return None
 
 
 # Human names for the MT5 trade retcodes we might actually hit on failure.
@@ -409,22 +436,14 @@ class Engine:
             tick = self.client.tick(p.symbol)
             if not tick:
                 continue
-            tpct = trail_pct_for(p.symbol)
             is_long = p.type == _mt5.POSITION_TYPE_BUY
             price = tick.bid if is_long else tick.ask  # exit-side price
             info = _mt5.symbol_info(p.symbol)
             digits = info.digits if info else 5
-            cur_sl = self._pos_sl(p)
-            if is_long:
-                cand = round(price * (1 - tpct), digits)
-                # lock profit (above entry) and only ratchet the stop UP
-                better = cand > p.price_open and (cur_sl == 0 or cand > cur_sl + price * 0.001)
-            else:
-                cand = round(price * (1 + tpct), digits)
-                # lock profit (below entry) and only ratchet the stop DOWN
-                better = cand < p.price_open and cand > 0 and \
-                    (cur_sl == 0 or cand < cur_sl - price * 0.001)
-            if not better:
+            cand = _trail_candidate(
+                is_long, price, p.price_open, self._pos_sl(p),
+                trail_activate_pct_for(p.symbol), trail_pct_for(p.symbol), digits)
+            if cand is None:
                 continue
             if self.dry_run:
                 print(f"   [DRY] TRAIL {p.symbol} SL -> {cand}")
@@ -477,10 +496,17 @@ class Engine:
     def _do_order(self, symbol, lots, is_buy, cur, target):
         side = "BUY" if is_buy else "SELL"
         order_dir = 1 if is_buy else -1
-        # only attach a stop-loss when this trade establishes/increases the
-        # target position (its direction matches the target), not when reducing
+        # Attach a stop-loss only when this trade ESTABLISHES or FLIPS into the
+        # target direction — NOT on a same-direction add (E1.6): a fresh SL_PCT
+        # stop on an add would overwrite an already-tightened trailing stop on the
+        # netting position, loosening it. The trailing logic owns the stop after
+        # entry. (Reductions don't match the target sign, so they never attach.)
+        same_dir_add = (cur != 0 and target != 0
+                        and (cur > 0) == (target > 0) and abs(target) > abs(cur))
+        attach_sl = (self.cfg.use_broker_sl and target != 0
+                     and np.sign(target) == order_dir and not same_dir_add)
         sl = 0.0
-        if self.cfg.use_broker_sl and target != 0 and np.sign(target) == order_dir:
+        if attach_sl:
             sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
         if self.dry_run:
             slstr = f" SL={sl}" if sl else ""
@@ -492,8 +518,7 @@ class Engine:
         # E0.9: an established position must never be left without its failsafe
         # stop. If we wanted one but couldn't price it pre-trade (no quote), retry
         # post-fill via set_sl; warn loudly if it still couldn't be attached.
-        wanted_sl = self.cfg.use_broker_sl and target != 0 and np.sign(target) == order_dir
-        if ok and wanted_sl and not sl:
+        if ok and attach_sl and not sl:
             sl = self.client.sl_price(symbol, is_buy, sl_pct_for(symbol))
             if sl:
                 ok2, res2 = self.client.set_sl(symbol, sl)

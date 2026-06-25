@@ -19,11 +19,13 @@ ACCOUNT_LEVERAGE = 30          # broker max leverage (1:30)
 # against liquidation (which = auto-DQ).
 SL_PCT = {"FX": 0.05, "METAL": 0.08, "CRYPTO": 0.15}
 
-# Trailing-stop activation distance per class. Only once a position is up by
-# this much does the trail ratchet the broker SL into profit (tracking `pct`
-# behind price). Deliberately set to MEANINGFUL moves, not noise — trailing
-# tighter than this whipsaws and bleeds spread (proven by backtest).
-TRAIL_PCT = {"FX": 0.010, "METAL": 0.020, "CRYPTO": 0.040}
+# Trailing-stop ARM distance per class: the trail only activates once a position
+# is up by this much in its favor (a MEANINGFUL move, not noise).
+TRAIL_ACTIVATE_PCT = {"FX": 0.010, "METAL": 0.020, "CRYPTO": 0.040}
+# Once armed, the stop trails this far BEHIND price. Tighter than the arm distance
+# so arming immediately locks real profit (arm 1% / trail 0.5% FX -> ~+0.5% locked)
+# instead of only break-even (the old behavior used one value for both).
+TRAIL_PCT = {"FX": 0.005, "METAL": 0.010, "CRYPTO": 0.020}
 
 
 def asset_class(symbol: str) -> str:
@@ -40,6 +42,10 @@ def sl_pct_for(symbol: str) -> float:
 
 def trail_pct_for(symbol: str) -> float:
     return TRAIL_PCT[asset_class(symbol)]
+
+
+def trail_activate_pct_for(symbol: str) -> float:
+    return TRAIL_ACTIVATE_PCT[asset_class(symbol)]
 
 
 @dataclass
