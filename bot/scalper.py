@@ -39,6 +39,8 @@ class Scalper:
         self._realized_pnl = 0.0
         self._halted = False
         self._last_action = {}   # symbol -> epoch of last open/flip (anti-churn cooldown)
+        self._trades = {}        # symbol -> [open timestamps] (rolling-hour turnover cap)
+        self._opened_at = {}     # symbol -> epoch of last open (min-hold)
         self.live_symbols = None      # set by engine: symbols cleared to trade LIVE
         self.params_by_symbol = {}    # set by engine: gate-locked params per symbol
 
@@ -223,10 +225,28 @@ class Scalper:
         except Exception:
             return 0.0
 
+    def _trades_last_hour(self, sym, now):
+        recent = [t for t in self._trades.get(sym, []) if now - t < 3600.0]
+        self._trades[sym] = recent
+        return len(recent)
+
+    def _record_open(self, sym, now):
+        self._last_action[sym] = now
+        self._trades.setdefault(sym, []).append(now)
+        self._opened_at[sym] = now
+
+    def _held_long_enough(self, sym, now):
+        """Min-hold gate: the scalper won't close/flip a position it opened less
+        than min_hold_secs ago (broker TP/SL still exit early, server-side)."""
+        return now - self._opened_at.get(sym, 0.0) >= self.cfg.min_hold_secs
+
     def _apply(self, sym, cur, target, price, reason, *, profit=0.0, allow_new_risk=True):
         lots = self._lots_for(sym)
         dry = self._is_dry(sym)               # global OR not gate-cleared for live
+        now = time.time()
         if target == 0:                       # exit (rare: usually broker TP/SL exits)
+            if not self._held_long_enough(sym, now):
+                return                        # min-hold; let broker TP/SL exit early
             if dry:
                 print(f"   [DRY] scalp CLOSE {sym} ({reason})"); return
             ok, _ = self.client.close_symbol(sym, comment="scalp")
@@ -235,7 +255,7 @@ class Scalper:
         elif cur == 0:                        # open
             if not allow_new_risk:
                 return
-            if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
+            if now - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
                 return                        # anti-churn cooldown
             if self._foreign_position(sym):
                 print(f"[{_ts()}] [scalper] {sym} held by another system -- standing down")
@@ -245,22 +265,27 @@ class Scalper:
                 return
             if self._open_count() >= self.cfg.max_concurrent:
                 return
+            if self._trades_last_hour(sym, now) >= self.cfg.max_trades_per_hour:
+                print(f"[{_ts()}] [scalper] {sym} trade cap {self.cfg.max_trades_per_hour}/hr -- skipping")
+                return
             if dry:
                 print(f"   [DRY] scalp {'BUY' if target>0 else 'SELL'} {lots} {sym} ({reason})")
-                self._last_action[sym] = time.time(); return
+                self._record_open(sym, now); return
             # Open WITHOUT inline SL/TP (this broker rejects DEALs carrying them,
             # ret 10006), then attach server-side exits via the SLTP action.
             ok, _ = self.client.market_order(sym, lots, target > 0, comment="scalp")
             if ok:
-                self._last_action[sym] = time.time()
+                self._record_open(sym, now)
                 self._protect(sym, target > 0)
         else:                                 # reverse-breakout flip: close (re-open next tick)
-            if time.time() - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
+            if now - self._last_action.get(sym, 0.0) < self.cfg.cooldown_secs:
                 return                        # anti-churn cooldown
+            if not self._held_long_enough(sym, now):
+                return                        # min-hold before a flip
             if dry:
                 print(f"   [DRY] scalp FLIP-CLOSE {sym} ({reason})")
-                self._last_action[sym] = time.time(); return
+                self._last_action[sym] = now; return
             ok, _ = self.client.close_symbol(sym, comment="scalp-flip")
             if ok:
                 self._realized_pnl += profit
-                self._last_action[sym] = time.time()
+                self._last_action[sym] = now

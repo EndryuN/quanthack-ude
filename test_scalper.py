@@ -113,6 +113,21 @@ s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
 with redirect_stdout(io.StringIO()): s.step()
 assert fc.orders == [], "unsized symbol must not open"
 
+# 8c) §4 turnover cap: at max_trades_per_hour for the symbol -> no new open
+import time as _t
+fc = fc_flat()
+s = Scalper(CFG, client=fc, dry_run=False, decide=LONG)
+s._trades["BTCUSD"] = [_t.time()] * CFG.max_trades_per_hour   # already at the cap this hour
+with redirect_stdout(io.StringIO()): s.step()
+assert fc.orders == [], "trade cap must block new opens"
+
+# 8d) §4 min-hold: a flip is blocked within min_hold_secs of opening
+fc = fc_flat(); fc._pos = [P("BTCUSD", 1.0, 0)]              # long, own magic
+s = Scalper(CFG, client=fc, dry_run=False, decide=SHORT)
+s._opened_at["BTCUSD"] = _t.time()                           # just opened -> within min-hold
+with redirect_stdout(io.StringIO()): s.step()
+assert "BTCUSD" not in fc.closed, "min-hold must block an immediate flip"
+
 # 9) C1 sweep: a pre-existing scalper position with NO stop gets protected
 fc = fc_flat(); fc._pos = [P("BTCUSD", 1.0, 0, sl=0.0, price_open=60000.0)]
 s = Scalper(CFG, client=fc, dry_run=False, decide=lambda *a: (1, "hold"))  # already long -> no new order
