@@ -56,6 +56,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   border-top:1px solid rgba(255,255,255,0.08);font-family:"JetBrains Mono";font-size:11px;font-weight:500;
   letter-spacing:.04em}
 .scalp-hook{color:var(--chartreuse);font-size:9px;font-weight:600;margin-left:3px;letter-spacing:.04em}
+.scalp-sub{font-family:"JetBrains Mono";font-size:9px;color:var(--muted);margin:0 0 2px 14px}
 .pos-row{cursor:pointer;border-radius:4px;padding:1px 4px;margin:0 -4px;transition:background .08s}
 .pos-row:hover{background:rgba(200,255,0,0.10);box-shadow:inset 2px 0 0 var(--chartreuse)}
 .scalp-assigned{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}

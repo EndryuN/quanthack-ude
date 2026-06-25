@@ -134,4 +134,13 @@ s = Scalper(CFG, client=fc, dry_run=False, decide=lambda *a: (1, "hold"))  # alr
 with redirect_stdout(io.StringIO()): s.step()
 assert any(t[0] == "BTCUSD" for t in fc.sltp), "naked scalper position must be swept a stop"
 
+# 10) §6.2 state emission: step writes state/scalper.json with per-symbol status
+import tempfile, json as _json, os as _os
+d = tempfile.mkdtemp()
+fc = fc_flat(); s = Scalper(CFG, client=fc, dry_run=True, decide=LONG); s.state_dir = d
+with redirect_stdout(io.StringIO()): s.step()
+st = _json.load(open(_os.path.join(d, "scalper.json")))
+assert st["symbols"] and st["symbols"][0]["symbol"] == "BTCUSD"
+assert st["symbols"][0]["state"] == "dry-run" and "last_signal" in st["symbols"][0]
+
 print("OK")

@@ -117,6 +117,19 @@ def symbols():
     return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"]}
 
 
+@app.get("/api/scalper")
+def scalper_state():
+    """Per-symbol scalper status (state/scalper.json) for the inline progress
+    display under Positions. {} when the scalper hasn't emitted yet."""
+    import json as _json
+    path = os.path.join(STATE_DIR, "scalper.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return {"symbols": []}
+
+
 @app.get("/api/positions")
 def positions():
     c = _mt5()

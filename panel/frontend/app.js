@@ -161,11 +161,17 @@ function renderPositions(pos){
     const prof = (p.profit == null) ? null : p.profit;
     const pl = prof==null ? "" : fmtPL(prof);
     const plcol = (prof||0) >= 0 ? C.long : C.short;
-    // scalped symbols get a hook marker on the name
+    // scalped symbols get a hook marker + an inline status sub-line (spec §6.3)
     const hook = p.scalped ? `<span class="scalp-hook" title="scalper">·s</span>` : "";
+    let sub = "";
+    if(p.scalped){
+      const st = _scalpState[p.symbol];
+      if(st){ const sig = (st.last_signal && st.last_signal.reason) || "";
+        sub = `<div class="scalp-sub">⤷ ${st.state}${sig?" · "+sig:""}</div>`; }
+    }
     return `<div class="pos-row" data-sym="${p.symbol}" style="display:flex;justify-content:space-between;gap:6px">`+
       `<span><span style="color:${col}">${long?"L":"S"}</span> ${Math.abs(p.lots).toFixed(2)} ${p.symbol}${hook}</span>`+
-      `<span style="color:${plcol}">${pl}</span></div>`;
+      `<span style="color:${plcol}">${pl}</span></div>${sub}`;
   };
   // engine positions first, scalped pinned at the bottom (spec §9.6)
   const eng = list.filter(p=>!p.scalped), scalp = list.filter(p=>p.scalped);
@@ -723,7 +729,13 @@ loadOverrides(); wireOverride();
 
 // Positions refresh on a fast ~1s cadence (live P&L), independent of the 15s
 // tick. Self-scheduling (waits for each fetch) so requests never pile up.
+// Also pulls per-symbol scalper status for the inline ·s sub-lines (spec §6.3).
+let _scalpState = {};
 (async function pollPositions(){
+  try {
+    const sc = await getJSON("/api/scalper");
+    _scalpState = {}; ((sc && sc.symbols) || []).forEach(s => { _scalpState[s.symbol] = s; });
+  } catch(e){}
   try { renderPositions(await getJSON("/api/positions")); } catch(e){}
   setTimeout(pollPositions, 1000);
 })();

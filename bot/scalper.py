@@ -41,8 +41,10 @@ class Scalper:
         self._last_action = {}   # symbol -> epoch of last open/flip (anti-churn cooldown)
         self._trades = {}        # symbol -> [open timestamps] (rolling-hour turnover cap)
         self._opened_at = {}     # symbol -> epoch of last open (min-hold)
+        self._state = {}         # symbol -> last per-symbol status (for the panel)
         self.live_symbols = None      # set by engine: symbols cleared to trade LIVE
         self.params_by_symbol = {}    # set by engine: gate-locked params per symbol
+        self.state_dir = None         # set by engine: where to write scalper.json
 
     def _p(self, sym):
         """Effective strategy params for `sym`: the gate-locked params if the
@@ -192,7 +194,7 @@ class Scalper:
         `allow_new_risk` mirrors the engine's gate: when False the slot may
         close/reduce but not open."""
         if self.client is None or not self._risk_ok():
-            return
+            self._write_state(); return
         self._ensure_stops()   # backstop: no scalper position runs naked
         # BTC closes once per pass for the alt lead-lag tilt
         btc = None
@@ -203,6 +205,7 @@ class Scalper:
                 self._step_symbol(sym, btc, allow_new_risk)
             except Exception as e:
                 print(f"[{_ts()}] [scalper] {sym} error: {e}")
+        self._write_state()
 
     def _step_symbol(self, sym, btc, allow_new_risk):
         closes = self._bars(sym, max(self.cfg.lookback + 2, 30))   # latest incl forming bar
@@ -212,10 +215,47 @@ class Scalper:
         cur = self._signed(pos)
         btc_closes = btc if sym != "BTCUSD" else None
         target, reason = self._decide(sym, closes, cur, btc_closes)
+        self._capture(sym, pos, cur, target, reason)
         if target != cur:
             self._apply(sym, cur, target, closes[-1], reason,
                         profit=float(getattr(pos, "profit", 0.0)),
                         allow_new_risk=allow_new_risk)
+
+    def _capture(self, sym, pos, cur, target, reason):
+        """Snapshot what the scalper is doing for `sym` (for the panel)."""
+        now = time.time()
+        cd = max(0.0, self.cfg.cooldown_secs - (now - self._last_action.get(sym, 0.0)))
+        if self._halted:               state = "halted"
+        elif self._is_dry(sym):        state = "dry-run"
+        elif pos:                      state = "in_position"
+        elif cd > 0:                   state = "cooldown"
+        else:                          state = "watching"
+        self._state[sym] = {
+            "symbol": sym, "state": state, "live": not self._is_dry(sym),
+            "position": ({"dir": cur, "lots": abs(pos.volume),
+                          "profit": round(float(getattr(pos, "profit", 0.0)), 2)} if pos else None),
+            "last_signal": {"target": target, "reason": reason},
+            "cooldown_s": round(cd, 1),
+            "trades_last_hour": self._trades_last_hour(sym, now),
+        }
+
+    def _write_state(self):
+        """Atomically emit state/scalper.json for the panel (spec §6.2)."""
+        if not self.state_dir:
+            return
+        try:
+            import os
+            from .controls import atomic_write_json
+            for s in list(self._state):           # drop symbols no longer assigned
+                if s not in self.cfg.symbols:
+                    self._state.pop(s, None)
+            obj = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "halted": self._halted,
+                   "realized_today": round(self._realized(), 2),
+                   "symbols": [self._state.get(s, {"symbol": s, "state": "—"})
+                               for s in self.cfg.symbols]}
+            atomic_write_json(os.path.join(self.state_dir, "scalper.json"), obj)
+        except Exception as e:
+            print(f"[{_ts()}] [scalper] state write failed: {e}")
 
     def _lots_for(self, sym):
         """Lots for `sym` from the per-symbol USD risk budget (spec §5). 0.0 means

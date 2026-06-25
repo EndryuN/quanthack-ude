@@ -448,6 +448,7 @@ class Engine:
                 self._scalper = None
                 return
         self._scalper.cfg.symbols = list(assigned)
+        self._scalper.state_dir = self.cfg.state_dir   # emit state/scalper.json for the panel
         self._scalper.dry_run = self.dry_run
         # Engine is the FINAL arming boundary (spec §3.3): a symbol trades LIVE
         # only when armed AND gate-cleared (or force-armed) — never on the toggle
