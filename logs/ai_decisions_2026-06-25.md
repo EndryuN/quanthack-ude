@@ -1685,3 +1685,34 @@
 - BUY 10.74 BTCUSD  (-13.10 → -2.36)
 
 ---
+## 16:32:20 · LIVE
+**Regime (Claude):** Risk-off in crypto (broad sharp selloff), mild USD softness in FX with gold/silver bouncing off recent drops; mixed timeframe signals across majors
+**Regime (Nemotron):** Risk-off with USD strength and broad crypto/metals weakness, mixed FX trends
+**Account:** eq=1,026,804 · lev=1.6x · margin=6% · ML=1574% · sharpe=0.01
+**Cost:** Claude in=2493 out=1235 ~$0.043 · Nemotron in=1729 out=830 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| ETHUSD | SHORT 0.62 | short 0.40 | short 0.72 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.58 | short 0.36 | short 0.68 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.58 | short 0.35 | short 0.70 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.56 | short 0.35 | short 0.65 | ✅ agree → boosted |
+| GBPUSD | LONG 0.32 | long 0.32 | short 0.52 | ❌ disagree → Claude stands |
+| USDCAD | SHORT 0.30 | short 0.30 | long 0.58 | ❌ disagree → Claude stands |
+| USDCHF | SHORT 0.28 | short 0.28 | long 0.60 | ❌ disagree → Claude stands |
+| XAUUSD | LONG 0.28 | long 0.28 | short 0.60 | ❌ disagree → Claude stands |
+| EURUSD | LONG 0.25 | long 0.25 | short 0.50 | ❌ disagree → Claude stands |
+| AUDUSD | LONG 0.20 | long 0.20 | short 0.55 | ❌ disagree → Claude stands |
+
+**Orders placed:**
+- BUY 3.26 AUDUSD  (+0.00 → +3.26)  SL=0.65741
+- CLOSE EURCHF
+- CLOSE EURGBP
+- BUY 3.6 EURUSD  (+0.00 → +3.60)  SL=1.08183
+- BUY 3.35 GBPUSD  (+0.93 → +4.28)  SL=1.2555
+- SELL 6.31 USDCAD  (+0.00 → -6.31)  SL=1.4901
+- SELL 4.37 USDCHF  (+0.00 → -4.37)  SL=0.84981
+- BUY 0.43 XAUUSD  (+0.00 → +0.43)  SL=3705.737
+- SELL 1.45 BTCUSD  (-2.36 → -3.81)  SL=68103.784
+
+---
