@@ -257,6 +257,50 @@ def model_scores():
         return {"rates": {}, "n": 0}
 
 
+_ACC_BARS_CACHE = {}     # (sym, tf) -> (fetched_epoch, bars)   ~10 min TTL
+_ACC_RESULT_CACHE = {}   # (window, tf, sig) -> (epoch, result) ~5 min TTL
+
+
+@app.get("/api/model_accuracy")
+def model_accuracy(window: int = 20, tf: str = "1h"):
+    """Per-category (FX/Metals/Crypto/ALL) directional accuracy OVER TIME for each
+    model. Panel-only: grades the logged per-model calls against realized moves from
+    historical bars (history.py). Heavy -> bar + result caches. Degrades to empty
+    series if a source/internet is unavailable (never 500s)."""
+    import time as _time
+    from bot.config import asset_class
+    from panel.backend import model_accuracy as _ma, history as _hist
+    try:
+        records = data.load_decisions(LOG_DIR)
+        decisions = [r for r in records if r.get("event") != "refresh_failed" and r.get("ts")]
+        if not decisions:
+            return {"window": window, "tf": tf, "categories": {}, "summary": {}, "skipped_symbols": []}
+        sig = (len(decisions), decisions[-1].get("ts"))
+        ck = (window, tf, sig)
+        hit = _ACC_RESULT_CACHE.get(ck)
+        if hit and _time.time() - hit[0] < 300:
+            return hit[1]
+        syms = {v["symbol"] for d in decisions for v in d.get("views", []) if v.get("symbol")}
+        series = {}
+        for s in syms:
+            bk = (s, tf)
+            bc = _ACC_BARS_CACHE.get(bk)
+            if bc and _time.time() - bc[0] < 600:
+                series[s] = bc[1]
+                continue
+            bars = (_hist.binance_history(s, tf, 1000) if asset_class(s) == "CRYPTO"
+                    else (_hist.yahoo_history(s, tf) or _hist.parquet_history(s, tf)))
+            _ACC_BARS_CACHE[bk] = (_time.time(), bars)
+            series[s] = bars
+        result = _ma.grade(decisions, series, window=window)
+        result["tf"] = tf
+        _ACC_RESULT_CACHE[ck] = (_time.time(), result)
+        return result
+    except Exception as e:
+        return {"window": window, "tf": tf, "categories": {}, "summary": {},
+                "skipped_symbols": [], "note": f"accuracy build failed: {e}"}
+
+
 @app.get("/api/scalper")
 def scalper_state():
     """Per-symbol scalper status (state/scalper.json) for the inline progress

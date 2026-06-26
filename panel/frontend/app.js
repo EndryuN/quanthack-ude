@@ -1097,12 +1097,13 @@ function wireRegimeModal(){
 }
 let _histSym = null, _navWired = false;
 function showView(name){
-  ["dashboard","history","context"].forEach(v=>{
+  ["dashboard","history","context","accuracy"].forEach(v=>{
     const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
   const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
   document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   if(name === "history") initHistory();
   if(name === "context") initContext();
+  if(name === "accuracy") initAccuracy();
 }
 
 function wireNav(){
@@ -1182,6 +1183,89 @@ async function initContext(){
     if(v && !v.hidden) renderContext(await getJSON("/api/context"));
     else { clearInterval(_ctxTimer); _ctxTimer = null; }
   }, 30000);
+}
+
+// Model accuracy page: per-category (ALL/FX/Metals/Crypto) directional hit-rate over
+// time per model, graded from the logs against historical bars (/api/model_accuracy).
+let _accTimer = null, _accWired = false, _accData = null, _accCat = "ALL";
+const _MODELC = { claude: C.claude, nemotron: C.nemo, deepseek: C.deepseek };
+const _MODELN = { claude: "Claude", nemotron: "Nemotron", deepseek: "DeepSeek" };
+const _CATLBL = { ALL: "All", FX: "FX", METAL: "Metals", CRYPTO: "Crypto" };
+
+function renderAccuracy(){
+  const d = _accData;
+  const meta = document.getElementById("acc-meta");
+  const lbl = document.getElementById("acc-cat-label"); if(lbl) lbl.textContent = _CATLBL[_accCat] || _accCat;
+  if(!d || !d.categories || !Object.keys(d.categories).length){
+    if(meta) meta.innerHTML = `<span class="ctx-warn">${_esc((d && d.note) || "no scored reads yet — needs decision history")}</span>`;
+    try { Plotly.purge("acc-chart"); } catch(e){}
+    const el = document.getElementById("acc-chart"); if(el) el.innerHTML = "";
+    const sm = document.getElementById("acc-summary"); if(sm) sm.innerHTML = "";
+    return;
+  }
+  const cat = d.categories[_accCat] || {};
+  const totN = Object.values(d.summary[_accCat] || {}).reduce((a, x) => a + (x.total || 0), 0);
+  if(meta) meta.innerHTML = `window ${d.window} calls · ${d.tf || "1h"} bars · ${totN} graded${(d.skipped_symbols||[]).length?` · skipped ${d.skipped_symbols.join(", ")}`:""}`;
+  // ---- over-time chart: one line per model + a 50% baseline ----
+  const traces = [];
+  for(const m of ["claude", "nemotron", "deepseek"]){
+    const pts = cat[m] || [];
+    if(!pts.length) continue;
+    traces.push({ x: pts.map(p => p.ts), y: pts.map(p => p.rate * 100), customdata: pts.map(p => p.n),
+      type: "scatter", mode: "lines", name: _MODELN[m], line: { color: _MODELC[m], width: 2 },
+      hovertemplate: `%{x|%b %d %H:%M} · %{y:.0f}%% · n=%{customdata}<extra>${_MODELN[m]}</extra>` });
+  }
+  // 50% coin-flip baseline across the visible range
+  const allx = traces.flatMap(t => t.x);
+  if(allx.length){
+    const x0 = allx.reduce((a, b) => a < b ? a : b), x1 = allx.reduce((a, b) => a > b ? a : b);
+    traces.push({ x: [x0, x1], y: [50, 50], type: "scatter", mode: "lines", name: "50%",
+      line: { color: C.muted, dash: "dot", width: 1 }, hoverinfo: "skip", showlegend: false });
+  }
+  const el = document.getElementById("acc-chart");
+  if(el){
+    if(!traces.length){ try { Plotly.purge(el); } catch(e){} el.innerHTML = '<div class="ctx-note" style="padding:24px">no scored reads in this category yet</div>'; }
+    else {
+      Plotly.react("acc-chart", traces, {...PLOT_BG, height: 320, margin: {l:44, r:12, t:10, b:30},
+        legend: {font: {size: 10}, orientation: "h", x: 0, y: 1.1, bgcolor: "rgba(0,0,0,0)"},
+        xaxis: {type: "date", color: C.muted, gridcolor: "rgba(255,255,255,0.05)"},
+        yaxis: {range: [0, 100], ticksuffix: "%", color: C.muted, gridcolor: "rgba(255,255,255,0.06)"},
+        uirevision: "accuracy"}, {displayModeBar: false, displaylogo: false});
+      try { Plotly.Plots.resize("acc-chart"); } catch(e){}
+    }
+  }
+  // ---- cumulative summary table (tinted by accuracy) ----
+  const sm = document.getElementById("acc-summary");
+  if(sm){
+    const sums = d.summary[_accCat] || {};
+    const tint = r => { if(r == null) return "transparent";
+      const s = Math.max(-1, Math.min(1, (r - 0.5) * 2)); const a = Math.abs(s) * 0.5;
+      return s >= 0 ? `rgba(46,204,113,${a})` : `rgba(255,77,77,${a})`; };
+    const row = m => { const x = sums[m] || {}; const r = x.rate;
+      return `<tr><td><span class="dot" style="background:${_MODELC[m]}"></span>${_MODELN[m]}</td>`
+        + `<td style="background:${tint(r)}">${r == null ? "—" : (r * 100).toFixed(1) + "%"}</td>`
+        + `<td>${x.total || 0}</td></tr>`; };
+    sm.innerHTML = `<table class="ctx-tbl acc-tbl"><thead><tr><th>Model</th><th>Accuracy</th><th>n</th></tr></thead>`
+      + `<tbody>${["claude","nemotron","deepseek"].map(row).join("")}</tbody></table>`;
+  }
+}
+async function initAccuracy(){
+  if(!_accWired){
+    _accWired = true;
+    document.querySelectorAll("#acc-cats .dtab").forEach(b => b.onclick = ()=>{
+      _accCat = b.dataset.acc;
+      document.querySelectorAll("#acc-cats .dtab").forEach(x => x.classList.toggle("active", x === b));
+      renderAccuracy();                              // re-render from cache, no refetch
+    });
+    const back = document.getElementById("acc-back"); if(back) back.onclick = ()=> showView("dashboard");
+  }
+  _accData = await getJSON("/api/model_accuracy"); renderAccuracy();
+  clearInterval(_accTimer);
+  _accTimer = setInterval(async ()=>{                 // slow refresh while the page is open
+    const v = document.getElementById("view-accuracy");
+    if(v && !v.hidden){ _accData = await getJSON("/api/model_accuracy"); renderAccuracy(); }
+    else { clearInterval(_accTimer); _accTimer = null; }
+  }, 60000);
 }
 async function initHistory(){
   const d = await getJSON("/api/decisions");

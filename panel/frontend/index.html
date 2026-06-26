@@ -38,6 +38,7 @@
     <button class="navitem active" data-view="dashboard">Dashboard</button>
     <button class="navitem" data-view="history">History</button>
     <button class="navitem" data-view="context">Context Control</button>
+    <button class="navitem" data-view="accuracy">Model accuracy</button>
   </nav>
   <main id="view-dashboard" class="view">
     <section class="col-left">
@@ -231,6 +232,30 @@
       <div id="ctx-fields" class="ctx-fields"></div>
       <h2 style="margin-top:14px">Not fed to the models</h2>
       <div id="ctx-notfed" class="ctx-notfed"></div>
+    </div>
+  </section>
+  <section id="view-accuracy" class="view" hidden>
+    <div class="card">
+      <div class="hist-head">
+        <h2>Model accuracy — directional hit-rate over time</h2>
+        <div class="hist-controls">
+          <div class="dumb-tabs" id="acc-cats">
+            <button class="dtab active" data-acc="ALL">All</button>
+            <button class="dtab" data-acc="FX">FX</button>
+            <button class="dtab" data-acc="METAL">Metals</button>
+            <button class="dtab" data-acc="CRYPTO">Crypto</button>
+          </div>
+          <button id="acc-back" class="ctl-btn">&larr; Dashboard</button>
+        </div>
+      </div>
+      <p class="ctx-intro">Directional accuracy = how often each model's long/short call was right
+        (price moved its way) by the next market read, graded against historical bars. <b>50%</b> is
+        the coin-flip baseline. <span class="claude">Claude</span> · <span class="nemo">Nemotron</span> ·
+        <span class="deepseek">DeepSeek</span>. Thin samples (low <b>n</b>) are low-confidence.
+        <span id="acc-meta" class="ctx-meta"></span></p>
+      <div id="acc-chart"></div>
+      <h2 style="margin-top:14px">Cumulative accuracy — <span id="acc-cat-label">All</span></h2>
+      <div id="acc-summary"></div>
     </div>
   </section>
   <div id="regime-modal" class="modal-backdrop" hidden>
