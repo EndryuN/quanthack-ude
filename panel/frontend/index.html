@@ -15,7 +15,7 @@
     <div class="brand">SIGNAL<span>//</span>LAYER</div>
     <div id="regimes">
       <button id="market-read-btn" class="market-read-btn" title="full AI market read">Market Read</button>
-      <button id="refresh-btn" class="market-read-btn refresh-icon" title="Re-query the AI consensus now (skip the 15-min cadence)">&#8635;</button>
+      <button id="refresh-btn" class="market-read-btn refresh-icon" title="Re-query the AI consensus now (skip the 15-min cadence)"><span class="ric">&#8635;</span></button>
     </div>
     <span id="views-age" class="views-age" title="age of the AI market read">—</span>
     <div id="kpis"></div>
@@ -94,6 +94,17 @@
                 </button>
               </div>
             </div>
+            <!-- drag a stop-loss / take-profit line -> this confirm bar appears -->
+            <div id="edit-confirm" class="edit-confirm" hidden>
+              <span id="edit-confirm-label"></span>
+              <button id="edit-apply" class="ec-btn ec-apply" title="save">&#10003;</button>
+              <button id="edit-cancel" class="ec-btn ec-cancel" title="discard">&times;</button>
+            </div>
+            <!-- bottom-right: create (or locate) the SL / TP line -->
+            <div id="chart-ctl-b" class="chart-ctl-b">
+              <button id="sl-btn" class="line-btn sl" title="set or locate the stop-loss">Stop Loss</button>
+              <button id="tp-btn" class="line-btn tp" title="set or locate the take-profit">Take Profit</button>
+            </div>
           </div>
         </div>
         <div id="symbol-override" class="ov-panel">
@@ -103,8 +114,6 @@
               <option value="short">Force SHORT</option>
               <option value="flat">Force FLAT</option></select>
             <input id="ov-conf" type="number" min="0" max="1" step="0.05" placeholder="conf">
-            <input id="ov-tp" type="number" step="0.0001" placeholder="take-profit (drag flag)">
-            <button id="ov-save" class="ctl-btn">Apply</button>
             <button id="ov-pin" class="ctl-btn ov-pin-btn" title="pin this instrument to the top of the list">&#128204; Pin</button>
           </div>
           <div id="ov-ai" class="ov-ai"></div>

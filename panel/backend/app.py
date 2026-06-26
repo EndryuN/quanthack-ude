@@ -359,8 +359,8 @@ def get_overrides():
 def post_override(symbol: str, body: dict):
     o = ov_mod.load_overrides(STATE_DIR)
     entry = dict(o.get(symbol) or {"pinned": False, "view": None,
-                                   "take_profit": None, "note": ""})
-    for k in ("pinned", "view", "take_profit", "note"):
+                                   "take_profit": None, "stop_loss": None, "note": ""})
+    for k in ("pinned", "view", "take_profit", "stop_loss", "note"):
         if k in body:
             entry[k] = body[k]
     o[symbol] = entry

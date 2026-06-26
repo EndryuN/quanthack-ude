@@ -241,9 +241,10 @@ class Engine:
         if self.cfg.use_trailing_stop:
             self._update_trailing_stops()
 
-        # operator take-profit (gated): honor per-position TP overrides
+        # operator take-profit / stop-loss (gated): honor per-position overrides
         if self._overrides:
             self._apply_take_profits()
+            self._apply_stop_losses()
 
         # 6. write the decision record for this refresh (after reconcile)
         if refreshed and self.logger and self._pending_log:
@@ -616,11 +617,12 @@ class Engine:
         sweep reads each position's ACTUAL sl and, if missing, attaches the
         SL_PCT failsafe via the reliable SLTP action."""
         import MetaTrader5 as _mt5
-        from .overrides import pinned_set as _pinned_set
+        from .overrides import pinned_set as _pinned_set, stop_losses as _stop_losses
         _pinned = _pinned_set(self._overrides) if self._overrides else set()
+        _manual = set(_stop_losses(self._overrides)) if self._overrides else set()
         for p in self.client.positions():
             try:
-                if getattr(p, "sl", 0.0) or p.symbol in _pinned:
+                if getattr(p, "sl", 0.0) or p.symbol in _pinned or p.symbol in _manual:
                     continue                              # already protected (or operator-controlled)
                 is_long = p.type == _mt5.POSITION_TYPE_BUY
                 sl = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))
@@ -645,11 +647,12 @@ class Engine:
         """Ratchet each position's broker SL toward profit once it's a meaningful
         winner. Never loosens a stop; only locks gains behind the peak."""
         import MetaTrader5 as _mt5
-        from .overrides import pinned_set as _pinned_set
+        from .overrides import pinned_set as _pinned_set, stop_losses as _stop_losses
         _pinned = _pinned_set(self._overrides) if self._overrides else set()
+        _manual = set(_stop_losses(self._overrides)) if self._overrides else set()
         for p in self.client.positions():
-            if p.symbol in _pinned:
-                continue
+            if p.symbol in _pinned or p.symbol in _manual:
+                continue                                  # manual SL -> engine stops auto-trailing it
             tick = self.client.tick(p.symbol)
             if not tick:
                 continue
@@ -698,6 +701,37 @@ class Engine:
             if ok or getattr(res, "retcode", None) == 10025:   # 10025 = no changes
                 continue                                    # applied (or already there)
             print(f"   [LIVE] TP {p.symbol} -> {tp}{_rc(ok, res)}")
+
+    def _apply_stop_losses(self):
+        """For each symbol with a MANUAL stop_loss override, set the broker SL to it.
+        Clamped to the symbol's digits + min distance, and NEVER looser than the
+        catastrophe failsafe (so anti-liquidation always holds). The engine skips
+        auto-trailing/ensure for these symbols — clearing the override resumes auto.
+        Idempotent: skip when already set, treat 10025 as already-applied."""
+        from .overrides import stop_losses
+        sls = stop_losses(self._overrides)
+        if not sls:
+            return
+        import MetaTrader5 as _mt5
+        for p in self.client.positions():
+            raw = sls.get(p.symbol)
+            if raw is None:
+                continue
+            is_long = p.type == _mt5.POSITION_TYPE_BUY
+            ref = getattr(p, "price_current", 0.0) or getattr(p, "price_open", 0.0)
+            sl = self.client.clamp_stop_price(p.symbol, ref, raw, "below" if is_long else "above")
+            floor = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))  # loosest allowed
+            if sl and floor:
+                sl = max(sl, floor) if is_long else min(sl, floor)   # never looser than the DQ failsafe
+            if not sl or abs(getattr(p, "sl", 0.0) - sl) < 1e-9:
+                continue                                    # invalid, or already set
+            if self.dry_run:
+                print(f"   [DRY] SL {p.symbol} -> {sl}")
+                continue
+            ok, res = self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
+            if ok or getattr(res, "retcode", None) == 10025:   # 10025 = no changes
+                continue
+            print(f"   [LIVE] SL {p.symbol} -> {sl}{_rc(ok, res)}")
 
     def _report_stop_hits(self, engine_closed):
         """Detect positions that vanished since the last tick WITHOUT the engine

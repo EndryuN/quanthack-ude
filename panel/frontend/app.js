@@ -368,7 +368,9 @@ function plotHeatmap(hm){
 }
 
 let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
-let _pendingTP = {};   // {sym: price} a STAGED take-profit (dragged but not yet Applied)
+let _pendingTP = {}, _pendingSL = {};   // {sym: price} STAGED TP/SL (dragged, not yet Applied)
+let _editLine = null;                   // "sl" | "tp" while a line edit awaits Apply/✕
+let _focusSL = false, _focusTP = false; // include the SL/TP line in the y-range (locate it)
 let _refreshAtTs = null, _refreshTimer = null;   // header refresh-icon progress spinner
 
 async function plotSymbol(symbol, tf){
@@ -404,8 +406,10 @@ async function plotSymbol(symbol, tf){
   // our OPEN POSITION as SHAPES (entry / SL / draggable TP). Shapes never drive the
   // y-axis autorange, so a far stop-loss no longer squashes the price to a sliver —
   // the axis frames the price+cones, and an out-of-range SL just sits off-screen.
+  window._lastBars = b;   // genLevel() reads recent bars to place a generated SL/TP
   const _shapes = [];
-  window._tpIdx = -1;
+  window._tpIdx = -1; window._slIdx = -1;
+  let _slY = null, _tpY = null;
   const _p = _posBySym[curSymbol];
   if(_p && _p.entry){
     const long = _p.lots > 0, pcol = long ? C.long : C.short;
@@ -414,18 +418,24 @@ async function plotSymbol(symbol, tf){
     const hline = (y, color, dash, text, pos) => ({type:"line", xref:"paper", x0:0, x1:1, yref:"y",
       y0:y, y1:y, line:{color, width:1.4, dash},
       label:{text, textposition:pos, font:{size:9, color, family:"JetBrains Mono"}}});
-    _shapes.push(hline(_p.entry, pcol, "dashdot",
+    _shapes.push(hline(_p.entry, pcol, "dashdot",   // entry (fixed)
       `${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`, "start"));
-    if(_p.sl && _p.sl > 0) _shapes.push(hline(_p.sl, C.short, "dot", `SL ${_px(_p.sl)}`, "start"));
-    // DRAGGABLE take-profit: staged drag (pending) > applied override > default 0.5%.
-    // Dragging only STAGES it; "Apply" commits it. The TP is the last shape (draggable).
+    // STOP-LOSS line (DRAGGABLE): staged drag > manual override > broker SL
+    const ovsl = _ov[curSymbol] && _ov[curSymbol].stop_loss;
+    _slY = (_pendingSL[curSymbol] != null) ? _pendingSL[curSymbol]
+         : (ovsl != null && ovsl > 0) ? ovsl : (_p.sl && _p.sl > 0 ? _p.sl : null);
+    if(_slY != null){
+      _shapes.push(hline(_slY, C.short, "dot", `SL ${_px(_slY)}${_pendingSL[curSymbol]!=null?" · Apply":""}`, "start"));
+      window._slIdx = _shapes.length - 1;
+    }
+    // TAKE-PROFIT line (DRAGGABLE): staged drag > manual override (created via button)
     const ovtp = _ov[curSymbol] && _ov[curSymbol].take_profit;
-    const tpY = (_pendingTP[curSymbol] != null) ? _pendingTP[curSymbol]
-              : (ovtp != null && ovtp > 0) ? ovtp : _p.entry * (1 + (long?1:-1)*0.005);
-    const staged = _pendingTP[curSymbol] != null;
-    _shapes.push(hline(tpY, C.chartreuse, "dot",
-      `🏁 TP ${_px(tpY)} · ${staged ? "staged — Apply" : "drag"}`, "end"));
-    window._tpIdx = _shapes.length - 1;
+    _tpY = (_pendingTP[curSymbol] != null) ? _pendingTP[curSymbol]
+         : (ovtp != null && ovtp > 0) ? ovtp : null;
+    if(_tpY != null){
+      _shapes.push(hline(_tpY, C.chartreuse, "dot", `🏁 TP ${_px(_tpY)}${_pendingTP[curSymbol]!=null?" · Apply":""}`, "end"));
+      window._tpIdx = _shapes.length - 1;
+    }
   }
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
@@ -442,6 +452,10 @@ async function plotSymbol(symbol, tf){
   if(_chartType === "candle" && b.lows && b.highs){ _lo = Math.min(...b.lows); _hi = Math.max(...b.highs); }
   [b.cones.claude, b.cones.nemotron, b.cones.deepseek, b.cones.consensus].forEach(c=>{
     if(c && c.mid) c.mid.forEach(p=>{ _lo = Math.min(_lo, p[1]); _hi = Math.max(_hi, p[1]); }); });
+  // pull a SL/TP line into view only when located (button) or being dragged — so a
+  // far stop never expands the default frame
+  if((_focusSL || _pendingSL[curSymbol] != null) && _slY != null){ _lo = Math.min(_lo, _slY); _hi = Math.max(_hi, _slY); }
+  if((_focusTP || _pendingTP[curSymbol] != null) && _tpY != null){ _lo = Math.min(_lo, _tpY); _hi = Math.max(_hi, _tpY); }
   const _pad = (_hi - _lo) * 0.08 || Math.abs(_hi) * 0.001 || 0.0001;
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:chartH, showlegend:true,
     shapes:_shapes,
@@ -459,25 +473,91 @@ async function plotSymbol(symbol, tf){
     {displayModeBar:false, displaylogo:false, scrollZoom:true,
      edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
                                       // modebar hidden so the top-right toggles own the corner
-  wireTpDrag();
+  wireLineDrag(); wireLineButtons(); wireEditConfirm();
 }
 
-// Dragging the take-profit flag only STAGES it — nothing is sent until "Apply".
-// The drag fires plotly_relayout with shapes[i].y*; we stash it as a pending TP
-// (the line stays where dropped) and fill the take-profit field. Wired once.
-function wireTpDrag(){
+// Dragging the SL or TP line only STAGES it; the confirm bar's ✓ commits, ✕ reverts.
+// plotly_relayout gives shapes[i].y* — we match i to the SL/TP shape index. Wired once.
+function wireLineDrag(){
   const el = document.getElementById("symbol-chart");
-  if(!el || el._tpWired || typeof el.on !== "function") return;
-  el._tpWired = true;
+  if(!el || el._lineWired || typeof el.on !== "function") return;
+  el._lineWired = true;
   el.on("plotly_relayout", (ev)=>{
-    let y = null;
-    for(const k in ev){ const m = k.match(/^shapes\[(\d+)\]\.y[01]$/); if(m && +m[1] === window._tpIdx) y = ev[k]; }
-    if(y != null && curSymbol && _posBySym[curSymbol]){
-      _pendingTP[curSymbol] = +y;                       // staged, not applied
-      const tp = document.getElementById("ov-tp"); if(tp) tp.value = (+y).toPrecision(8);
-      setStatus(`${curSymbol} take-profit staged @ ${(+y).toPrecision(6)} — press Apply`);
+    let y = null, which = null;
+    for(const k in ev){ const m = k.match(/^shapes\[(\d+)\]\.y[01]$/); if(!m) continue;
+      const i = +m[1];
+      if(i === window._tpIdx){ which = "tp"; y = ev[k]; } else if(i === window._slIdx){ which = "sl"; y = ev[k]; } }
+    if(y != null && which && curSymbol && _posBySym[curSymbol]){
+      if(which === "tp") _pendingTP[curSymbol] = +y; else _pendingSL[curSymbol] = +y;
+      _editLine = which; showEditConfirm(which, +y);
     }
   });
+}
+
+function showEditConfirm(which, y){
+  const box = document.getElementById("edit-confirm"); if(!box) return;
+  const lbl = document.getElementById("edit-confirm-label");
+  if(lbl) lbl.textContent = (which === "sl" ? "Stop loss → " : "Take profit → ") + (+y).toPrecision(6);
+  box.hidden = false;
+}
+function hideEditConfirm(){ const b = document.getElementById("edit-confirm"); if(b) b.hidden = true; }
+
+// ✓ saves the staged line as an override; ✕ discards it (line reverts / disappears).
+function wireEditConfirm(){
+  const ap = document.getElementById("edit-apply");
+  if(ap && !ap.dataset.w){ ap.dataset.w = "1"; ap.onclick = ()=>{
+    const sym = curSymbol; if(!sym || !_editLine) return;
+    if(_editLine === "tp"){ const v = _pendingTP[sym]; postOverride(sym, {take_profit: v}).then(()=> delete _pendingTP[sym]); _focusTP = true; }
+    else { const v = _pendingSL[sym]; postOverride(sym, {stop_loss: v}).then(()=> delete _pendingSL[sym]); _focusSL = true; }
+    setStatus(`${sym} ${_editLine === "tp" ? "take-profit" : "stop-loss"} saved`);
+    _editLine = null; hideEditConfirm(); plotSymbol(sym, curTF);
+  }; }
+  const cx = document.getElementById("edit-cancel");
+  if(cx && !cx.dataset.w){ cx.dataset.w = "1"; cx.onclick = ()=>{
+    const sym = curSymbol;
+    if(_editLine === "tp") delete _pendingTP[sym]; else if(_editLine === "sl") delete _pendingSL[sym];
+    _editLine = null; hideEditConfirm(); if(sym) plotSymbol(sym, curTF);
+    setStatus("edit discarded");
+  }; }
+}
+
+// Bottom-right buttons: create a SL/TP if none, else LOCATE it (bring into view to drag).
+function wireLineButtons(){
+  const slb = document.getElementById("sl-btn");
+  if(slb && !slb.dataset.w){ slb.dataset.w = "1"; slb.onclick = ()=> lineButton("sl"); }
+  const tpb = document.getElementById("tp-btn");
+  if(tpb && !tpb.dataset.w){ tpb.dataset.w = "1"; tpb.onclick = ()=> lineButton("tp"); }
+}
+function lineButton(which){
+  const sym = curSymbol, p = sym && _posBySym[sym];
+  if(!p){ setStatus("open a position on this symbol first"); return; }
+  const o = _ov[sym] || {};
+  const exists = which === "tp" ? (o.take_profit != null || _pendingTP[sym] != null)
+                                : (o.stop_loss != null || _pendingSL[sym] != null || (p.sl && p.sl > 0));
+  const noun = which === "tp" ? "take-profit" : "stop-loss";
+  if(exists){
+    if(which === "tp") _focusTP = true; else _focusSL = true;        // locate
+    setStatus(`${sym} ${noun} shown — drag it to move, then ✓ to save`);
+  } else {
+    const lvl = genLevel(which, p);
+    if(which === "tp"){ _pendingTP[sym] = lvl; _focusTP = true; } else { _pendingSL[sym] = lvl; _focusSL = true; }
+    _editLine = which; showEditConfirm(which, lvl);
+    setStatus(`${sym} ${noun} generated — drag to adjust, ✓ to save`);
+  }
+  plotSymbol(sym, curTF);
+}
+// Generate a sensible level from the graph: SL at the recent swing extreme; TP at
+// the same distance from entry (1:1), falling back to a small % when there's no SL.
+function genLevel(which, p){
+  const b = window._lastBars, long = p.lots > 0;
+  if(which === "sl"){
+    if(b){ const lows = (b.lows || b.closes).slice(-30), highs = (b.highs || b.closes).slice(-30);
+      return long ? Math.min(...lows) : Math.max(...highs); }
+    return p.entry * (1 + (long ? -1 : 1) * 0.01);
+  }
+  const slv = (p.symbol && _ov[p.symbol] && _ov[p.symbol].stop_loss) || (p.sl && p.sl > 0 ? p.sl : null);
+  const dist = (slv != null ? Math.abs(p.entry - slv) : 0) || p.entry * 0.005;
+  return long ? p.entry + dist : p.entry - dist;
 }
 
 // Single entry point for "show this symbol on the Instrument & Projection panel":
@@ -486,6 +566,7 @@ function wireTpDrag(){
 // the instrument list and a click on a position row.
 function selectSymbol(sym){
   if(!sym) return;
+  _focusSL = false; _focusTP = false; _editLine = null; hideEditConfirm();   // fresh chart edit state
   plotSymbol(sym, curTF);
   const list = document.getElementById("symbol-list");
   if(list) list.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===sym));
@@ -943,11 +1024,6 @@ function renderOverride(){
   if(dir && document.activeElement !== dir) dir.value = (o.view && o.view.direction) || "";
   const conf = document.getElementById("ov-conf");
   if(conf && document.activeElement !== conf) conf.value = (o.view && o.view.confidence != null) ? o.view.confidence : "";
-  const tp = document.getElementById("ov-tp");
-  if(tp && document.activeElement !== tp){       // show a staged (dragged) TP, else the applied one
-    const pend = _pendingTP[sym];
-    tp.value = pend != null ? pend : (o.take_profit != null ? o.take_profit : "");
-  }
   // AI rationale for this symbol from the latest state
   const ai = document.getElementById("ov-ai");
   if(ai && window._lastState){
@@ -967,17 +1043,18 @@ function wireOverride(){
   const pin = document.getElementById("ov-pin");
   if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol;
     postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}); }; }   // loadOverrides re-renders the bar
-  const save = document.getElementById("ov-save");
-  if(save && !save.dataset.w){ save.dataset.w="1"; save.onclick=()=>{
+  // direction/conf override auto-applies on change (no Apply button anymore)
+  const postView = ()=>{
+    const sym = curSymbol; if(!sym) return;
     const dir = document.getElementById("ov-dir").value;
     const conf = parseFloat(document.getElementById("ov-conf").value);
-    const tpv = document.getElementById("ov-tp").value;
-    const patch = {};
-    patch.view = dir ? {direction: dir, confidence: isNaN(conf)?0.5:conf} : null;
-    patch.take_profit = tpv === "" ? null : parseFloat(tpv);
-    const sym = curSymbol;
-    postOverride(sym, patch).then(()=>{ delete _pendingTP[sym]; setStatus(`${sym} override applied`); });
-  }; }
+    postOverride(sym, {view: dir ? {direction: dir, confidence: isNaN(conf)?0.5:conf} : null})
+      .then(()=> setStatus(dir ? `${sym} forced ${dir.toUpperCase()}` : `${sym} override cleared`));
+  };
+  const dir = document.getElementById("ov-dir");
+  if(dir && !dir.dataset.w){ dir.dataset.w="1"; dir.onchange = postView; }
+  const conf = document.getElementById("ov-conf");
+  if(conf && !conf.dataset.w){ conf.dataset.w="1"; conf.onchange = postView; }
 }
 
 // capture last state for the AI-rationale line, and hook into the loop

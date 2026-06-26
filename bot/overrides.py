@@ -1,7 +1,7 @@
 """Per-symbol operator overrides — pure logic, no MT5. The panel writes
 state/overrides.json; the engine reads it (gated behind use_control_panel).
 Schema per symbol: {pinned: bool, view: {direction, confidence}|null,
-take_profit: float|null, note: str}."""
+take_profit: float|null, stop_loss: float|null, note: str}."""
 from __future__ import annotations
 
 import json
@@ -34,11 +34,20 @@ def human_views(overrides: dict) -> dict:
 
 def take_profits(overrides: dict) -> dict:
     """{sym: tp_price} for symbols with a non-null take_profit."""
+    return _float_field(overrides, "take_profit")
+
+
+def stop_losses(overrides: dict) -> dict:
+    """{sym: sl_price} for symbols with a non-null manual stop_loss."""
+    return _float_field(overrides, "stop_loss")
+
+
+def _float_field(overrides: dict, key: str) -> dict:
     out = {}
     for s, o in overrides.items():
-        if isinstance(o, dict) and o.get("take_profit") is not None:
+        if isinstance(o, dict) and o.get(key) is not None:
             try:
-                out[s] = float(o["take_profit"])
+                out[s] = float(o[key])
             except (TypeError, ValueError):
                 continue   # skip malformed entry; never crash the engine loop
     return out

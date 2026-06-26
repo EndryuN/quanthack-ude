@@ -31,10 +31,11 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .market-read-btn{background:var(--lift);color:var(--ink);border:1px solid var(--muted);border-radius:6px;
   padding:6px 12px;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.04em;cursor:pointer;white-space:nowrap}
 .market-read-btn:hover{border-color:var(--chartreuse);color:var(--chartreuse)}
-/* refresh icon (header) — re-query AI now; spins while a refresh is in flight */
+/* refresh icon (header) — re-query AI now; only the GLYPH spins (not the button) */
 .refresh-icon{padding:6px 9px;font-size:14px;line-height:1}
-.refresh-icon.spin{color:var(--chartreuse);border-color:var(--chartreuse);
-  animation:spin 2.4s linear infinite}
+.refresh-icon .ric{display:inline-block}
+.refresh-icon.spin{color:var(--chartreuse);border-color:var(--chartreuse)}
+.refresh-icon.spin .ric{animation:spin 1.6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* global model selector — segmented control; active button takes its model's color */
 .model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden}
@@ -114,6 +115,20 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
 .sym-pane #chart-wrap{flex:1;min-width:0;position:relative}
 #chart-wrap #symbol-chart{width:100%}
+/* SL / TP create-or-locate buttons pinned to the chart's BOTTOM-right */
+.chart-ctl-b{position:absolute;bottom:30px;right:10px;z-index:5;display:flex;gap:6px}
+.line-btn{background:rgba(20,22,29,.9);border:1px solid var(--lift);border-radius:5px;
+  padding:4px 9px;font-family:"JetBrains Mono";font-size:10px;letter-spacing:.03em;cursor:pointer;color:var(--muted)}
+.line-btn.sl:hover,.line-btn.sl.on{border-color:var(--short);color:var(--short)}
+.line-btn.tp:hover,.line-btn.tp.on{border-color:var(--chartreuse);color:var(--chartreuse)}
+/* drag-a-line confirm bar (top-center of the chart) */
+.edit-confirm{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:6;
+  display:flex;align-items:center;gap:6px;background:rgba(13,14,18,.95);border:1px solid var(--lift);
+  border-radius:6px;padding:4px 6px 4px 10px;font-family:"JetBrains Mono";font-size:11px;color:var(--ink)}
+.ec-btn{border:none;border-radius:4px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1}
+.ec-apply{background:var(--chartreuse);color:#0c0d11;font-weight:700}
+.ec-cancel{background:var(--lift);color:var(--muted)}
+.ec-cancel:hover{color:var(--short)}
 /* timeframe + candle/line toggles pinned to the chart's TOP-right */
 #chart-ctl{position:absolute;top:4px;right:8px;z-index:5;display:flex;gap:6px;align-items:center}
 .chart-type,.tf-toggle{display:flex;border:1px solid var(--lift);border-radius:5px;overflow:hidden}
