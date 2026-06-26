@@ -392,9 +392,49 @@ function plotHeatmap(hm){
      dragmode:"pan", uirevision:"heatmap"},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
      modeBarButtonsToRemove:["select2d","lasso2d"]});
+  wireHeatmapHover(); wirePresent();
+}
+
+// Hovering a heatmap cell marks WHEN that decision was + WHICH direction on the
+// price chart (when the cell's instrument is the one shown — or, in Present mode,
+// the chart follows the hovered instrument).
+function wireHeatmapHover(){
+  const el = document.getElementById("heatmap");
+  if(!el || el._hmWired || typeof el.on !== "function") return;
+  el._hmWired = true;
+  const clear = ()=>{ if(_hoverMark){ _hoverMark = null; plotSymbol(curSymbol, curTF, true); } };
+  el.on("plotly_hover", (ev)=>{
+    const p = ev.points && ev.points[0]; if(!p || !_lastHm) return;
+    const col = Math.round(p.x), sym = p.y;
+    const iso = (_lastHm.timestamps || [])[col];
+    const ri = (_lastHm.symbols || []).indexOf(sym);
+    const view = _cellLayer(ri >= 0 && _lastHm.cells[ri] ? _lastHm.cells[ri][col] : null);
+    if(!iso || !view || !view.direction){ clear(); return; }
+    _hoverMark = { sym, ms: new Date(iso).getTime() + _serverOffMs, dir: view.direction };
+    if(_followMode && sym !== curSymbol) selectSymbol(sym);   // chart follows the hovered instrument
+    else plotSymbol(curSymbol, curTF, true);                  // instant redraw from cached bars
+  });
+  el.on("plotly_unhover", clear);
+  el.addEventListener("mouseleave", clear);
+}
+
+function wirePresent(){
+  const btn = document.getElementById("ot-present");
+  if(!btn || btn.dataset.w) return;
+  btn.dataset.w = "1";
+  btn.onclick = ()=>{
+    _followMode = !_followMode;
+    btn.classList.toggle("active", _followMode);
+    btn.textContent = _followMode ? "Stop" : "Present";
+    if(_followMode){ _followPrev = curSymbol; }
+    else { _hoverMark = null; if(_followPrev) selectSymbol(_followPrev); else plotSymbol(curSymbol, curTF, true); }
+  };
 }
 
 let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
+let _hoverMark = null, _serverOffMs = 0;       // heatmap-hover marker on the price chart
+let _followMode = false, _followPrev = null;   // "Present": chart follows the hovered cell
+const _barsCache = {};                          // {sym|tf: bars} for instant hover redraws (no refetch)
 let _pendingTP = {}, _pendingSL = {};   // {sym: price} STAGED TP/SL (dragged, not yet Applied)
 let _editLine = null;                   // "sl" | "tp" while a line edit awaits Apply/✕
 let _focusSL = false, _focusTP = false; // include the SL/TP line in the y-range (locate it)
@@ -402,11 +442,13 @@ let _chartRev = 0;                      // bump to force the chart view back to 
 let _dragMode = "pan";                  // chart left-drag mode: "pan" (default) or "zoom"
 let _refreshAtTs = null, _refreshTimer = null;   // header refresh-icon progress spinner
 
-async function plotSymbol(symbol, tf){
+async function plotSymbol(symbol, tf, reuse){
   if(symbol) curSymbol = symbol;
   if(tf) curTF = tf;
   if(!curSymbol) return;
-  const b = await getJSON(`/api/bars/${curSymbol}?tf=${curTF}`);
+  const _bkey = curSymbol + "|" + curTF;        // reuse cached bars for instant hover redraws
+  const b = (reuse && _barsCache[_bkey]) ? _barsCache[_bkey] : await getJSON(`/api/bars/${curSymbol}?tf=${curTF}`);
+  if(b && b.available) _barsCache[_bkey] = b;
   const el = document.getElementById("symbol-chart");
   if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:24px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
   const n = b.closes.length;
@@ -414,6 +456,9 @@ async function plotSymbol(symbol, tf){
   // forward in BAR units, so convert their offset to time via the bar interval dt.
   const tms = (b.times || []).map(t => t * 1000);
   const lastT = tms.length ? tms[tms.length - 1] : 0;
+  // bars carry BROKER-server time; heatmap decision ts is engine-local -> detect the
+  // broker UTC offset empirically (newest bar ≈ now) so the hover line lands right.
+  if(lastT) _serverOffMs = Math.round((lastT - Date.now()) / 3600000) * 3600000;
   const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
   const price = (_chartType === "candle" && b.opens && b.highs && b.lows)
     ? [{x:tms, open:b.opens, high:b.highs, low:b.lows, close:b.closes, type:"candlestick",
@@ -468,6 +513,22 @@ async function plotSymbol(symbol, tf){
     if(_tpY != null){
       _shapes.push(hline(_tpY, C.chartreuse, "dot", `🏁 TP ${_px(_tpY)}${_pendingTP[curSymbol]!=null?" · Apply":""}`, "end"));
       window._tpIdx = _shapes.length - 1;
+    }
+  }
+  // HEATMAP-HOVER marker: a vertical line at the hovered decision's time + a colored
+  // direction arrow (long=green ▲ / short=red ▼ / flat=grey ■) at the price then.
+  if(_hoverMark && _hoverMark.sym === curSymbol && lastT){
+    const hms = _hoverMark.ms;
+    if(hms >= tms[0] && hms <= lastT){
+      let bi = 0, bd = Infinity;
+      for(let i = 0; i < tms.length; i++){ const dd = Math.abs(tms[i] - hms); if(dd < bd){ bd = dd; bi = i; } }
+      const hc = _hoverMark.dir === "long" ? C.long : _hoverMark.dir === "short" ? C.short : C.muted;
+      const up = _hoverMark.dir === "long";
+      _shapes.push({type:"line", xref:"x", x0:hms, x1:hms, yref:"paper", y0:0, y1:1,
+        line:{color:hc, width:1.2, dash:"dot"}, editable:false});
+      _annos.push({x:hms, xref:"x", y:b.closes[bi], yref:"y", ax:0, ay: up ? 26 : -26,
+        text: up ? "▲" : (_hoverMark.dir === "short" ? "▼" : "■"), showarrow:true, arrowhead:2,
+        arrowcolor:hc, arrowwidth:1.4, font:{color:hc, size:13, family:"JetBrains Mono"}});
     }
   }
   // CURRENT-PRICE line (always shown) + a price tag on the right axis
