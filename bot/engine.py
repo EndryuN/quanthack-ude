@@ -663,19 +663,30 @@ class Engine:
 
     def _apply_take_profits(self):
         """For each symbol with a take_profit override, set a broker-side TP via
-        set_sltp (preserving the current SL). Idempotent: skip if already set."""
+        set_sltp (preserving the current SL). The desired TP is CLAMPED to the
+        symbol's digits + min stop distance on the profit side, so it matches what
+        the broker stores — otherwise an unrounded value never equals the stored
+        TP and we'd re-send it every tick (ret 10025 'no changes' spam). Idempotent:
+        skip when already set, and treat 10025 as already-applied."""
         from .overrides import take_profits
         tps = take_profits(self._overrides)
         if not tps:
             return
         for p in self.client.positions():
-            tp = tps.get(p.symbol)
-            if tp is None or abs(getattr(p, "tp", 0.0) - tp) < 1e-9:
+            raw = tps.get(p.symbol)
+            if raw is None:
                 continue
+            long = p.type == 0                              # 0=buy -> TP above; sell -> below
+            ref = getattr(p, "price_current", 0.0) or getattr(p, "price_open", 0.0)
+            tp = self.client.clamp_stop_price(p.symbol, ref, raw, "above" if long else "below")
+            if not tp or abs(getattr(p, "tp", 0.0) - tp) < 1e-9:
+                continue                                    # invalid, or already set
             if self.dry_run:
                 print(f"   [DRY] TP {p.symbol} -> {tp}")
                 continue
             ok, res = self.client.set_sltp(p.symbol, getattr(p, "sl", 0.0), tp)
+            if ok or getattr(res, "retcode", None) == 10025:   # 10025 = no changes
+                continue                                    # applied (or already there)
             print(f"   [LIVE] TP {p.symbol} -> {tp}{_rc(ok, res)}")
 
     def _report_stop_hits(self, engine_closed):

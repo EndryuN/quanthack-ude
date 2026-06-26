@@ -108,7 +108,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   cursor:pointer;display:flex;align-items:center}
 .chart-type .ct:last-child,.tf-toggle .tf:last-child{border-right:none}
 .chart-type .ct.active,.tf-toggle .tf.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
-#symbol-list{display:flex;flex-direction:column;gap:2px;max-height:280px;overflow-y:auto}
+#symbol-list{display:flex;flex-direction:column;gap:2px;flex:1;min-height:0;overflow-y:auto}
 #symbol-list .sym{padding:5px 8px;border-radius:5px;font-family:"JetBrains Mono";
   font-size:12px;cursor:pointer;color:var(--ink);border-left:2px solid transparent}
 #symbol-list .sym:hover{background:var(--lift)}
@@ -131,8 +131,12 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 /* Task 6: per-symbol block toggles */
 #symbol-list .sym{display:flex;justify-content:space-between;align-items:center}
 #symbol-list .sym.blocked .sym-name{color:var(--short);text-decoration:line-through}
+.sym-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sym-block{color:var(--muted);width:16px;text-align:center}
 .sym-block:hover{color:var(--ink)}
+.sym-pin{width:15px;text-align:center;cursor:pointer;font-size:10px;opacity:.22}
+.sym-pin:hover{opacity:.6}
+.sym-pin.on{opacity:1}
 #symbol-list .sym.blocked .sym-block{color:var(--short)}
 
 /* asset-class group headers in the symbol list */

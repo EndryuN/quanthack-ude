@@ -155,6 +155,7 @@ def positions():
         out = [{"symbol": p.symbol, "lots": p.signed_lots,
                 "profit": getattr(p, "profit", 0.0),
                 "entry": getattr(p, "price_open", 0.0),
+                "sl": getattr(p, "sl", 0.0), "tp": getattr(p, "tp", 0.0),
                 "scalped": p.symbol in assigned or getattr(p, "magic", 0) == SCALPER.magic}
                for p in c.positions(magic=None)]
         return {"available": True, "positions": out}

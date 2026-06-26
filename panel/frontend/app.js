@@ -363,6 +363,7 @@ function plotHeatmap(hm){
 }
 
 let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
+let _pendingTP = {};   // {sym: price} a STAGED take-profit (dragged but not yet Applied)
 
 async function plotSymbol(symbol, tf){
   if(symbol) curSymbol = symbol;
@@ -408,13 +409,24 @@ async function plotSymbol(symbol, tf){
     _annos.push({xref:"paper", x:0.005, y:_p.entry, yref:"y", xanchor:"left", yanchor:"bottom",
       text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`,
       showarrow:false, font:{size:9, color:pcol, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
-    // draggable take-profit: current override TP, else a default 0.5% in-favor
+    // current STOP-LOSS line (broker-side), if set — red dotted
+    if(_p.sl && _p.sl > 0){
+      posTraces.push({x:[tms[0], rx1], y:[_p.sl, _p.sl], mode:"lines", name:"stop",
+        line:{color:C.short, width:1.2, dash:"dot"}, hoverinfo:"skip", showlegend:false});
+      _annos.push({xref:"paper", x:0.005, y:_p.sl, yref:"y", xanchor:"left", yanchor:"top",
+        text:`SL ${_px(_p.sl)}`, showarrow:false,
+        font:{size:9, color:C.short, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
+    }
+    // DRAGGABLE take-profit flag: staged drag (pending) > applied override > default.
+    // Dragging only stages it; "Apply" commits it.
     const ovtp = _ov[curSymbol] && _ov[curSymbol].take_profit;
-    const tpY = (ovtp != null && ovtp > 0) ? ovtp : _p.entry * (1 + (long?1:-1)*0.005);
+    const tpY = (_pendingTP[curSymbol] != null) ? _pendingTP[curSymbol]
+              : (ovtp != null && ovtp > 0) ? ovtp : _p.entry * (1 + (long?1:-1)*0.005);
+    const staged = _pendingTP[curSymbol] != null;
     _shapes.push({type:"line", xref:"paper", x0:0, x1:1, yref:"y", y0:tpY, y1:tpY,
       line:{color:C.chartreuse, width:1.5, dash:"dot"}});
     _annos.push({xref:"paper", x:0.995, y:tpY, yref:"y", xanchor:"right", yanchor:"bottom",
-      text:`🏁 TP ${_px(tpY)} · drag`, showarrow:false,
+      text:`🏁 TP ${_px(tpY)} · ${staged ? "staged — Apply" : "drag"}`, showarrow:false,
       font:{size:9, color:C.chartreuse, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
   }
   const traces = [...price,
@@ -441,8 +453,9 @@ async function plotSymbol(symbol, tf){
   wireTpDrag();
 }
 
-// Dragging the take-profit shape fires plotly_relayout with shapes[i].y* — save it
-// as a per-symbol take-profit override (Trading212-style flag). Wired once.
+// Dragging the take-profit flag only STAGES it — nothing is sent until "Apply".
+// The drag fires plotly_relayout with shapes[i].y*; we stash it as a pending TP
+// (the line stays where dropped) and fill the take-profit field. Wired once.
 function wireTpDrag(){
   const el = document.getElementById("symbol-chart");
   if(!el || el._tpWired || typeof el.on !== "function") return;
@@ -451,8 +464,9 @@ function wireTpDrag(){
     let y = null;
     for(const k in ev){ if(/^shapes\[\d+\]\.y[01]$/.test(k)) y = ev[k]; }
     if(y != null && curSymbol && _posBySym[curSymbol]){
-      postOverride(curSymbol, {take_profit: Number((+y).toPrecision(8))});
-      setStatus(`${curSymbol} take-profit set @ ${(+y).toPrecision(6)}`);
+      _pendingTP[curSymbol] = +y;                       // staged, not applied
+      const tp = document.getElementById("ov-tp"); if(tp) tp.value = (+y).toPrecision(8);
+      setStatus(`${curSymbol} take-profit staged @ ${(+y).toPrecision(6)} — press Apply`);
     }
   });
 }
@@ -477,21 +491,32 @@ const _GRP_ORDER = {fx:0, metals:1, crypto:2};
 
 function buildSymbolList(symbols){
   const el = document.getElementById("symbol-list");
-  const sig = symbols.join(",") + "|" + ((_ctl && _ctl.block) || []).join(",");
+  const blocked = new Set((_ctl && _ctl.block) || []);
+  const pinned = new Set(Object.keys(_ov).filter(k => _ov[k] && _ov[k].pinned));
+  const sig = symbols.join(",") + "|" + [...blocked].join(",") + "|P" + [...pinned].sort().join(",");
+  const row = s => `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
+      `<span class="sym-name">${s}</span>`+
+      `<span class="sym-pin${pinned.has(s)?" on":""}" data-pin="${s}" title="pin to top">&#128204;</span>`+
+      `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`;
   if(el && el.dataset.sig !== sig){
     el.dataset.sig = sig;
-    const blocked = new Set((_ctl && _ctl.block) || []);
     const sorted = [...symbols].sort((a,b)=> _GRP_ORDER[_grpOf(a)] - _GRP_ORDER[_grpOf(b)]); // stable within group
-    let html = "", lastG = null;
-    for(const s of sorted){
+    const pins = sorted.filter(s=>pinned.has(s)), rest = sorted.filter(s=>!pinned.has(s));
+    let html = "";
+    if(pins.length){ html += `<div class="sym-group">📌 PINNED</div>`; for(const s of pins) html += row(s); }
+    let lastG = null;
+    for(const s of rest){
       const g = _grpOf(s);
       if(g !== lastG){ html += `<div class="sym-group">${g.toUpperCase()}</div>`; lastG = g; }
-      html += `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
-        `<span class="sym-name">${s}</span>`+
-        `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`;
+      html += row(s);
     }
     el.innerHTML = html;
     el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
+      if(ev.target.classList.contains("sym-pin")){       // toggle pin-to-top
+        const sym = ev.target.dataset.pin;
+        postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)});
+        return;
+      }
       if(ev.target.classList.contains("sym-block")){
         const sym = ev.target.dataset.block;
         const cur = new Set((_ctl && _ctl.block) || []);
@@ -910,16 +935,15 @@ async function loadOverrides(){ _ov = (await getJSON("/api/overrides")) || {}; r
 function renderOverride(){
   const sym = curSymbol; if(!sym) return;
   const o = _ov[sym] || {};
-  const pin = document.getElementById("ov-pin");
-  if(pin){ pin.classList.toggle("on", !!o.pinned); pin.textContent = o.pinned ? "Pinned" : "Pin"; }
   const dir = document.getElementById("ov-dir");
   if(dir && document.activeElement !== dir) dir.value = (o.view && o.view.direction) || "";
   const conf = document.getElementById("ov-conf");
   if(conf && document.activeElement !== conf) conf.value = (o.view && o.view.confidence != null) ? o.view.confidence : "";
   const tp = document.getElementById("ov-tp");
-  if(tp && document.activeElement !== tp) tp.value = (o.take_profit != null) ? o.take_profit : "";
-  const note = document.getElementById("ov-note");
-  if(note && document.activeElement !== note) note.value = o.note || "";
+  if(tp && document.activeElement !== tp){       // show a staged (dragged) TP, else the applied one
+    const pend = _pendingTP[sym];
+    tp.value = pend != null ? pend : (o.take_profit != null ? o.take_profit : "");
+  }
   // AI rationale for this symbol from the latest state
   const ai = document.getElementById("ov-ai");
   if(ai && window._lastState){
@@ -936,8 +960,6 @@ async function postOverride(sym, patch){
 }
 
 function wireOverride(){
-  const pin = document.getElementById("ov-pin");
-  if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=> postOverride(curSymbol, {pinned: !(_ov[curSymbol] && _ov[curSymbol].pinned)}); }
   const save = document.getElementById("ov-save");
   if(save && !save.dataset.w){ save.dataset.w="1"; save.onclick=()=>{
     const dir = document.getElementById("ov-dir").value;
@@ -946,10 +968,9 @@ function wireOverride(){
     const patch = {};
     patch.view = dir ? {direction: dir, confidence: isNaN(conf)?0.5:conf} : null;
     patch.take_profit = tpv === "" ? null : parseFloat(tpv);
-    postOverride(curSymbol, patch);
+    const sym = curSymbol;
+    postOverride(sym, patch).then(()=>{ delete _pendingTP[sym]; setStatus(`${sym} override applied`); });
   }; }
-  const ns = document.getElementById("ov-note-save");
-  if(ns && !ns.dataset.w){ ns.dataset.w="1"; ns.onclick=()=> postOverride(curSymbol, {note: document.getElementById("ov-note").value}); }
 }
 
 // capture last state for the AI-rationale line, and hook into the loop
