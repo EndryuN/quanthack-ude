@@ -352,10 +352,9 @@ async function plotSymbol(symbol, tf){
   const lastT = tms.length ? tms[tms.length - 1] : 0;
   const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
   const price = [{x:tms, y:b.closes, type:"scatter", mode:"lines", line:{color:C.ink,width:1.5}, name:curSymbol, hovertemplate:"%{y:,.6g}<extra></extra>"}];
+  // just the projected direction LINE per model — no filled cone band (the wide
+  // beam read as confusing). Mid line only.
   const coneTrace=(cone,color,name,dash)=> cone? [
-    {x:cone.upper.map(p=>lastT+p[0]*dt), y:cone.upper.map(p=>p[1]), mode:"lines", line:{width:0}, showlegend:false, hoverinfo:"skip"},
-    {x:cone.lower.map(p=>lastT+p[0]*dt), y:cone.lower.map(p=>p[1]), mode:"lines", line:{width:0}, fill:"tonexty",
-      fillcolor:color+"22", showlegend:false, hoverinfo:"skip"},
     {x:cone.mid.map(p=>lastT+p[0]*dt), y:cone.mid.map(p=>p[1]), mode:"lines", line:{color:color,width:2,dash:dash||"solid"}, name:name, hovertemplate:"%{y:,.6g}<extra></extra>"},
   ] : [];
   // Consensus is drawn last (on top) and DASHED so that when no Nemotron is
