@@ -12,12 +12,6 @@
 <body>
   <header id="strip">
     <button id="hamburger" title="menu">&#9776;</button>
-    <div id="model-sel" class="model-sel" title="model layer — drives the currency-strength ribbon">
-      <button class="mbtn active" data-layer="claude">Claude</button>
-      <button class="mbtn" data-layer="nemotron">Nemotron</button>
-      <button class="mbtn" data-layer="deepseek">DeepSeek</button>
-      <button class="mbtn" data-layer="combined">Combined</button>
-    </div>
     <div class="brand">SIGNAL<span>//</span>LAYER</div>
     <div id="regimes">
       <button id="market-read-btn" class="market-read-btn" title="full AI market read">Market Read</button>
@@ -25,7 +19,15 @@
     <span id="views-age" class="views-age" title="age of the AI market read">—</span>
     <div id="kpis"></div>
   </header>
-  <div id="ribbon" title="net currency strength across all pairs (long − short, confidence-weighted)"></div>
+  <div id="ribbon-row">
+    <div id="model-sel" class="model-sel" title="model layer — drives the currency-strength ribbon">
+      <button class="mbtn active" data-layer="claude">Claude</button>
+      <button class="mbtn" data-layer="nemotron">Nemotron</button>
+      <button class="mbtn" data-layer="deepseek">DeepSeek</button>
+      <button class="mbtn" data-layer="combined">Combined</button>
+    </div>
+    <div id="ribbon" title="net currency strength across all pairs (long − short, confidence-weighted)"></div>
+  </div>
   <nav id="navmenu" hidden>
     <button class="navitem active" data-view="dashboard">Dashboard</button>
     <button class="navitem" data-view="history">History</button>

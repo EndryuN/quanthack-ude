@@ -18,12 +18,13 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .rchip.long{color:var(--long);border-color:rgba(46,204,113,.35)}
 .rchip.short{color:var(--short);border-color:rgba(255,77,77,.35)}
 .rchip.flat{color:var(--muted)}
-/* currency-strength ribbon in its own row under the header */
+/* currency-strength ribbon row: model selector + ribbon chips, under the header */
 /* smooth fade when the model selector switches the ribbon's source */
 @keyframes ribbonfade{from{opacity:.15;transform:translateY(-3px)}to{opacity:1;transform:none}}
 .ribbon-anim{animation:ribbonfade .3s ease}
-#ribbon{display:flex;gap:6px;align-items:center;padding:6px 18px;background:var(--canvas);
-  border-bottom:1px solid var(--lift);overflow-x:auto;white-space:nowrap;position:sticky;top:56px;z-index:9}
+#ribbon-row{display:flex;align-items:center;gap:12px;padding:6px 18px;background:var(--canvas);
+  border-bottom:1px solid var(--lift);position:sticky;top:56px;z-index:9}
+#ribbon{display:flex;gap:6px;align-items:center;flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
 #ribbon::-webkit-scrollbar{height:5px}
 #regimes{flex:none}
 /* "Market Read" header button — opens the full-reasoning modal */
