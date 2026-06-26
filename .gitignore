@@ -28,3 +28,7 @@ venv/
 # ...but DO track the AI decision logs (synced for the dashboard/demo) + test fixtures
 !logs/ai_decisions_*.jsonl
 !panel/backend/_fixtures/*.jsonl
+
+# AI backtest experiment artifacts
+bt_*.json
+bt_*.log

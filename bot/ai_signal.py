@@ -91,10 +91,24 @@ def build_context(client: MT5Client, symbols, tf=mt5.TIMEFRAME_M15) -> str:
             if hi > lo:
                 pos = (price - lo) / (hi - lo) * 100
 
-        lines.append(
+        line = (
             f"{s}: px={price:.6g} | ret 1h={r1h:+.2f} 4h={r4h:+.2f} 1d={r1d:+.2f} "
             f"3d={r3d:+.2f}% | trend M15={tm} H1={th1} H4={th4} | mom_z={z:+.2f} "
             f"vol/bar={vol:.2f}% | 5d-range={pos:.0f}%")
+        if os.environ.get("AI_LONG_HORIZON") == "1":
+            # EXPERIMENT (off by default): longer-horizon context from the H4 window
+            # already fetched — a ~10-day return + 10-day trend + 10-day range
+            # position (sized to fit the ~31-day backtest cache). A/B via AI_LONG_HORIZON=1.
+            r10 = ret(c4, 60)               # ~10 days (60 H4 bars)
+            t10 = _trend(c4, 12, 48)        # ~10-day trend (H4 EMA cross)
+            pos10 = 50.0
+            if h4 is not None and len(h4) > 60:
+                hi4 = float(np.max(np.asarray(h4["high"], float)[-60:]))
+                lo4 = float(np.min(np.asarray(h4["low"], float)[-60:]))
+                if hi4 > lo4:
+                    pos10 = (price - lo4) / (hi4 - lo4) * 100
+            line += f" | 10d={r10:+.2f}% trend10d={t10} 10d-range={pos10:.0f}%"
+        lines.append(line)
     return "\n".join(lines)
 
 
