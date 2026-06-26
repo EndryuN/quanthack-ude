@@ -1,7 +1,7 @@
 :root{
   --canvas:#0D0E12; --surface:#14161D; --lift:#1E2330; --chartreuse:#C8FF00;
   --claude:#FF8A1E; --nemo:#76B900; --deepseek:#4D6BFE; --human:#F5A623; --long:#2ECC71;
-  --short:#FF4D4D; --flat:#3A3F50; --ink:#E8EAF0; --muted:#6B7080;
+  --short:#FF4D4D; --flat:#3A3F50; --ink:#E8EAF0; --muted:#888EA1;   /* lifted for contrast (was #6B7080) */
   --fx:#2DD4BF; --metal:#E0B84D; --crypto:#9B6BFF;   /* asset categories */
 }
 *{box-sizing:border-box}
@@ -52,13 +52,15 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .model-sel .mbtn.active[data-layer="combined"]{background:var(--chartreuse)}
 #kpis{display:flex;gap:18px;font-family:"JetBrains Mono";margin-left:auto}
 #kpis .kpi{display:flex;flex-direction:column;text-align:right}
-#kpis .kpi label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
+#kpis .kpi label{font-size:10px;letter-spacing:.1em;color:var(--muted)}
 #kpis .kpi b{font-weight:500;font-size:15px}
-main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-items:start}
-.col-left,.col-main{display:flex;flex-direction:column;gap:12px;min-width:0}
-.card{background:var(--surface);border:1px solid var(--lift);border-radius:10px;padding:12px}
-.card h2{margin:0 0 8px;font-size:10px;letter-spacing:.12em;font-weight:600;
-  text-transform:uppercase;color:var(--muted)}
+#kpis .kpi b.up{color:var(--long)} #kpis .kpi b.down{color:var(--short)}
+main{display:grid;grid-template-columns:34% 66%;gap:14px;padding:14px;align-items:start}
+.col-left,.col-main{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--lift);border-radius:10px;padding:14px 16px;
+  box-shadow:0 1px 2px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.03)}   /* depth + subtle top highlight */
+.card h2{margin:0 0 11px;font-size:11px;letter-spacing:.14em;font-weight:600;
+  text-transform:uppercase;color:#9CA2B5}   /* section headers: brighter than muted body */
 .mono{font-family:"JetBrains Mono"}
 #orders div,#tripwires div,#positions div{font-family:"JetBrains Mono";font-size:12px;padding:2px 0}
 .oc-split{display:flex;gap:16px}

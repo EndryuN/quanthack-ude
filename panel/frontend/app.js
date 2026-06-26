@@ -51,15 +51,17 @@ const AI_REFRESH_SECS = 900;   // engine ai_refresh_seconds (15 min) — for the
 
 // KPI tiles — split out so the fast 1s state poll can refresh them every snapshot.
 function renderKpis(a){
+  const sgn = v => v == null ? "" : v > 0 ? "up" : v < 0 ? "down" : "";   // green/red by sign
   const kpis = [
-    ["EQUITY", fmt(a.equity)], ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—"],
-    ["LEV", a.gross_leverage!=null? a.gross_leverage.toFixed(1)+"x":"—"],
-    ["ML", a.margin_level!=null? Math.round(a.margin_level)+"%":"—"],
-    ["DD", a.drawdown!=null? (a.drawdown*100).toFixed(1)+"%":"—"],
-    ["SHARPE", a.sharpe!=null? a.sharpe.toFixed(2):"—"],
+    ["EQUITY", fmt(a.equity), ""],
+    ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—", sgn(a.return_pct)],
+    ["LEV", a.gross_leverage!=null? a.gross_leverage.toFixed(1)+"x":"—", ""],
+    ["ML", a.margin_level!=null? Math.round(a.margin_level)+"%":"—", ""],
+    ["DD", a.drawdown!=null? (a.drawdown*100).toFixed(1)+"%":"—", ""],
+    ["SHARPE", a.sharpe!=null? a.sharpe.toFixed(2):"—", sgn(a.sharpe)],
   ];
   const el = document.getElementById("kpis"); if(!el) return;
-  el.innerHTML = kpis.map(([k,v])=> `<div class="kpi"><label>${k}</label><b>${v}</b></div>`).join("");
+  el.innerHTML = kpis.map(([k,v,c])=> `<div class="kpi"><label>${k}</label><b class="${c}">${v}</b></div>`).join("");
 }
 
 // "refreshing AI views in M:SS" countdown next to the refresh icon + spinner stop.
