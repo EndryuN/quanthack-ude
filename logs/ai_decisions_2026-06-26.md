@@ -1485,3 +1485,28 @@
 - BUY 100.0 XRPUSD  (+0.00 → +100.00)
 
 ---
+## 20:14:41 · LIVE
+**Regime (Claude):** Mixed/neutral USD with no clean macro trend; risk assets bouncing intraday after multi-day drops while AUD stays heavy — choppy two-way regime.
+**Regime (Nemotron):** Mixed signals with USD strength conflicting with risk-on crypto/metals; SOL shows strongest aligned momentum.
+**Account:** eq=974,445 · lev=2.9x · margin=10% · ML=1030% · sharpe=-0.06
+**Cost:** Claude in=2482 out=1577 ~$0.052 · Nemotron in=1737 out=835 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| SOLUSD | LONG 0.45 | long 0.45 | long 0.80 | ✅ agree |
+| AUDUSD | SHORT 0.40 | short 0.40 | short 0.60 | ✅ agree |
+| USDCAD | SHORT 0.35 | short 0.35 | short 0.50 | ✅ agree |
+| XAGUSD | LONG 0.30 | long 0.30 | long 0.40 | ✅ agree |
+| XAUUSD | LONG 0.30 | long 0.30 | long 0.45 | ✅ agree |
+| GBPUSD | SHORT 0.20 | short 0.20 | short 0.45 | ✅ agree |
+| USDJPY | LONG 0.20 | long 0.20 | long 0.50 | ✅ agree |
+| ETHUSD | LONG 0.20 | long 0.20 | long 0.50 | ✅ agree |
+
+**Orders placed:**
+- SELL 1.72 GBPUSD  (+0.00 → -1.72)
+- BUY 2.26 USDJPY  (+0.00 → +2.26)
+- BUY 2.12 XAGUSD  (+0.00 → +2.12)
+- BUY 1.53 XAUUSD  (+0.00 → +1.53)
+- BUY 100.0 ETHUSD  (+0.00 → +100.00)
+
+---
