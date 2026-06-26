@@ -688,24 +688,35 @@ class Engine:
         _manual = set(_stop_losses(self._overrides)) if self._overrides else set()
         for p in self.client.positions():
             try:
-                if getattr(p, "sl", 0.0) or p.symbol in _pinned or p.symbol in _manual:
-                    continue                              # already protected (or operator-controlled)
+                if p.symbol in _pinned or p.symbol in _manual:
+                    continue                              # operator-controlled
                 is_long = p.type == _mt5.POSITION_TYPE_BUY
-                sl = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))
-                if not sl:
+                ref = getattr(p, "price_current", 0.0) or getattr(p, "price_open", 0.0)
+                sl, tp = getattr(p, "sl", 0.0), getattr(p, "tp", 0.0)
+                # correct sides for THIS direction: long -> SL below / TP above; short -> reversed.
+                # After a direction FLIP (e.g. a human Force LONG over a short), MT5 netting
+                # carries the OLD position's SL/TP — now wrong-sided — and a TP on the wrong
+                # side makes the broker close the new position instantly "at TP" (a loss). So we
+                # reset a missing/wrong-sided SL to the failsafe and CLEAR a wrong-sided TP.
+                sl_ok = bool(sl) and (sl < ref if is_long else sl > ref)
+                tp_bad = bool(tp) and bool(ref) and (tp <= ref if is_long else tp >= ref)
+                if sl_ok and not tp_bad:
+                    continue                              # already protected, no stale TP
+                new_sl = sl if sl_ok else self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))
+                new_tp = 0.0 if tp_bad else tp            # clear a stale wrong-sided TP
+                if not new_sl:
                     print(f"[{_ts()}]    !! {p.symbol} has NO stop and no quote to set one")
                     continue
+                why = "FIX-STOPS" if (sl and not sl_ok) or tp_bad else "ENSURE-SL"
                 if self.dry_run:
-                    print(f"   [DRY] ENSURE-SL {p.symbol} -> {sl}")
+                    print(f"   [DRY] {why} {p.symbol} -> sl={new_sl} tp={new_tp}")
                     continue
                 def _attach():
-                    if self.cfg.use_control_panel:
-                        return self.client.set_sltp(p.symbol, sl, getattr(p, "tp", 0.0))
-                    return self.client.set_sl(p.symbol, sl)
+                    return self.client.set_sltp(p.symbol, new_sl, new_tp)
                 ok, res = _attach()
                 if not ok and _is_transient(res):
                     ok, res = _attach()          # H2: one in-tick retry on a transient reject
-                print(f"[{_ts()}]    ENSURE-SL {p.symbol} -> {sl}{_rc(ok, res)}")
+                print(f"[{_ts()}]    {why} {p.symbol} -> sl={new_sl} tp={new_tp}{_rc(ok, res)}")
             except Exception as e:   # never let an SL-ensure error stall the loop
                 print(f"[{_ts()}]    !! ensure-stop {getattr(p, 'symbol', '?')} failed: {e}")
 
@@ -757,6 +768,8 @@ class Engine:
                 continue
             long = p.type == 0                              # 0=buy -> TP above; sell -> below
             ref = getattr(p, "price_current", 0.0) or getattr(p, "price_open", 0.0)
+            if ref and (raw <= ref if long else raw >= ref):
+                continue   # stale/wrong-side TP (e.g. left from the opposite direction) -> ignore, don't clamp to near-price
             tp = self.client.clamp_stop_price(p.symbol, ref, raw, "above" if long else "below")
             if not tp or abs(getattr(p, "tp", 0.0) - tp) < 1e-9:
                 continue                                    # invalid, or already set
@@ -785,6 +798,8 @@ class Engine:
                 continue
             is_long = p.type == _mt5.POSITION_TYPE_BUY
             ref = getattr(p, "price_current", 0.0) or getattr(p, "price_open", 0.0)
+            if ref and (raw >= ref if is_long else raw <= ref):
+                continue   # stale/wrong-side SL -> ignore (failsafe protects), don't clamp to near-price
             sl = self.client.clamp_stop_price(p.symbol, ref, raw, "below" if is_long else "above")
             floor = self.client.sl_price(p.symbol, is_long, sl_pct_for(p.symbol))  # loosest allowed
             if sl and floor:
