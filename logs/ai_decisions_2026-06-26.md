@@ -1205,3 +1205,30 @@
 - SELL 55.51 SOLUSD  (+0.00 → -55.51)
 
 ---
+## 06:06:02 · LIVE
+**Regime (Claude):** Broad risk-off: crypto and silver selling off hard, AUD weak; USD firm against risk-sensitive currencies though near-term USD softening vs JPY/CHF/CAD.
+**Regime (Nemotron):** Risk-off with USD strength and broad-based declines in metals and crypto, mixed signals in major FX pairs due to timeframe conflicts.
+**Account:** eq=994,963 · lev=3.3x · margin=12% · ML=829% · sharpe=-0.04
+**Cost:** Claude in=2495 out=1567 ~$0.052 · Nemotron in=1720 out=896 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.50 | short 0.50 | short 0.70 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.42 | short 0.42 | short 0.80 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.42 | short 0.42 | short 0.70 | ✅ agree → boosted |
+| BTCUSD | SHORT 0.40 | short 0.40 | short 0.60 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.40 | short 0.40 | short 0.60 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.33 | short 0.33 | short 0.70 | ✅ agree → boosted |
+| EURCHF | SHORT 0.32 | short 0.32 | short 0.60 | ✅ agree → boosted |
+
+**Orders placed:**
+- SELL 9.84 AUDUSD  (-6.11 → -15.95)
+- CLOSE EURGBP
+- CLOSE GBPUSD
+- CLOSE USDCHF
+- CLOSE USDJPY
+- SELL 0.72 XAUUSD  (+0.00 → -0.72)
+- SELL 1.14 BTCUSD  (-1.87 → -3.01)
+- CLOSE SOLUSD
+
+---
