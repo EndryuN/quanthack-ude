@@ -1021,7 +1021,28 @@ async function renderHistory(sym){
   }
   el.innerHTML = items.length ? items.join("") : '<div style="color:var(--muted)">(no orders for '+sym+' yet)</div>';
 }
-loadControls(); loadPresets(); wireControls(); wireRegimeModal(); wireNav();
+// Risk popover: hover the status bar to reveal it, click to pin it open, ✕ or a
+// click outside to close.
+let _riskWired = false;
+function wireRiskPop(){
+  if(_riskWired) return;
+  const trig = document.getElementById("kpis"), pop = document.getElementById("gauges-card");
+  if(!trig || !pop) return;
+  _riskWired = true;
+  let pinned = false;
+  const show = ()=> pop.classList.add("show");
+  const maybeHide = ()=>{ if(!pinned) pop.classList.remove("show"); };
+  const close = ()=>{ pinned = false; pop.classList.remove("show"); };
+  trig.addEventListener("mouseenter", show);
+  trig.addEventListener("mouseleave", maybeHide);
+  pop.addEventListener("mouseenter", show);
+  pop.addEventListener("mouseleave", maybeHide);
+  trig.addEventListener("click", (e)=>{ e.stopPropagation(); pinned = !pinned; show(); });
+  const x = document.getElementById("risk-close"); if(x) x.onclick = (e)=>{ e.stopPropagation(); close(); };
+  document.addEventListener("click", (e)=>{ if(pinned && !pop.contains(e.target) && !trig.contains(e.target)) close(); });
+}
+
+loadControls(); loadPresets(); wireControls(); wireRegimeModal(); wireNav(); wireRiskPop();
 
 let _ov = {};   // last-known overrides {sym:{pinned,view,take_profit,note}}
 

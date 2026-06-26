@@ -240,6 +240,13 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .con-pane[hidden]{display:none}
 .con-sub{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap;margin-left:8px}
+/* Risk is now a popover off the status bar: hover reveals, click pins, ✕/outside closes */
+#kpis{cursor:pointer}
+#gauges-card{position:fixed;top:48px;right:14px;width:560px;max-width:92vw;max-height:82vh;overflow:auto;
+  z-index:40;display:none;box-shadow:0 14px 36px rgba(0,0,0,.6)}
+#gauges-card.show{display:block}
+#gauges-card .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+#gauges-card .card-head h2{margin:0}
 .views-age.stale{color:var(--human);font-weight:600}
 
 /* Consensus asset-class tabs */
