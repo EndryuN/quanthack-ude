@@ -338,7 +338,7 @@ function plotHeatmap(hm){
      modeBarButtonsToRemove:["select2d","lasso2d"]});
 }
 
-let curSymbol = null, curTF = "15m", _tfWired = false;
+let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
 
 async function plotSymbol(symbol, tf){
   if(symbol) curSymbol = symbol;
@@ -353,7 +353,12 @@ async function plotSymbol(symbol, tf){
   const tms = (b.times || []).map(t => t * 1000);
   const lastT = tms.length ? tms[tms.length - 1] : 0;
   const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
-  const price = [{x:tms, y:b.closes, type:"scatter", mode:"lines", line:{color:C.ink,width:1.5}, name:curSymbol, hovertemplate:"%{y:,.6g}<extra></extra>"}];
+  const price = (_chartType === "candle" && b.opens && b.highs && b.lows)
+    ? [{x:tms, open:b.opens, high:b.highs, low:b.lows, close:b.closes, type:"candlestick",
+        name:curSymbol, showlegend:false,
+        increasing:{line:{color:C.long}}, decreasing:{line:{color:C.short}}}]
+    : [{x:tms, y:b.closes, type:"scatter", mode:"lines", line:{color:C.ink,width:1.5},
+        name:curSymbol, hovertemplate:"%{y:,.6g}<extra></extra>"}];
   // just the projected direction LINE per model — no filled cone band (the wide
   // beam read as confusing). Mid line only.
   const coneTrace=(cone,color,name,dash)=> cone? [
@@ -362,24 +367,38 @@ async function plotSymbol(symbol, tf){
   // Consensus is drawn last (on top) and DASHED so that when no Nemotron is
   // running — consensus == Claude, perfectly overlapping — the solid Claude
   // line shows through the gaps instead of being hidden under it.
-  const traces = [...price,
-    ...coneTrace(b.cones.claude, C.claude, "Claude"),
-    ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
-    ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
-    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
-  // our OPEN POSITION on this symbol: dashed entry line (green long / red short) + label
-  const _shapes = [], _annos = [];
+  // our OPEN POSITION: a FIXED entry line (a trace) + a DRAGGABLE take-profit flag
+  // (the only editable shape, so it's the only thing the user can drag — Trading212
+  // style). Releasing the drag POSTs the new TP as a per-symbol override.
+  const _shapes = [], _annos = [], posTraces = [];
   const _p = _posBySym[curSymbol];
   if(_p && _p.entry){
     const long = _p.lots > 0, pcol = long ? C.long : C.short;
     const prof = _p.profit != null ? ((_p.profit>=0?"+$":"-$")+Math.abs(Math.round(_p.profit)).toLocaleString()) : "";
-    const epx = (+_p.entry).toLocaleString(undefined, {maximumFractionDigits: _p.entry>=100?2:5});
-    _shapes.push({type:"line", xref:"paper", x0:0, x1:1, yref:"y", y0:_p.entry, y1:_p.entry,
-      line:{color:pcol, width:1.5, dash:"dashdot"}});
+    const _px = v => (+v).toLocaleString(undefined, {maximumFractionDigits: Math.abs(v)>=100?2:5});
+    const coneLens = [b.cones.claude,b.cones.nemotron,b.cones.deepseek,b.cones.consensus]
+      .filter(Boolean).map(c=>c.mid.length);
+    const rx1 = lastT + (coneLens.length ? Math.max(...coneLens) : 1) * dt;
+    posTraces.push({x:[tms[0], rx1], y:[_p.entry, _p.entry], mode:"lines", name:"entry",
+      line:{color:pcol, width:1.5, dash:"dashdot"}, hoverinfo:"skip", showlegend:false});
     _annos.push({xref:"paper", x:0.005, y:_p.entry, yref:"y", xanchor:"left", yanchor:"bottom",
-      text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${epx}  ${prof}`,
+      text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`,
       showarrow:false, font:{size:9, color:pcol, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
+    // draggable take-profit: current override TP, else a default 0.5% in-favor
+    const ovtp = _ov[curSymbol] && _ov[curSymbol].take_profit;
+    const tpY = (ovtp != null && ovtp > 0) ? ovtp : _p.entry * (1 + (long?1:-1)*0.005);
+    _shapes.push({type:"line", xref:"paper", x0:0, x1:1, yref:"y", y0:tpY, y1:tpY,
+      line:{color:C.chartreuse, width:1.5, dash:"dot"}});
+    _annos.push({xref:"paper", x:0.995, y:tpY, yref:"y", xanchor:"right", yanchor:"bottom",
+      text:`🏁 TP ${_px(tpY)} · drag`, showarrow:false,
+      font:{size:9, color:C.chartreuse, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
   }
+  const traces = [...price,
+    ...coneTrace(b.cones.claude, C.claude, "Claude"),
+    ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
+    ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
+    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash"),
+    ...posTraces];
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
     shapes:_shapes, annotations:_annos,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
@@ -387,13 +406,31 @@ async function plotSymbol(symbol, tf){
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
     uirevision: curSymbol + "|" + curTF,   // keep the user's zoom across refreshes; reset on switch
     margin:{l:10, r:58, t:22, b:26},       // fill the card edge-to-edge; price axis on the right
-    xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M",
+    xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M", rangeslider:{visible:false},
       gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
       showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
       title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
     yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false}},
     {displayModeBar:true, displaylogo:false, scrollZoom:true,
+     edits:{shapePosition:true},   // lets the user DRAG the take-profit flag
      modeBarButtonsToRemove:["select2d","lasso2d"]});
+  wireTpDrag();
+}
+
+// Dragging the take-profit shape fires plotly_relayout with shapes[i].y* — save it
+// as a per-symbol take-profit override (Trading212-style flag). Wired once.
+function wireTpDrag(){
+  const el = document.getElementById("symbol-chart");
+  if(!el || el._tpWired || typeof el.on !== "function") return;
+  el._tpWired = true;
+  el.on("plotly_relayout", (ev)=>{
+    let y = null;
+    for(const k in ev){ if(/^shapes\[\d+\]\.y[01]$/.test(k)) y = ev[k]; }
+    if(y != null && curSymbol && _posBySym[curSymbol]){
+      postOverride(curSymbol, {take_profit: Number((+y).toPrecision(8))});
+      setStatus(`${curSymbol} take-profit set @ ${(+y).toPrecision(6)}`);
+    }
+  });
 }
 
 // Single entry point for "show this symbol on the Instrument & Projection panel":
@@ -447,6 +484,11 @@ function buildSymbolList(symbols){
     document.querySelectorAll(".tf-toggle .tf").forEach(btn=> btn.onclick = ()=>{
       document.querySelectorAll(".tf-toggle .tf").forEach(b=>b.classList.toggle("active", b===btn));
       plotSymbol(curSymbol, btn.dataset.tf);
+    });
+    document.querySelectorAll(".chart-type .ct").forEach(btn=> btn.onclick = ()=>{
+      _chartType = btn.dataset.ct;
+      document.querySelectorAll(".chart-type .ct").forEach(b=>b.classList.toggle("active", b===btn));
+      plotSymbol(curSymbol, curTF);
     });
     _tfWired = true;
   }

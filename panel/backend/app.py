@@ -180,6 +180,9 @@ def bars(symbol: str, tf: str = "15m"):
         if rates is None or len(rates) < 20:
             return {"available": False}
         closes = [float(x) for x in rates["close"]]
+        opens = [float(x) for x in rates["open"]]
+        highs = [float(x) for x in rates["high"]]
+        lows = [float(x) for x in rates["low"]]
         times = [int(x) for x in rates["time"]]
         price = closes[-1]
         rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes))]
@@ -197,6 +200,7 @@ def bars(symbol: str, tf: str = "15m"):
             if ds:
                 cones["deepseek"] = projection.projection_cone(price, ds["direction"], ds["confidence"], vol)
         return {"available": True, "symbol": symbol, "times": times,
+                "opens": opens, "highs": highs, "lows": lows,
                 "closes": closes, "vol": vol, "cones": cones}
     finally:
         try:

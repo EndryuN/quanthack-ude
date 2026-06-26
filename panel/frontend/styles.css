@@ -98,7 +98,16 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 /* Instrument & projection: symbol list on the side + 15m/1h toggle */
 .sym-pane{display:flex;gap:12px}
 .sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
-.sym-pane #symbol-chart{flex:1;min-width:0}
+.sym-pane #chart-wrap{flex:1;min-width:0;position:relative}
+#chart-wrap #symbol-chart{width:100%}
+/* candle/line toggle pinned to the chart's lower-right */
+.chart-type{position:absolute;right:60px;bottom:6px;z-index:5;display:flex;
+  border:1px solid var(--lift);border-radius:5px;overflow:hidden}
+.chart-type .ct{background:rgba(20,22,29,.85);color:var(--muted);border:none;
+  border-right:1px solid var(--lift);padding:3px 9px;font-family:"JetBrains Mono";
+  font-size:10px;cursor:pointer}
+.chart-type .ct:last-child{border-right:none}
+.chart-type .ct.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
 .tf-toggle{display:flex;gap:4px}
 .tf-toggle .tf{flex:1;background:var(--lift);color:var(--muted);border:1px solid var(--lift);
   border-radius:6px;padding:5px 0;font-family:"JetBrains Mono";font-size:11px;cursor:pointer}
