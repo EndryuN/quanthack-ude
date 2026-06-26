@@ -589,7 +589,9 @@ async function plotSymbol(symbol, tf, reuse){
     dragmode: _dragMode,                   // left-drag pans (default) or box-zooms
     uirevision: curSymbol + "|" + curTF + "|" + _chartRev,   // keep zoom across refreshes; reset on switch / reset-button
     margin:{l:10, r:58, t:22, b:26},       // fill the card edge-to-edge; price axis on the right
-    xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M", rangeslider:{visible:false},
+    xaxis:{type:"date", hoverformat:"%b %d  %H:%M", rangeslider:{visible:false},
+      // no fixed tickformat: let Plotly span-format so 1h (≈33d) shows dates, not a
+      // repeating %H:%M that looked identical to the 15m axis
       gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
       showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
       title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
