@@ -58,6 +58,8 @@ All instruments are concatenated line-by-line with no separator. The entire bloc
 
 **What is deliberately excluded:** bid/ask spread, open interest, news, fundamentals, individual bar OHLC data, volume, tick data. The snapshot is intentionally terse to fit the token budget.
 
+> **Context evaluated, not assumed.** We A/B-tested whether a *longer-horizon* block (a ~10-day return / trend / range, behind the `AI_LONG_HORIZON` flag) improves the calls. On a backtest of the cached month it did **not** — return/Sharpe slightly fell while drawdown dropped (more cautious, no edge gained), so the field stays **off by default**. Full numbers + method in [`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md#experiment--does-longer-horizon-context-help-the-llm).
+
 ### 2b. The System Prompt (`ai_signal.py:113-131`)
 
 The full `SYSTEM` constant is reproduced here because its calibration instructions directly shape how the model assigns confidence:
