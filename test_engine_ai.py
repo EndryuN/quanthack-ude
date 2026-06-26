@@ -11,7 +11,12 @@ e = Engine(dry_run=True)          # signal_source defaults to "ai"
 e.client.connect()
 print(f"algo_allowed={e.client.algo_allowed()} signal={e.cfg.signal_source} "
       f"second_opinion={'off' if e._second_opinion_off else 'on'}")
-e.tick()                          # refreshes, sizes, dry-run reconciles, logs
+e.tick()                          # launches the NON-BLOCKING AI refresh (daemon worker)
+for _ in range(300):              # wait for the worker to finish (LLM calls)
+    if e._refresh_thread is None or not e._refresh_thread.is_alive():
+        break
+    time.sleep(1)
+e.tick()                          # applies the refresh -> sizes, dry-run reconciles, logs
 e.client.shutdown()
 
 day = time.strftime("%Y-%m-%d")

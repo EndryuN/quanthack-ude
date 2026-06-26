@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import threading
 import time
 
 import numpy as np
@@ -109,6 +110,8 @@ class Engine:
         self._force_refresh = False # operator "refresh now" one-shot (skip cadence)
         from .model_scoring import ModelScorer
         self._scorer = ModelScorer()  # per-model directional hit-rates across refreshes
+        self._refresh_thread = None   # daemon worker running the (slow) LLM refresh
+        self._refresh_result = None   # worker's output, applied on the main thread
         self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
@@ -202,15 +205,35 @@ class Engine:
         # 2. state / metrics
         m = self.state.update(acct.equity)
 
-        # 3. refresh AI views on cadence
+        # 3. refresh AI views on cadence — NON-BLOCKING. The slow LLM calls
+        # (DeepSeek reasons ~73s) run in a daemon worker so this loop never freezes
+        # and the kill-switch keeps re-evaluating every tick. MT5 reads (context,
+        # scoring) stay on THIS thread; the worker is network-only + pure logic.
         views_ts_before = self._views_ts
         if self.cfg.signal_source == "ai":
+            # install a finished refresh first, so THIS tick reconciles + logs it
+            if self._refresh_thread is not None and not self._refresh_thread.is_alive():
+                self._apply_refresh_result(self._refresh_result)
+                self._refresh_thread = None
+                self._refresh_result = None
             now = time.time()
+            in_flight = self._refresh_thread is not None
             due = (self._force_refresh or self._views is None
                    or (now - self._views_ts) > self.cfg.ai_refresh_seconds)
-            if due and (self._force_refresh or (now - self._last_ai_attempt) >= self._ai_backoff):
-                self._refresh_ai_views()
-            self._force_refresh = False   # one-shot
+            if due and not in_flight and (self._force_refresh
+                                          or (now - self._last_ai_attempt) >= self._ai_backoff):
+                prep = self._refresh_prep()           # MT5 read on the main thread (fast)
+                self._last_ai_attempt = now
+                self._force_refresh = False           # one-shot: consumed only when we ATTEMPT
+                if prep is not None:
+                    self._refresh_result = None
+                    self._refresh_thread = threading.Thread(
+                        target=self._refresh_worker_into, args=(prep,), daemon=True)
+                    self._refresh_thread.start()
+                else:
+                    self._apply_refresh_result({"ok": False, "error": "prep failed (no context)"})
+            # NB: a force pressed while a refresh is in flight stays PENDING (not cleared
+            # here), so it fires a fresh re-query once the in-flight one completes.
         refreshed = self._views_ts != views_ts_before
 
         # 4. reconcile ONLY when the signal set has changed
@@ -261,7 +284,12 @@ class Engine:
 
     def _signal_changed(self):
         if self.cfg.signal_source == "ai":
-            return self._views_ts != self._last_acted_ts
+            # require views to EXIST before reconciling. With the non-blocking refresh,
+            # _views is None during the first (async) refresh after a restart — without
+            # this guard the empty target set would flatten the whole open book before
+            # the views land. (Empty {} from a failed first refresh keeps the old
+            # behavior: it reconciles to flat, exactly as the synchronous path did.)
+            return self._views is not None and self._views_ts != self._last_acted_ts
         return True   # hybrid path evaluated each loop (own hysteresis guards it)
 
     def _build_targets(self, acct):
@@ -322,97 +350,134 @@ class Engine:
     _AI_BACKOFF_MIN = 30.0
     _AI_BACKOFF_MAX = 300.0
 
-    def _refresh_ai_views(self):
-        from .ai_signal import get_ai_views, build_context
-        from .second_opinion import apply_consensus
-        self._last_ai_attempt = time.time()
+    def _refresh_prep(self):
+        """MAIN-THREAD: build the market context (the only MT5 read in a refresh) and
+        snapshot the mutable control/override state. Returns a plain-data dict for the
+        worker, or None if the context can't be built (treated as a refresh failure)."""
+        from .ai_signal import build_context
+        from .controls import control_flag
+        from .overrides import human_views
         try:
             context = build_context(self.client, self._active_symbols)
+        except Exception as e:
+            print(f"[{_ts()}] AI refresh prep failed: {e}")
+            return None
+        return {
+            "context": context,
+            "symbols": list(self._active_symbols),
+            "query_nemo": bool(self.cfg.use_second_opinion and not self._second_opinion_off),
+            "query_ens": bool(self.cfg.use_ensemble and self.cfg.ensemble_models),
+            "influence": control_flag(self._controls, "second_opinion", True),
+            "extra_influence": control_flag(self._controls, "ensemble_input", False),
+            "human_views": human_views(self._overrides) if self._overrides else {},
+        }
+
+    def _refresh_worker(self, prep):
+        """BACKGROUND-THREAD SAFE: only network LLM calls + pure consensus. Touches
+        NO MT5 and mutates NO shared engine state (reads immutable cfg + the prep
+        snapshot only). Returns a result dict consumed by _apply_refresh_result."""
+        from .ai_signal import get_ai_views
+        from .second_opinion import apply_consensus
+        if prep is None:
+            return {"ok": False, "error": "prep failed (no context)"}
+        try:
+            context, symbols = prep["context"], prep["symbols"]
+            # get_ai_views does NOT touch MT5 when context is supplied (Claude only)
             claude_views, mv, claude_usage = get_ai_views(
-                self.client, self._active_symbols, effort=self.cfg.ai_effort,
-                context=context)
+                self.client, symbols, effort=self.cfg.ai_effort, context=context)
             claude_rationale = {v.symbol: v.rationale for v in mv.views}
 
-            # Nemotron is ALWAYS queried (so it's always recorded for the panel);
-            # the runtime toggle only controls whether the ALGORITHM uses its input.
             nemo_views, nemo_regime, nemo_usage = {}, None, None
-            if self.cfg.use_second_opinion and not self._second_opinion_off:
+            if prep["query_nemo"]:
                 from .second_opinion import get_second_opinion
                 try:
                     nemo_views, nemo_regime, nemo_usage = get_second_opinion(
-                        context, self._active_symbols, self.cfg.nemotron_model,
+                        context, symbols, self.cfg.nemotron_model,
                         timeout=self.cfg.second_opinion_timeout)
                 except Exception as e:
                     print(f"        [2nd] Nemotron second opinion failed: {e}")
                     nemo_views, nemo_regime, nemo_usage = {}, None, None
 
-            # Gateway ensemble voters (e.g. DeepSeek) — ALWAYS queried + recorded
-            # + scored when enabled; their INFLUENCE on sizing is gated separately
-            # and OFF by default. Additive only: they never set/flip direction.
             ens_raw = {}
-            if self.cfg.use_ensemble and self.cfg.ensemble_models:
+            if prep["query_ens"]:
                 from .gateway_ensemble import get_ensemble_views
                 try:
                     ens_raw = get_ensemble_views(
-                        context, self._active_symbols, self.cfg.ensemble_models,
+                        context, symbols, self.cfg.ensemble_models,
                         timeout=self.cfg.ensemble_timeout)
                 except Exception as e:
                     print(f"        [ensemble] failed: {e}")
                     ens_raw = {}
             extra_voters = {m: vr[0] for m, vr in ens_raw.items()}   # {model: {sym:(d,c,r)}}
 
-            from .controls import control_flag
-            influence = control_flag(self._controls, "second_opinion", True)
-            extra_influence = control_flag(self._controls, "ensemble_input", False)
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
-                gain=self.cfg.nemotron_consensus_gain, influence=influence,
-                extra_voters=extra_voters, extra_influence=extra_influence)
-
-            if self._overrides:
-                from .overrides import human_views
+                gain=self.cfg.nemotron_consensus_gain, influence=prep["influence"],
+                extra_voters=extra_voters, extra_influence=prep["extra_influence"])
+            if prep["human_views"]:
                 from .second_opinion import apply_human_override
                 sizer_views, view_records = apply_human_override(
-                    sizer_views, view_records, human_views(self._overrides))
+                    sizer_views, view_records, prep["human_views"])
 
-            self._views = sizer_views
-            self._views_ts = time.time()
-            self._regime = mv.regime
-            self._ai_backoff = 0.0
-            ens_regime = {m: vr[1] for m, vr in ens_raw.items()}     # {model: regime str}
-            self._pending_log = {
-                "models": {"primary": "claude-opus-4-8",
-                           "second_opinion": (self.cfg.nemotron_model
-                                              if nemo_usage else None),
-                           "ensemble": list(ens_raw.keys()) or None},
-                "regime": {"claude": mv.regime, "nemotron": nemo_regime,
-                           **ens_regime},
-                "cost": {"claude": {"in": claude_usage["in_tokens"],
-                                    "out": claude_usage["out_tokens"],
-                                    "usd": claude_usage["usd"]},
-                         "nemotron": ({"in": nemo_usage["in"],
-                                       "out": nemo_usage["out"],
-                                       "usd": nemo_usage["usd"]}
-                                      if nemo_usage else None)},
-                "views": view_records,
-            }
-            self._score_models(claude_views, nemo_views, extra_voters)
-            active = {s: v for s, v in sizer_views.items() if v[0] != 0 and v[1] > 0}
-            print(f"[{_ts()}] AI views refreshed | regime: {mv.regime}")
-            for s, (d, c) in sorted(active.items(), key=lambda x: -x[1][1]):
-                side = "LONG" if d > 0 else "SHORT"
-                print(f"        {s:7s} {side:5s} conf={c:.2f}")
+            return {"ok": True, "sizer_views": sizer_views, "view_records": view_records,
+                    "regime": mv.regime, "claude_views": claude_views,
+                    "nemo_views": nemo_views, "extra_voters": extra_voters,
+                    "claude_usage": claude_usage, "nemo_usage": nemo_usage,
+                    "nemo_regime": nemo_regime, "ens_raw": ens_raw}
         except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _refresh_worker_into(self, prep):
+        """Daemon-thread entry: run the worker, stash its result for the main loop."""
+        self._refresh_result = self._refresh_worker(prep)
+
+    def _apply_refresh_result(self, result):
+        """MAIN-THREAD: install a finished refresh (or handle its failure). All shared
+        state mutation + MT5 scoring happen HERE, never on the worker thread."""
+        if not result or not result.get("ok"):
             self._ai_backoff = min(max(self._ai_backoff * 2, self._AI_BACKOFF_MIN),
                                    self._AI_BACKOFF_MAX)
             age = time.time() - self._views_ts if self._views_ts else -1
-            print(f"[{_ts()}] AI refresh FAILED: {e} | retry in "
+            err = (result or {}).get("error", "unknown")
+            print(f"[{_ts()}] AI refresh FAILED: {err} | retry in "
                   f"{self._ai_backoff:.0f}s (views age={age:.0f}s)")
             if self.logger:
-                self.logger.log_decision({"ts": _iso(), "event": "refresh_failed",
-                                          "error": str(e)})
+                self.logger.log_decision({"ts": _iso(), "event": "refresh_failed", "error": err})
             if self._views is None:
                 self._views = {}
+            return
+        sizer_views = result["sizer_views"]
+        self._views = sizer_views
+        self._views_ts = time.time()
+        self._regime = result["regime"]
+        self._ai_backoff = 0.0
+        ens_raw, nemo_usage, claude_usage = result["ens_raw"], result["nemo_usage"], result["claude_usage"]
+        ens_regime = {m: vr[1] for m, vr in ens_raw.items()}     # {model: regime str}
+        self._pending_log = {
+            "models": {"primary": "claude-opus-4-8",
+                       "second_opinion": (self.cfg.nemotron_model if nemo_usage else None),
+                       "ensemble": list(ens_raw.keys()) or None},
+            "regime": {"claude": result["regime"], "nemotron": result["nemo_regime"],
+                       **ens_regime},
+            "cost": {"claude": {"in": claude_usage["in_tokens"],
+                                "out": claude_usage["out_tokens"],
+                                "usd": claude_usage["usd"]},
+                     "nemotron": ({"in": nemo_usage["in"], "out": nemo_usage["out"],
+                                   "usd": nemo_usage["usd"]} if nemo_usage else None)},
+            "views": result["view_records"],
+        }
+        self._score_models(result["claude_views"], result["nemo_views"], result["extra_voters"])
+        active = {s: v for s, v in sizer_views.items() if v[0] != 0 and v[1] > 0}
+        print(f"[{_ts()}] AI views refreshed | regime: {result['regime']}")
+        for s, (d, c) in sorted(active.items(), key=lambda x: -x[1][1]):
+            side = "LONG" if d > 0 else "SHORT"
+            print(f"        {s:7s} {side:5s} conf={c:.2f}")
+
+    def _refresh_ai_views(self):
+        """Synchronous full refresh (prep -> worker -> apply). The live loop uses the
+        non-blocking path in tick(); this is kept for direct/test invocation."""
+        self._last_ai_attempt = time.time()
+        self._apply_refresh_result(self._refresh_worker(self._refresh_prep()))
 
     def _derisk_only(self, targets):
         """When new risk is blocked, never increase/flip exposure — only allow
