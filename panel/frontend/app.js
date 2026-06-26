@@ -454,6 +454,18 @@ async function plotSymbol(symbol, tf){
       window._tpIdx = _shapes.length - 1;
     }
   }
+  // CURRENT-PRICE line (always shown) + a price tag on the right axis
+  const _lastPx = b.closes[b.closes.length - 1];
+  if(_lastPx != null){
+    const _coneMax = Math.max(0, ...[b.cones.claude, b.cones.nemotron, b.cones.deepseek, b.cones.consensus]
+      .filter(Boolean).map(c=>c.mid.length));
+    const _fmtPx = v => (+v).toLocaleString(undefined, {maximumFractionDigits: Math.abs(v)>=100?2:5});
+    posTraces.push({x:[tms[0], lastT + _coneMax * dt], y:[_lastPx, _lastPx], mode:"lines",
+      hoverinfo:"skip", line:{color:C.ink, width:1, dash:"dot"}, showlegend:false});
+    _annos.push({xref:"paper", x:1, xanchor:"left", xshift:1, y:_lastPx, yref:"y", yanchor:"middle",
+      text:` ${_fmtPx(_lastPx)} `, showarrow:false, font:{size:9, color:"#0c0d11", family:"JetBrains Mono"},
+      bgcolor:C.ink, bordercolor:C.ink, borderpad:2});
+  }
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
