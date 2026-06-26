@@ -489,7 +489,9 @@ const _METALS = new Set(["XAGUSD","XAUUSD"]);
 const _grpOf = s => _CRYPTO.has(s) ? "crypto" : _METALS.has(s) ? "metals" : "fx";
 const _GRP_ORDER = {fx:0, metals:1, crypto:2};
 
+let _symList = [];
 function buildSymbolList(symbols){
+  _symList = symbols || _symList;            // remembered so pin toggles can rebuild now
   const el = document.getElementById("symbol-list");
   const blocked = new Set((_ctl && _ctl.block) || []);
   const pinned = new Set(Object.keys(_ov).filter(k => _ov[k] && _ov[k].pinned));
@@ -512,9 +514,10 @@ function buildSymbolList(symbols){
     }
     el.innerHTML = html;
     el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
-      if(ev.target.classList.contains("sym-pin")){       // toggle pin-to-top
+      if(ev.target.classList.contains("sym-pin")){       // toggle pin-to-top (live)
         const sym = ev.target.dataset.pin;
-        postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)});
+        postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)})
+          .then(()=> buildSymbolList(_symList));          // re-sort now, no page refresh
         return;
       }
       if(ev.target.classList.contains("sym-block")){
