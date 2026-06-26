@@ -300,8 +300,19 @@ function plotDumbbell(allRows){
   const TOL = 0.045;   // x-distance counted as "overlapping" (≈ one marker width)
   const M = [["Claude", C.claude, cx], ["Nemotron", C.nemo, nx], ["DeepSeek", C.deepseek, dx]];
   const GLYPHFONT = "Segoe UI Symbol, Arial, sans-serif";
-  // every marker's tooltip: "<Model> <SYMBOL>: <dir> <conf>" using its OWN value
+  // single-dot tooltip: "<Model> <SYMBOL>: <dir> <conf>"
   const lbl = (m, sym, x)=> `${m} ${sym}: ${x>0?"long":x<0?"short":"flat"} ${Math.abs(x).toFixed(2)}<extra></extra>`;
+  // overlap (split ball / rings) tooltip: list ALL clustered models, e.g.
+  // "Claude/Nemotron XAUUSD: long 0.50" (or per-model lines if they disagree)
+  const glbl = (grp, sym)=>{
+    const names = grp.map(p=>p.m).join("/");
+    const dirs = new Set(grp.map(p=> p.x>0?"long":p.x<0?"short":"flat"));
+    if(dirs.size === 1){
+      const confs = [...new Set(grp.map(p=> Math.abs(p.x).toFixed(2)))].join("/");
+      return `${names} ${sym}: ${[...dirs][0]} ${confs}<extra></extra>`;
+    }
+    return grp.map(p=> `${p.m}: ${p.x>0?"long":p.x<0?"short":"flat"} ${Math.abs(p.x).toFixed(2)}`).join("<br>") + "<extra></extra>";
+  };
   const fx = [], fy = [], fc = [], fd = [], overlap = [];   // single dots (+ customdata) + overlap traces
   rows.forEach((r, i) => {
     const pts = M.map(([m, col, arr]) => ({m, col, x: arr[i]})).filter(p => p.x != null);
@@ -313,14 +324,16 @@ function plotDumbbell(allRows){
         if(!used[b] && Math.abs(pts[b].x - pts[a].x) <= TOL){ grp.push(pts[b]); used[b] = true; }
       const mxv = grp.reduce((s, p) => s + p.x, 0) / grp.length;   // shared draw position (visual merge)
       if(grp.length === 1){ fx.push(grp[0].x); fy.push(r.symbol); fc.push(grp[0].col); fd.push(lbl(grp[0].m, r.symbol, grp[0].x)); continue; }
-      if(grp.length === 2){   // split the ball: left half + right half, each its own value
+      if(grp.length === 2){   // split the ball: both halves share the combined tooltip
+        const tip = glbl(grp, r.symbol);
         ["◖", "◗"].forEach((g, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"text",
           text:[g], textposition:"middle center", textfont:{color:grp[gi].col, size:19, family:GLYPHFONT},
-          hovertemplate:lbl(grp[gi].m, r.symbol, grp[gi].x), showlegend:false}));
-      } else {                // 3-way: concentric rings, decreasing size
+          hovertemplate:tip, showlegend:false}));
+      } else {                // 3-way: concentric rings, all show the combined tooltip
+        const tip = glbl(grp, r.symbol);
         grp.forEach((p, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"markers",
           marker:{color:p.col, size:[15,10,6][gi] || 6},
-          hovertemplate:lbl(p.m, r.symbol, p.x), showlegend:false}));
+          hovertemplate:tip, showlegend:false}));
       }
     }
   });
