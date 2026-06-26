@@ -5,23 +5,34 @@ const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };
 
+// GLOBAL MODEL SELECTOR — single source of truth for every model-dependent view
+// (ribbon, heatmap layer, instrument chart). Values: claude|nemotron|deepseek|combined.
+let _modelLayer = "claude";
+
 async function getJSON(u){
   try { const r = await fetch(u); if(!r.ok) return null; return await r.json(); }
   catch(e){ return null; }
 }
 const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 
-function renderStrip(s){
-  // currency-strength ribbon: aggregate each currency across ALL its pairs
-  // (base +, quote -, weighted by confidence) into one net up/down. Click for reasoning.
+// currency-strength ribbon: aggregate each currency across ALL its pairs
+// (base +, quote -, weighted by confidence) into one net up/down — using the
+// per-symbol view of the SELECTED model (_modelLayer). Symbols where the model
+// has no view are skipped; "combined" uses the row's top-level direction/confidence.
+function renderRibbon(consensus){
   const _sgn = d => d==="long"?1 : d==="short"?-1 : 0;
+  const _view = r => _modelLayer === "combined"
+    ? {direction:r.direction, confidence:r.confidence}
+    : r[_modelLayer];   // claude / nemotron / deepseek — may be null/undefined
   const _acc = {};
-  for(const r of (s.consensus || [])){
+  for(const r of (consensus || [])){
     if(!r.symbol || r.symbol.length < 6) continue;
+    const v = _view(r);
+    if(!v || !v.direction) continue;   // selected model has no view for this symbol
     const _b = r.symbol.slice(0,3), _q = r.symbol.slice(3,6);
-    const _v = _sgn(r.direction) * (r.confidence || 0);
-    (_acc[_b] = _acc[_b] || {s:0,n:0}); _acc[_b].s += _v; _acc[_b].n++;
-    (_acc[_q] = _acc[_q] || {s:0,n:0}); _acc[_q].s -= _v; _acc[_q].n++;
+    const _val = _sgn(v.direction) * (v.confidence || 0);
+    (_acc[_b] = _acc[_b] || {s:0,n:0}); _acc[_b].s += _val; _acc[_b].n++;
+    (_acc[_q] = _acc[_q] || {s:0,n:0}); _acc[_q].s -= _val; _acc[_q].n++;
   }
   const _ccys = Object.keys(_acc).map(c=>({c, str:_acc[c].s/Math.max(_acc[c].n,1)})).sort((a,b)=>b.str-a.str);
   const _chips = _ccys.map(({c,str})=>{
@@ -29,16 +40,12 @@ function renderStrip(s){
     const ar = str > 0.02 ? "▲" : str < -0.02 ? "▼" : "·";
     return `<span class="rchip ${cls}" title="net strength ${str.toFixed(2)} across its pairs">${c} ${ar}</span>`;
   }).join("");
-  // currency ribbon lives in its OWN row (#ribbon) so it never clobbers the
-  // Claude/Nemotron regime pills in the header (#regimes).
   const _rib = document.getElementById("ribbon");
   if(_rib) _rib.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
-  // header regime pills: each model's one-line read, full text on hover.
-  const _rg = (s.regime) || {};
-  const _cl = document.getElementById("regime-claude");
-  if(_cl){ _cl.textContent = _rg.claude || "—"; _cl.parentElement.title = _rg.claude || "Claude — no market read yet"; }
-  const _nm = document.getElementById("regime-nemo");
-  if(_nm){ _nm.textContent = _rg.nemotron || "—"; _nm.parentElement.title = _rg.nemotron || "Nemotron — unavailable (Claude-only)"; }
+}
+
+function renderStrip(s){
+  renderRibbon(s.consensus || []);   // currency-strength ribbon follows the selected model
   const a = s.account || {};
   const kpis = [
     ["EQUITY", fmt(a.equity)], ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—"],
@@ -243,35 +250,48 @@ function wireDumbTabs(){
 }
 
 function plotDumbbell(allRows){
-  // one row per instrument: Claude (violet, left) — Nemotron (teal, right) confidences,
-  // x sign encodes direction so opposing calls point opposite ways. Filtered to the
-  // active asset-class tab (FX / Crypto / Metals).
+  // one row per instrument: up to THREE markers — Claude (orange), Nemotron (teal),
+  // DeepSeek (violet) — at x = sign(direction)*confidence, models that are null are
+  // skipped. A connector spans each row's present markers. Filtered to the active
+  // asset-class tab (FX / Crypto / Metals). Legend names the three model colors.
   _lastConsensus = allRows || [];
   const rows = _lastConsensus.filter(r => _grpOf(r.symbol) === _dumbTab);
   const ys = rows.map(r=>r.symbol);
   const sgn = d => d==="long"?1 : d==="short"?-1 : 0;
-  const cx = rows.map(r=> r.claude? sgn(r.claude.direction)*r.claude.confidence : 0);
-  const nx = rows.map(r=> r.nemotron? sgn(r.nemotron.direction)*r.nemotron.confidence : null);
-  const lines = rows.map((r,i)=>({x:[cx[i], nx[i]??cx[i]], y:[r.symbol,r.symbol], type:"scatter", mode:"lines",
-    line:{color: r.agreement==="agree"? C.chartreuse : r.agreement==="disagree"? C.short : C.muted,
-      width:2, dash: r.boosted? "solid":"dot"}, showlegend:false, hoverinfo:"skip"}));
+  const mx = (r,m)=> r[m] && r[m].direction ? sgn(r[m].direction)*r[m].confidence : null;
+  const cx = rows.map(r=> mx(r,"claude"));
+  const nx = rows.map(r=> mx(r,"nemotron"));
+  const dx = rows.map(r=> mx(r,"deepseek"));
+  const lines = rows.map((r,i)=>{
+    const present = [cx[i], nx[i], dx[i]].filter(v=>v!=null);
+    const lo = present.length ? Math.min(...present) : 0;
+    const hi = present.length ? Math.max(...present) : 0;
+    return {x:[lo, hi], y:[r.symbol,r.symbol], type:"scatter", mode:"lines",
+      line:{color: r.agreement==="agree"? C.chartreuse : r.agreement==="disagree"? C.short : C.muted,
+        width:2, dash: r.boosted? "solid":"dot"}, showlegend:false, hoverinfo:"skip"};
+  });
   const claudePts = {x:cx, y:ys, type:"scatter", mode:"markers", name:"Claude",
-    marker:{color:C.claude, size:11}, text:rows.map(r=>r.claude?.confidence?.toFixed(2)||""), hovertemplate:"Claude %{y}: %{x:.2f}<extra></extra>"};
+    marker:{color:C.claude, size:11}, hovertemplate:"Claude %{y}: %{x:.2f}<extra></extra>"};
   const nemoPts = {x:nx, y:ys, type:"scatter", mode:"markers", name:"Nemotron",
     marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
-  Plotly.react("dumbbell", [...lines, claudePts, nemoPts],
-    {...PLOT_BG, height: Math.max(120, ys.length*30+40),
-     margin:{l:66, r:14, t:8, b:30}, yaxis:{automargin:true, color:C.muted},
+  const deepPts = {x:dx, y:ys, type:"scatter", mode:"markers", name:"DeepSeek",
+    marker:{color:C.deepseek, size:11}, hovertemplate:"DeepSeek %{y}: %{x:.2f}<extra></extra>"};
+  Plotly.react("dumbbell", [...lines, claudePts, nemoPts, deepPts],
+    {...PLOT_BG, height: Math.max(120, ys.length*30+52),
+     margin:{l:66, r:14, t:26, b:30}, yaxis:{automargin:true, color:C.muted},
      xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
-     showlegend:false}, {displayModeBar:false});
+     showlegend:true, legend:{orientation:"h", x:0, y:1.1, font:{size:9}, bgcolor:"rgba(0,0,0,0)"}},
+    {displayModeBar:false});
 }
 
-let _lastHm = null, _conWired = false, _conLayer = "combined";
-// pick which view a cell shows: combined (used), Claude-only, or Nemotron-only
+let _lastHm = null, _conWired = false;
+// pick which view a cell shows, driven by the global selector _modelLayer:
+// combined (used), Claude-only, Nemotron-only, or DeepSeek-only.
 function _cellLayer(c){
   if(c==null) return null;
-  if(_conLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
-  if(_conLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
+  if(_modelLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
+  if(_modelLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
+  if(_modelLayer === "deepseek") return c.deepseek || null;   // null when DeepSeek absent that refresh
   return c.combined || {direction:c.direction, confidence:c.confidence};
 }
 function plotHeatmap(hm){
@@ -282,7 +302,7 @@ function plotHeatmap(hm){
   const z = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
     return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
   const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
-    return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_conLayer==="combined"?" ★":""}`; }));
+    return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_modelLayer==="combined"?" ★":""}`; }));
   // Each refresh is ONE evenly-spaced column (a heatmap must be categorical) —
   // a continuous date axis distorts widths/gaps when refreshes are irregular
   // (15-min cadence + manual "Refresh views"). x = column index; the real
@@ -421,18 +441,55 @@ function wireConsensusTabs(){
     if(ot) ot.hidden = which !== "overtime";
     if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
   });
+  // over-time layer buttons are now slaved to the global selector (_modelLayer)
   const layers = document.querySelectorAll(".ot-layers .otlayer");
-  layers.forEach(btn=> btn.onclick = ()=>{
-    _conLayer = btn.dataset.layer;
-    layers.forEach(b=>b.classList.toggle("active", b===btn));
-    if(_lastHm) plotHeatmap(_lastHm);
-  });
+  layers.forEach(btn=> btn.onclick = ()=> setModelLayer(btn.dataset.layer));
   _conWired = true;
+}
+
+// THE single global model selector. Every model-dependent view reads _modelLayer;
+// this is the only place it changes, keeping the header control + over-time layer
+// buttons + ribbon + heatmap + instrument chart in lockstep.
+function setModelLayer(layer){
+  _modelLayer = layer;
+  document.querySelectorAll("#model-sel .mbtn").forEach(b=>b.classList.toggle("active", b.dataset.layer===layer));
+  document.querySelectorAll(".ot-layers .otlayer").forEach(b=>b.classList.toggle("active", b.dataset.layer===layer));
+  renderRibbon((window._lastState && window._lastState.consensus) || []);
+  if(_lastHm) plotHeatmap(_lastHm);
+  if(curSymbol) plotSymbol(curSymbol, curTF);
+}
+
+let _modelSelWired = false;
+function wireModelSelector(){
+  if(_modelSelWired) return;
+  const btns = document.querySelectorAll("#model-sel .mbtn");
+  if(!btns.length) return;
+  btns.forEach(b=> b.onclick = ()=> setModelLayer(b.dataset.layer));
+  // sync initial active styling to _modelLayer (defaults to "claude")
+  btns.forEach(b=>b.classList.toggle("active", b.dataset.layer===_modelLayer));
+  _modelSelWired = true;
+}
+
+// per-model directional hit-rates from /api/model_scores (rate is a 0..1 fraction
+// or null; the long DeepSeek model-id key is mapped to "DeepSeek").
+function renderHitRates(ms){
+  const el = document.getElementById("hitrates"); if(!el) return;
+  const rates = (ms && ms.rates) || {};
+  const n = (ms && ms.n != null) ? ms.n : 0;
+  const pct = r => (r && r.rate != null) ? Math.round(r.rate*100)+"%" : "—";
+  const dsKey = Object.keys(rates).find(k=>/deepseek/i.test(k));
+  const ds = dsKey ? rates[dsKey] : null;
+  el.innerHTML = `<span class="hr-label">Hit-rate (n=${n})</span> — `+
+    `<span class="hr claude">Claude ${pct(rates.claude)}</span> · `+
+    `<span class="hr nemo">Nemotron ${pct(rates.nemotron)}</span> · `+
+    `<span class="hr deepseek">DeepSeek ${pct(ds)}</span>`;
 }
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   wireDumbTabs();
   wireConsensusTabs();
+  wireModelSelector();
+  renderHitRates(await getJSON("/api/model_scores"));
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
   const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols
@@ -460,6 +517,9 @@ async function loadControls(){
   const so = document.getElementById("so-btn");
   if(so){ const on = _ctl.second_opinion !== false;   // null/true = used (default on)
     so.classList.toggle("on", on); so.textContent = on ? "Nemotron input: ON" : "Nemotron input: OFF"; }
+  const ens = document.getElementById("ens-btn");
+  if(ens){ const on = !!_ctl.ensemble_input;   // null/false = off (default off)
+    ens.classList.toggle("on", on); ens.textContent = on ? "DeepSeek input: ON" : "DeepSeek input: OFF"; }
   renderScalpAssigned();
 }
 
@@ -580,6 +640,11 @@ function wireControls(){
     const on = _ctl && _ctl.second_opinion !== false;   // currently on -> turn off, and vice versa
     postControls({second_opinion: !on}).then(()=> setStatus(
       "Nemotron input "+(!on ? "ON" : "OFF")+" — applies at next AI refresh (still recorded)")); }; }
+  const ens = document.getElementById("ens-btn");
+  if(ens && !ens.dataset.w){ ens.dataset.w="1"; ens.onclick = ()=>{
+    const on = !!(_ctl && _ctl.ensemble_input);   // currently on -> turn off, and vice versa
+    postControls({ensemble_input: !on}).then(()=> setStatus(
+      "DeepSeek input "+(!on ? "ON" : "OFF")+" — applies at next AI refresh (still recorded)")); }; }
   const ssel = document.getElementById("scalp-sym-sel");
   if(ssel && !ssel.dataset.w){ ssel.dataset.w="1";
     getJSON("/api/symbols").then(r=>{ if(r && r.symbols)
@@ -636,10 +701,11 @@ function openRegimeModal(){
   const r = (window._lastState && window._lastState.regime) || {};
   const c = document.getElementById("rm-claude"); if(c) c.textContent = r.claude || "(no market read logged yet)";
   const nm = document.getElementById("rm-nemo"); if(nm) nm.textContent = r.nemotron || "(Nemotron unavailable — Claude-only)";
+  const ds = document.getElementById("rm-deepseek"); if(ds) ds.textContent = r.deepseek || "(DeepSeek unavailable)";
   const m = document.getElementById("regime-modal"); if(m) m.hidden = false;
 }
 function wireRegimeModal(){
-  const reg = document.getElementById("regimes");
+  const reg = document.getElementById("market-read-btn");
   if(reg && !reg.dataset.w){ reg.dataset.w="1"; reg.title="click for full reasoning"; reg.onclick = openRegimeModal; }
   const m = document.getElementById("regime-modal");
   if(m && !m.dataset.w){ m.dataset.w="1";

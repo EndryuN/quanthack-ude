@@ -14,8 +14,13 @@
     <button id="hamburger" title="menu">&#9776;</button>
     <div class="brand">SIGNAL<span>//</span>LAYER</div>
     <div id="regimes">
-      <div class="regime claude"><label>CLAUDE</label><span id="regime-claude">—</span></div>
-      <div class="regime nemo"><label>NEMOTRON</label><span id="regime-nemo">—</span></div>
+      <button id="market-read-btn" class="market-read-btn" title="full AI market read">Market Read</button>
+    </div>
+    <div id="model-sel" class="model-sel" title="model layer — drives ribbon, heatmap & chart">
+      <button class="mbtn active" data-layer="claude">Claude</button>
+      <button class="mbtn" data-layer="nemotron">Nemotron</button>
+      <button class="mbtn" data-layer="deepseek">DeepSeek</button>
+      <button class="mbtn" data-layer="combined">Combined</button>
     </div>
     <span id="views-age" class="views-age" title="age of the AI market read">—</span>
     <div id="kpis"></div>
@@ -51,7 +56,8 @@
           <button id="flatten-btn" class="ctl-btn danger">Flatten now</button>
           <button id="refresh-btn" class="ctl-btn" title="Re-query the AI consensus now, skipping the 15-min cadence">Refresh views</button></div>
         <div class="ctl-row"><label>2nd opinion</label>
-          <button id="so-btn" class="ctl-btn" title="Nemotron always runs and is recorded for the panel. This toggle only controls whether the ALGORITHM acts on its input (sizing). Off = Claude-only sizing, Nemotron still shown.">Nemotron input: —</button></div>
+          <button id="so-btn" class="ctl-btn" title="Nemotron always runs and is recorded for the panel. This toggle only controls whether the ALGORITHM acts on its input (sizing). Off = Claude-only sizing, Nemotron still shown.">Nemotron input: —</button>
+          <button id="ens-btn" class="ctl-btn" title="DeepSeek runs and is recorded for the panel. This toggle controls whether the ALGORITHM acts on its ensemble input (sizing). Off = DeepSeek shown only.">DeepSeek input: —</button></div>
         <div class="ctl-row"><label>Scalper</label>
           <select id="scalp-sym-sel" title="assign a symbol to the scalper (ceded from the engine)"></select>
           <button id="scalp-assign" class="ctl-btn">Assign</button></div>
@@ -96,6 +102,7 @@
             <button class="contab active" data-con="latest">Latest</button>
             <button class="contab" data-con="overtime">Over time</button>
           </div></div>
+        <div id="hitrates" class="hitrates" title="per-model directional accuracy over recorded refreshes"></div>
         <div id="con-latest" class="con-pane">
           <div class="dumb-tabs">
             <button class="dtab active" data-grp="fx">FX</button>
@@ -107,9 +114,10 @@
         <div id="con-overtime" class="con-pane" hidden>
           <div class="ot-head">
             <div class="ot-layers">
-              <button class="otlayer active" data-layer="combined">Combined</button>
-              <button class="otlayer" data-layer="claude">Claude</button>
+              <button class="otlayer active" data-layer="claude">Claude</button>
               <button class="otlayer" data-layer="nemotron">Nemotron</button>
+              <button class="otlayer" data-layer="deepseek">DeepSeek</button>
+              <button class="otlayer" data-layer="combined">Combined</button>
             </div>
             <div class="dir-legend ot-legend"><span class="dl long">&#9679; long</span><span class="dl short">&#9679; short</span></div>
           </div>
@@ -138,6 +146,7 @@
       <h3 class="modal-title">Market read — full reasoning</h3>
       <div class="rm-section claude"><div id="rm-claude" class="rm-text"></div><div class="rm-tag">CLAUDE</div></div>
       <div class="rm-section nemo"><div id="rm-nemo" class="rm-text"></div><div class="rm-tag">NEMOTRON</div></div>
+      <div class="rm-section deepseek"><div id="rm-deepseek" class="rm-text"></div><div class="rm-tag">DEEPSEEK</div></div>
     </div>
   </div>
   <script src="/static/app.js"></script>

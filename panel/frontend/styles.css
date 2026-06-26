@@ -22,15 +22,22 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 #ribbon{display:flex;gap:6px;align-items:center;padding:6px 18px;background:var(--canvas);
   border-bottom:1px solid var(--lift);overflow-x:auto;white-space:nowrap;position:sticky;top:56px;z-index:9}
 #ribbon::-webkit-scrollbar{height:5px}
-/* keep the Claude/Nemotron regime pills compact + truncated, full text on hover */
-#regimes{flex:none;max-width:46%}
-.regime{max-width:230px}
-.regime span{overflow:hidden;text-overflow:ellipsis;max-width:230px;display:block}
-.regime{display:flex;flex-direction:column;min-width:0}
-.regime label{font-size:10px;letter-spacing:.12em;color:var(--muted)}
-.regime.claude span{color:var(--claude)} .regime.nemo span{color:var(--nemo)}
-.regime span{font-family:"Space Grotesk";font-size:13px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+#regimes{flex:none}
+/* "Market Read" header button — opens the full-reasoning modal */
+.market-read-btn{background:var(--lift);color:var(--ink);border:1px solid var(--muted);border-radius:6px;
+  padding:6px 12px;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.04em;cursor:pointer;white-space:nowrap}
+.market-read-btn:hover{border-color:var(--chartreuse);color:var(--chartreuse)}
+/* global model selector — segmented control; active button takes its model's color */
+.model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden;margin-right:auto}
+.model-sel .mbtn{background:var(--surface);color:var(--muted);border:none;border-right:1px solid var(--lift);
+  padding:6px 11px;font-family:"JetBrains Mono";font-size:11px;cursor:pointer;transition:color .1s,background .1s}
+.model-sel .mbtn:last-child{border-right:none}
+.model-sel .mbtn:hover{color:var(--ink)}
+.model-sel .mbtn.active{color:var(--canvas);font-weight:600}
+.model-sel .mbtn.active[data-layer="claude"]{background:var(--claude)}
+.model-sel .mbtn.active[data-layer="nemotron"]{background:var(--nemo)}
+.model-sel .mbtn.active[data-layer="deepseek"]{background:var(--deepseek)}
+.model-sel .mbtn.active[data-layer="combined"]{background:var(--chartreuse)}
 #kpis{display:flex;gap:18px;font-family:"JetBrains Mono"}
 #kpis .kpi{display:flex;flex-direction:column;text-align:right}
 #kpis .kpi label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
@@ -153,6 +160,14 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .rbar-axis{position:relative;height:12px;margin-top:4px}
 .rbar-tick{position:absolute;font-family:"JetBrains Mono";font-size:8.5px;color:var(--muted);white-space:nowrap}
 
+/* Per-model hit-rate readout under the consensus header */
+.hitrates{font-family:"JetBrains Mono";font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4}
+.hitrates .hr-label{color:var(--muted)}
+.hitrates .hr.claude{color:var(--claude)}
+.hitrates .hr.nemo{color:var(--nemo)}
+.hitrates .hr.deepseek{color:var(--deepseek)}
+.hitrates:empty{display:none}
+
 /* Consensus card header + direction legend */
 .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .card-head h2{margin:0}
@@ -210,9 +225,11 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .modal-close:hover{color:var(--ink)}
 .rm-section{margin-bottom:20px;border-left:2px solid var(--lift);padding-left:14px}
 .rm-section.claude{border-left-color:var(--claude)} .rm-section.nemo{border-left-color:var(--nemo)}
+.rm-section.deepseek{border-left-color:var(--deepseek)}
 .rm-text{font-size:14px;line-height:1.65;color:var(--ink)}
 .rm-tag{margin-top:10px;font-size:10px;letter-spacing:.14em;font-weight:700}
 .rm-section.claude .rm-tag{color:var(--claude)} .rm-section.nemo .rm-tag{color:var(--nemo)}
+.rm-section.deepseek .rm-tag{color:var(--deepseek)}
 
 /* Top nav (hamburger) + page views */
 #hamburger{background:none;border:none;color:var(--ink);font-size:18px;cursor:pointer;padding:0 8px 0 0;line-height:1}
