@@ -1414,3 +1414,25 @@
 - CLOSE BTCUSD
 
 ---
+## 17:04:06 · LIVE
+**Regime (Claude):** Mild broad USD softness with a short-term risk-on bounce in metals and crypto, though many H4 trends still point down (counter-trend pops in stretched conditions).
+**Regime (Nemotron):** Mixed signals: USD weakness vs. risk-on in crypto/metals, but conflicting timeframes reduce conviction
+**Account:** eq=985,573 · lev=3.2x · margin=11% · ML=929% · sharpe=-0.04
+**Cost:** Claude in=2485 out=1513 ~$0.050 · Nemotron in=1746 out=821 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| XAUUSD | LONG 0.45 | long 0.45 | long 0.45 | ✅ agree |
+| SOLUSD | LONG 0.42 | long 0.42 | long 0.60 | ✅ agree |
+| XAGUSD | LONG 0.38 | long 0.38 | long 0.40 | ✅ agree |
+| GBPUSD | LONG 0.33 | long 0.33 | long 0.50 | ✅ agree |
+| EURUSD | LONG 0.32 | long 0.32 | long 0.55 | ✅ agree |
+| USDCHF | SHORT 0.30 | short 0.30 | short 0.45 | ✅ agree |
+| USDCAD | SHORT 0.22 | short 0.22 | flat 0.00 | ⚪ no boost |
+
+**Orders placed:**
+- SELL 2.53 USDCAD  (+0.00 → -2.53)
+- BUY 2.77 XAGUSD  (+0.57 → +3.34)
+- BUY 2.34 XAUUSD  (+1.35 → +3.69)
+
+---
