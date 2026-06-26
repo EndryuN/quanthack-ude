@@ -1510,3 +1510,44 @@
 - BUY 100.0 ETHUSD  (+0.00 → +100.00)
 
 ---
+## 21:24:14 · LIVE
+**Regime (Claude):** Mixed USD with no clear broad trend; crypto under 3d pressure aside from a SOL squeeze, metals consolidating after selloff, risk slightly defensive
+**Regime (Nemotron):** Mixed signals: USD strength vs. risk-on in crypto/metals, with conflicting short/medium trends in FX pairs.
+**Account:** eq=971,616 · lev=4.5x · margin=15% · ML=661% · sharpe=-0.06
+**Cost:** Claude in=2481 out=1457 ~$0.049 · Nemotron in=1737 out=907 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| USDCAD | SHORT 0.42 | short 0.42 | long 0.70 | ❌ disagree → Claude stands |
+| AUDUSD | SHORT 0.40 | short 0.40 | short 0.65 | ✅ agree |
+| SOLUSD | LONG 0.40 | long 0.40 | long 0.75 | ✅ agree |
+| USDJPY | LONG 0.35 | long 0.35 | long 0.60 | ✅ agree |
+| BTCUSD | SHORT 0.32 | short 0.32 | flat 0.40 | ⚪ no boost |
+| ETHUSD | SHORT 0.30 | short 0.30 | flat 0.45 | ⚪ no boost |
+
+**Orders placed:**
+- CLOSE GBPUSD
+- CLOSE XAUUSD
+- SELL 10.4 BTCUSD  (-1.00 → -11.40)
+- SELL 100.0 ETHUSD  (+0.00 → -100.00)
+
+---
+## 21:42:07 · LIVE
+**Regime (Claude):** Mixed USD with no broad trend; commodity-FX (AUD,CAD) soft, JPY firm, crypto weak over 3d aside from a stretched SOL pump — mildly risk-off
+**Regime (Nemotron):** Mixed signals: USD strength vs. risk-on in crypto/metals, with conflicting short/medium trends in majors.
+**Account:** eq=973,347 · lev=4.3x · margin=14% · ML=700% · sharpe=-0.06
+**Cost:** Claude in=2482 out=1359 ~$0.046 · Nemotron in=1738 out=864 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.42 | short 0.42 | short 0.65 | ✅ agree |
+| USDJPY | LONG 0.40 | long 0.40 | long 0.75 | ✅ agree |
+| USDCAD | SHORT 0.38 | short 0.38 | long 0.70 | ❌ disagree → Claude stands |
+| BTCUSD | SHORT 0.30 | short 0.30 | short 0.55 | ✅ agree |
+| ETHUSD | SHORT 0.30 | short 0.30 | short 0.50 | ✅ agree |
+| SOLUSD | LONG 0.30 | long 0.30 | long 0.70 | ✅ agree |
+
+**Orders placed:**
+- SELL 97.0 ETHUSD  (-3.00 → -100.00)
+
+---
