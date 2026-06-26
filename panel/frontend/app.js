@@ -486,6 +486,12 @@ async function plotSymbol(symbol, tf){
      edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
                                       // modebar hidden so the top-right toggles own the corner
   wireLineDrag(); wireLineButtons(); wireEditConfirm();
+  // keep the confirm bar glued to its line across live re-renders
+  if(_editLine){
+    const ec = document.getElementById("edit-confirm");
+    const yy = _editLine === "tp" ? _pendingTP[curSymbol] : _pendingSL[curSymbol];
+    if(ec && !ec.hidden && yy != null) positionEditConfirm(yy);
+  }
 }
 
 // Dragging the SL or TP line only STAGES it; the confirm bar's ✓ commits, ✕ reverts.
@@ -511,6 +517,20 @@ function showEditConfirm(which, y){
   const lbl = document.getElementById("edit-confirm-label");
   if(lbl) lbl.textContent = (which === "sl" ? "Stop loss → " : "Take profit → ") + (+y).toPrecision(6);
   box.hidden = false;
+  positionEditConfirm(y);
+}
+// Anchor the confirm bar vertically to the line it edits (data y -> chart pixel).
+function positionEditConfirm(y){
+  const box = document.getElementById("edit-confirm"); if(!box || box.hidden) return;
+  const gd = document.getElementById("symbol-chart");
+  try {
+    const ya = gd && gd._fullLayout && gd._fullLayout.yaxis;
+    if(ya && ya.c2l){
+      const ypix = ya._offset + ya.l2p(ya.c2l(+y));
+      box.style.top = Math.round(ypix) + "px";
+      box.style.transform = "translate(-50%, -50%)";   // center the bar on the line
+    }
+  } catch(e){}
 }
 function hideEditConfirm(){ const b = document.getElementById("edit-confirm"); if(b) b.hidden = true; }
 

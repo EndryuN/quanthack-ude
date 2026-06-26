@@ -49,7 +49,7 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .model-sel .mbtn.active[data-layer="nemotron"]{background:var(--nemo)}
 .model-sel .mbtn.active[data-layer="deepseek"]{background:var(--deepseek)}
 .model-sel .mbtn.active[data-layer="combined"]{background:var(--chartreuse)}
-#kpis{display:flex;gap:18px;font-family:"JetBrains Mono"}
+#kpis{display:flex;gap:18px;font-family:"JetBrains Mono";margin-left:auto}
 #kpis .kpi{display:flex;flex-direction:column;text-align:right}
 #kpis .kpi label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
 #kpis .kpi b{font-weight:500;font-size:15px}
