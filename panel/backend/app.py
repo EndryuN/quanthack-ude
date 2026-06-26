@@ -333,13 +333,26 @@ def bars(symbol: str, tf: str = "15m"):
         # Best-effort; on any failure we keep the live MT5 series.
         from panel.backend import history as _hist
         from bot.config import asset_class
+        cls = asset_class(symbol)
         series = None
-        if asset_class(symbol) == "CRYPTO":
-            bn = _hist.binance_history(symbol, tf, n_cap)
+        if cls == "CRYPTO":
+            bn = _hist.binance_history(symbol, tf, n_cap)          # deep for all timeframes
             if len(bn) >= 20:
                 series = bn
+        elif tf in ("4h", "1d"):
+            yh = _hist.yahoo_history(symbol, tf)                   # deep FX/metals long-tf history
+            if len(yh) >= 20:
+                series = yh
+        if series is not None and live:
+            # anchor the external feed to the broker's latest price (multiplicative,
+            # so % moves are preserved) — removes feed basis (esp. metals futures vs
+            # spot) so the position / SL / TP overlays still line up.
+            bl, el = live[-1][4], series[-1][4]
+            if el:
+                f = bl / el
+                series = [(t, o * f, h * f, l * f, c * f) for (t, o, h, l, c) in series]
         if series is None:
-            older = _hist.parquet_history(symbol, tf)        # [] for crypto / missing
+            older = _hist.parquet_history(symbol, tf)             # [] for crypto / missing
             cutoff = live[0][0]
             series = [b for b in older if b[0] < cutoff] + live if older else live
         series = series[-n_cap:]
