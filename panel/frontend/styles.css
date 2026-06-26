@@ -31,6 +31,11 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .market-read-btn{background:var(--lift);color:var(--ink);border:1px solid var(--muted);border-radius:6px;
   padding:6px 12px;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.04em;cursor:pointer;white-space:nowrap}
 .market-read-btn:hover{border-color:var(--chartreuse);color:var(--chartreuse)}
+/* refresh icon (header) — re-query AI now; spins while a refresh is in flight */
+.refresh-icon{padding:6px 9px;font-size:14px;line-height:1}
+.refresh-icon.spin{color:var(--chartreuse);border-color:var(--chartreuse);
+  animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 /* global model selector — segmented control; active button takes its model's color */
 .model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden}
 .model-sel .mbtn{transition:background .18s ease, color .18s ease}   /* smooth selector toggle */
@@ -96,6 +101,15 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .tw.active{color:var(--short)} .tw.ok{color:var(--muted)}
 
 /* Instrument & projection: symbol list on the side + 15m/1h toggle */
+.sym-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.sym-head h2{margin:0;flex:none}
+.pinned-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pin-chip{display:inline-flex;align-items:center;gap:2px;background:var(--lift);border:1px solid var(--lift);
+  border-radius:6px;padding:2px 3px 2px 8px;font-family:"JetBrains Mono";font-size:10px;color:var(--ink);cursor:pointer}
+.pin-chip:hover{border-color:var(--muted)}
+.pin-chip.active{border-color:var(--chartreuse);color:var(--chartreuse)}
+.pin-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;padding:0 2px}
+.pin-x:hover{color:var(--short)}
 .sym-pane{display:flex;gap:12px}
 .sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
 .sym-pane #chart-wrap{flex:1;min-width:0;position:relative}
@@ -116,6 +130,8 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 
 /* Operator controls */
 .ctl-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ctl-sep{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;
+  margin:10px 0 6px;padding-top:8px;border-top:1px solid var(--lift)}
 .ctl-row label{font-size:10px;letter-spacing:.1em;color:var(--muted);width:74px;flex:none}
 .ctl-row input[type=range]{flex:1;accent-color:var(--chartreuse)}
 #aggr-val{width:34px;text-align:right;color:var(--chartreuse)}

@@ -65,6 +65,11 @@ function renderStrip(s){
       _va.textContent = "views " + (_m < 1 ? "<1m" : _m + "m") + (_age > 1200 ? " ⚠" : "");
       _va.classList.toggle("stale", _age > 1200); }
   }
+  // refresh spinner: stop once a NEW decision (newer ts) has landed
+  const rb = document.getElementById("refresh-btn");
+  if(rb && rb.classList.contains("spin") && s.ts && s.ts !== _refreshAtTs){
+    rb.classList.remove("spin"); clearTimeout(_refreshTimer); setStatus("Consensus refreshed");
+  }
 }
 
 function plotEquity(series){
@@ -364,6 +369,7 @@ function plotHeatmap(hm){
 
 let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
 let _pendingTP = {};   // {sym: price} a STAGED take-profit (dragged but not yet Applied)
+let _refreshAtTs = null, _refreshTimer = null;   // header refresh-icon progress spinner
 
 async function plotSymbol(symbol, tf){
   if(symbol) curSymbol = symbol;
@@ -395,48 +401,39 @@ async function plotSymbol(symbol, tf){
   // our OPEN POSITION: a FIXED entry line (a trace) + a DRAGGABLE take-profit flag
   // (the only editable shape, so it's the only thing the user can drag — Trading212
   // style). Releasing the drag POSTs the new TP as a per-symbol override.
-  const _shapes = [], _annos = [], posTraces = [];
+  // our OPEN POSITION as SHAPES (entry / SL / draggable TP). Shapes never drive the
+  // y-axis autorange, so a far stop-loss no longer squashes the price to a sliver —
+  // the axis frames the price+cones, and an out-of-range SL just sits off-screen.
+  const _shapes = [];
+  window._tpIdx = -1;
   const _p = _posBySym[curSymbol];
   if(_p && _p.entry){
     const long = _p.lots > 0, pcol = long ? C.long : C.short;
     const prof = _p.profit != null ? ((_p.profit>=0?"+$":"-$")+Math.abs(Math.round(_p.profit)).toLocaleString()) : "";
     const _px = v => (+v).toLocaleString(undefined, {maximumFractionDigits: Math.abs(v)>=100?2:5});
-    const coneLens = [b.cones.claude,b.cones.nemotron,b.cones.deepseek,b.cones.consensus]
-      .filter(Boolean).map(c=>c.mid.length);
-    const rx1 = lastT + (coneLens.length ? Math.max(...coneLens) : 1) * dt;
-    posTraces.push({x:[tms[0], rx1], y:[_p.entry, _p.entry], mode:"lines", name:"entry",
-      line:{color:pcol, width:1.5, dash:"dashdot"}, hoverinfo:"skip", showlegend:false});
-    _annos.push({xref:"paper", x:0.005, y:_p.entry, yref:"y", xanchor:"left", yanchor:"bottom",
-      text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`,
-      showarrow:false, font:{size:9, color:pcol, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
-    // current STOP-LOSS line (broker-side), if set — red dotted
-    if(_p.sl && _p.sl > 0){
-      posTraces.push({x:[tms[0], rx1], y:[_p.sl, _p.sl], mode:"lines", name:"stop",
-        line:{color:C.short, width:1.2, dash:"dot"}, hoverinfo:"skip", showlegend:false});
-      _annos.push({xref:"paper", x:0.005, y:_p.sl, yref:"y", xanchor:"left", yanchor:"top",
-        text:`SL ${_px(_p.sl)}`, showarrow:false,
-        font:{size:9, color:C.short, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
-    }
-    // DRAGGABLE take-profit flag: staged drag (pending) > applied override > default.
-    // Dragging only stages it; "Apply" commits it.
+    const hline = (y, color, dash, text, pos) => ({type:"line", xref:"paper", x0:0, x1:1, yref:"y",
+      y0:y, y1:y, line:{color, width:1.4, dash},
+      label:{text, textposition:pos, font:{size:9, color, family:"JetBrains Mono"}}});
+    _shapes.push(hline(_p.entry, pcol, "dashdot",
+      `${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`, "start"));
+    if(_p.sl && _p.sl > 0) _shapes.push(hline(_p.sl, C.short, "dot", `SL ${_px(_p.sl)}`, "start"));
+    // DRAGGABLE take-profit: staged drag (pending) > applied override > default 0.5%.
+    // Dragging only STAGES it; "Apply" commits it. The TP is the last shape (draggable).
     const ovtp = _ov[curSymbol] && _ov[curSymbol].take_profit;
     const tpY = (_pendingTP[curSymbol] != null) ? _pendingTP[curSymbol]
               : (ovtp != null && ovtp > 0) ? ovtp : _p.entry * (1 + (long?1:-1)*0.005);
     const staged = _pendingTP[curSymbol] != null;
-    _shapes.push({type:"line", xref:"paper", x0:0, x1:1, yref:"y", y0:tpY, y1:tpY,
-      line:{color:C.chartreuse, width:1.5, dash:"dot"}});
-    _annos.push({xref:"paper", x:0.995, y:tpY, yref:"y", xanchor:"right", yanchor:"bottom",
-      text:`🏁 TP ${_px(tpY)} · ${staged ? "staged — Apply" : "drag"}`, showarrow:false,
-      font:{size:9, color:C.chartreuse, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
+    _shapes.push(hline(tpY, C.chartreuse, "dot",
+      `🏁 TP ${_px(tpY)} · ${staged ? "staged — Apply" : "drag"}`, "end"));
+    window._tpIdx = _shapes.length - 1;
   }
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
-    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash"),
-    ...posTraces];
+    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
-    shapes:_shapes, annotations:_annos,
+    shapes:_shapes,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
@@ -462,7 +459,7 @@ function wireTpDrag(){
   el._tpWired = true;
   el.on("plotly_relayout", (ev)=>{
     let y = null;
-    for(const k in ev){ if(/^shapes\[\d+\]\.y[01]$/.test(k)) y = ev[k]; }
+    for(const k in ev){ const m = k.match(/^shapes\[(\d+)\]\.y[01]$/); if(m && +m[1] === window._tpIdx) y = ev[k]; }
     if(y != null && curSymbol && _posBySym[curSymbol]){
       _pendingTP[curSymbol] = +y;                       // staged, not applied
       const tp = document.getElementById("ov-tp"); if(tp) tp.value = (+y).toPrecision(8);
@@ -481,6 +478,19 @@ function selectSymbol(sym){
   const list = document.getElementById("symbol-list");
   if(list) list.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===sym));
   renderOverride();   // Pin / conf / take-profit / AI rationale for the new symbol
+  renderPinnedBar();  // highlight the active pinned chip
+}
+
+// Pinned instruments as a chip bar across the TOP of the panel; ✕ unpins.
+function renderPinnedBar(){
+  const el = document.getElementById("pinned-bar"); if(!el) return;
+  const pins = Object.keys(_ov).filter(k => _ov[k] && _ov[k].pinned);
+  el.innerHTML = pins.map(s=>`<span class="pin-chip${s===curSymbol?" active":""}" data-sym="${s}">${s}`+
+    `<button class="pin-x" data-unpin="${s}" title="unpin">&times;</button></span>`).join("");
+  el.querySelectorAll(".pin-chip").forEach(c=> c.onclick = (ev)=>{
+    if(ev.target.classList.contains("pin-x")){ postOverride(ev.target.dataset.unpin, {pinned:false}); return; }
+    selectSymbol(c.dataset.sym);
+  });
 }
 
 // asset-class grouping for the symbol list (crypto kept separate from FX/metals)
@@ -493,18 +503,14 @@ let _symList = [];
 function buildSymbolList(symbols){
   _symList = symbols || _symList;            // remembered so pin toggles can rebuild now
   const el = document.getElementById("symbol-list");
-  const pinned = new Set(Object.keys(_ov).filter(k => _ov[k] && _ov[k].pinned));
-  const sig = symbols.join(",") + "|P" + [...pinned].sort().join(",");
+  const sig = symbols.join(",");
   const row = s => `<div class="sym${s===curSymbol?" active":""}" data-sym="${s}">`+
       `<span class="sym-name">${s}</span></div>`;
   if(el && el.dataset.sig !== sig){
     el.dataset.sig = sig;
     const sorted = [...symbols].sort((a,b)=> _GRP_ORDER[_grpOf(a)] - _GRP_ORDER[_grpOf(b)]); // stable within group
-    const pins = sorted.filter(s=>pinned.has(s)), rest = sorted.filter(s=>!pinned.has(s));
-    let html = "";
-    if(pins.length){ html += `<div class="sym-group">📌 PINNED</div>`; for(const s of pins) html += row(s); }
-    let lastG = null;
-    for(const s of rest){
+    let html = "", lastG = null;
+    for(const s of sorted){
       const g = _grpOf(s);
       if(g !== lastG){ html += `<div class="sym-group">${g.toUpperCase()}</div>`; lastG = g; }
       html += row(s);
@@ -626,8 +632,6 @@ async function loadControls(){
   const a = _ctl.aggression == null ? 0.30 : _ctl.aggression;
   if(aggr && document.activeElement !== aggr){ aggr.value = a; }
   const av = document.getElementById("aggr-val"); if(av) av.textContent = Number(a).toFixed(2);
-  const pb = document.getElementById("pause-btn");
-  if(pb){ pb.classList.toggle("on", !!_ctl.paused); pb.textContent = _ctl.paused ? "Paused" : "Pause"; }
   const so = document.getElementById("so-btn");
   if(so){ const on = _ctl.second_opinion !== false;   // null/true = used (default on)
     so.classList.toggle("on", on); so.textContent = on ? "Nemotron input: ON" : "Nemotron input: OFF"; }
@@ -747,8 +751,6 @@ function wireControls(){
     aggr.oninput = ()=>{ document.getElementById("aggr-val").textContent = Number(aggr.value).toFixed(2); };
     aggr.onchange = ()=> postControls({aggression: parseFloat(aggr.value)});
   }
-  const pb = document.getElementById("pause-btn");
-  if(pb && !pb.dataset.w){ pb.dataset.w="1"; pb.onclick = ()=> postControls({paused: !(_ctl && _ctl.paused)}); }
   const so = document.getElementById("so-btn");
   if(so && !so.dataset.w){ so.dataset.w="1"; so.onclick = ()=>{
     const on = _ctl && _ctl.second_opinion !== false;   // currently on -> turn off, and vice versa
@@ -779,7 +781,10 @@ function wireControls(){
   const rb = document.getElementById("refresh-btn");
   if(rb && !rb.dataset.w){ rb.dataset.w="1"; rb.onclick = async ()=>{
     await fetch("/api/refresh", {method:"POST"});
-    setStatus("Consensus refresh requested — re-querying AI now"); }; }
+    _refreshAtTs = (window._lastState && window._lastState.ts) || "";   // baseline; spinner stops on a newer ts
+    rb.classList.add("spin");
+    clearTimeout(_refreshTimer); _refreshTimer = setTimeout(()=> rb.classList.remove("spin"), 200000);
+    setStatus("Consensus refresh requested — re-querying AI…"); }; }
   const fb = document.getElementById("flatten-btn");
   if(fb && !fb.dataset.w){ fb.dataset.w="1"; fb.onclick = async ()=>{
     if(!confirm("Flatten ALL positions now?")) return;
@@ -915,7 +920,7 @@ loadControls(); loadPresets(); wireControls(); wireRegimeModal(); wireNav();
 
 let _ov = {};   // last-known overrides {sym:{pinned,view,take_profit,note}}
 
-async function loadOverrides(){ _ov = (await getJSON("/api/overrides")) || {}; renderOverride(); }
+async function loadOverrides(){ _ov = (await getJSON("/api/overrides")) || {}; renderOverride(); renderPinnedBar(); }
 
 function renderOverride(){
   const sym = curSymbol; if(!sym) return;
@@ -949,7 +954,7 @@ async function postOverride(sym, patch){
 function wireOverride(){
   const pin = document.getElementById("ov-pin");
   if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol;
-    postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}).then(()=> buildSymbolList(_symList)); }; }
+    postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}); }; }   // loadOverrides re-renders the bar
   const save = document.getElementById("ov-save");
   if(save && !save.dataset.w){ save.dataset.w="1"; save.onclick=()=>{
     const dir = document.getElementById("ov-dir").value;

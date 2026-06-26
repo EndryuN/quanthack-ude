@@ -15,6 +15,7 @@
     <div class="brand">SIGNAL<span>//</span>LAYER</div>
     <div id="regimes">
       <button id="market-read-btn" class="market-read-btn" title="full AI market read">Market Read</button>
+      <button id="refresh-btn" class="market-read-btn refresh-icon" title="Re-query the AI consensus now (skip the 15-min cadence)">&#8635;</button>
     </div>
     <span id="views-age" class="views-age" title="age of the AI market read">—</span>
     <div id="kpis"></div>
@@ -52,15 +53,13 @@
           <button id="preset-save" class="ctl-btn">Save</button></div>
         <div class="ctl-row"><label>Aggression</label>
           <input id="aggr" type="range" min="0" max="1" step="0.05">
-          <span id="aggr-val" class="mono">—</span></div>
-        <div class="ctl-row">
-          <button id="pause-btn" class="ctl-btn">Pause</button>
-          <button id="flatten-btn" class="ctl-btn danger">Flatten now</button>
-          <button id="refresh-btn" class="ctl-btn" title="Re-query the AI consensus now, skipping the 15-min cadence">Refresh views</button></div>
+          <span id="aggr-val" class="mono">—</span>
+          <button id="flatten-btn" class="ctl-btn danger">Flatten now</button></div>
         <div class="ctl-row"><label>2nd opinion</label>
           <button id="so-btn" class="ctl-btn" title="Nemotron always runs and is recorded for the panel. This toggle only controls whether the ALGORITHM acts on its input (sizing). Off = Claude-only sizing, Nemotron still shown.">Nemotron input: —</button>
           <button id="ens-btn" class="ctl-btn" title="DeepSeek runs and is recorded for the panel. This toggle controls whether the ALGORITHM acts on its ensemble input (sizing). Off = DeepSeek shown only.">DeepSeek input: —</button></div>
-        <div class="ctl-row"><label>Scalper</label>
+        <div class="ctl-sep">Scalper</div>
+        <div class="ctl-row"><label>Symbol</label>
           <select id="scalp-sym-sel" title="assign a symbol to the scalper (ceded from the engine)"></select>
           <button id="scalp-assign" class="ctl-btn">Assign</button></div>
         <div id="scalp-assigned" class="scalp-assigned"></div>
@@ -69,7 +68,8 @@
       <div class="card" id="gauges-card"><h2>Risk</h2><div id="gauges"></div><div id="tripwires"></div></div>
     </section>
     <section class="col-main">
-      <div class="card" id="symbol-card"><h2>Instrument &amp; projection</h2>
+      <div class="card" id="symbol-card">
+        <div class="sym-head"><h2>Instrument &amp; projection</h2><div id="pinned-bar" class="pinned-bar"></div></div>
         <div class="sym-pane">
           <div class="sym-side">
             <div id="symbol-list"></div>

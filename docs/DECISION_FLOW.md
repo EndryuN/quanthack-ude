@@ -39,19 +39,21 @@ Before strategy is even consulted, `bot/risk.py::RiskEngine.assess()` builds a `
 ### 4. AI VIEWS — formed every 15 min (or on demand)
 `_signal_changed()` is true when `_views_ts != _last_acted_ts`. The refresh itself (`_refresh_ai_views`) runs on cadence, or immediately when the operator presses **Refresh views** (which bumps `refresh_seq`; the engine sets `_force_refresh`, zeroes the failure backoff, and re-queries that tick). On API failure it backs off 30s → doubling → 300s cap.
 
-The refresh is a four-stage merge:
+The refresh is a multi-stage merge:
 
 **4a. Build the context** — `bot/ai_signal.py::build_context()` assembles a compact, token-efficient, genuinely **multi-timeframe** snapshot per instrument: multi-horizon returns (1h/4h/1d/3d), trend direction on M15/H1/H4 EMAs, a momentum z-score, per-bar volatility, and where price sits in its 5-day range (0–100%).
 
 **4b. Claude (primary)** — `get_ai_views()` calls `claude-opus-4-8` with adaptive extended thinking, `effort: high`, and **Pydantic structured output** (`MarketView`). The system prompt frames Claude as *the* signal engine, states the scoring rules (≈70% return rank; drawdown/Sharpe secondary; liquidation = elimination), and instructs it to weight setups where timeframes *agree*, stay calibrated ("liquid FX deserves low confidence"), prefer `flat` over guessing, and keep cross-asset macro coherent. Output per instrument: `direction ∈ {long, short, flat}`, `confidence ∈ [0,1]`, one-line `rationale`, plus a market-`regime` narrative. A refusal or malformed body raises (graceful degrade); the result is normalized to `{symbol: (dir_int, confidence)}`.
 
-**4c. Nemotron (blind second opinion)** — `bot/second_opinion.py::get_second_opinion()` sends the **same** context (never Claude's answer) to `nvidia/nemotron-3-super-120b-a12b` over the OpenAI-compatible NVIDIA API, asking for the identical JSON schema. Reasoning is disabled (`enable_thinking: False`) for latency. Any failure raises → Claude-only.
+**4c. Nemotron (blind second opinion)** — `bot/second_opinion.py::get_second_opinion()` sends the **same** context (never Claude's answer) to `nvidia/nemotron-3-super-120b-a12b` over the OpenAI-compatible NVIDIA API, asking for the identical JSON schema. Reasoning is disabled (`enable_thinking: False`) for latency. Any failure raises → that voter is simply absent.
+
+**4c′. DeepSeek (blind ensemble voter)** — a second, independent blind opinion sends the **same** context (never Claude's answer) to `deepseek-ai/DeepSeek-V4-Pro` **live** via the Pydantic AI Gateway → Doubleword, routed through the gateway's `/responses` endpoint (the `/chat/completions` path 400s on an injected `safety_identifier`), asking for the identical schema. Any failure raises → that voter is simply absent.
 
 **4d. Consensus merge** — `apply_consensus()`:
-- Claude is authoritative on **direction**.
-- If Nemotron independently agrees (same non-flat direction), confidence is boosted: `combined = c + (1 − c) · gain · n` with `gain = 0.5`.
-- Otherwise the agreement is tagged `disagree` / `nemotron_flat` / `second_opinion_unavailable` and Claude stands.
-- The operator `second_opinion` toggle controls **only** whether the sizer uses `combined` vs Claude-only `c` — Nemotron is *always queried and recorded* either way (so the panel can show Claude / Nemotron / Combined over time).
+- Claude is **always authoritative on direction** — neither second opinion can set, flip, or veto it.
+- Each blind voter (Nemotron, DeepSeek) that independently agrees (same non-flat direction) can only *raise* confidence: `combined = cc + (1 − cc) · gain · mean(agreeing voters' confidence)` with `gain = 0.5`; Claude's confidence is used as-is when no one agrees.
+- Otherwise each voter's relationship is tagged `disagree` / `<model>_flat` / `<model>_unavailable` and Claude stands.
+- Per-source influence is gated independently: the `second_opinion` toggle (default ON) gates whether the sizer acts on Nemotron, and a separate `ensemble_input` toggle (default OFF) gates DeepSeek/ensemble influence. **Both voters are *always queried, recorded, and scored* regardless of their toggle** (so the panel can show and grade Claude / Nemotron / DeepSeek / Combined over time).
 
 **4e. Human override (optional)** — `apply_human_override()` lets a pinned human view become the *deciding* voice that can flip direction, tagged `human_override` in the log.
 
@@ -89,7 +91,7 @@ Independent of reconcile, every open position is checked for a broker-side SL. I
 `_run_scalper()` ticks the integrated slot over operator-assigned symbols. It runs after everything else so a kill / operator-flatten early-return skips it, and the whole step is wrapped in `try/except` — **a scalper error can never crash the engine tick.** See [Scalper decision path](#scalper-decision-path).
 
 ### 10. LOG — `_write_decision_record()`
-On each refresh, one append-only record is written as JSONL **and** Markdown: both models' identities and regimes, per-view direction/confidence/rationale for each model, the combined value + agreement verdict + `boosted`/`influence` flags, token costs in USD, the account snapshot, and the orders actually placed. Failed refreshes are logged too. The panel reads these read-only.
+On each refresh, one append-only record is written as JSONL **and** Markdown: all models' identities and regimes, per-view direction/confidence/rationale for each model, the combined value + agreement verdict + `boosted`/`influence` flags, token costs in USD, the account snapshot, and the orders actually placed. Failed refreshes are logged too. The panel reads these read-only.
 
 ---
 
@@ -120,7 +122,8 @@ The panel never trades. It writes intents to `state/controls.json`; the engine r
 | Pause / Flatten | `paused` flag / `flatten_seq` | step 1 / step 5–6 |
 | Aggression / Preset apply | `aggression` + `apply_seq` (forces a reconcile next tick) | step 5 |
 | Refresh views | `refresh_seq` → `_force_refresh` | step 4 (bypasses cadence + backoff) |
-| Nemotron influence | `second_opinion` flag | step 4d (gates sizer use only) |
+| Nemotron influence | `second_opinion` flag (default ON) | step 4d (gates sizer use only) |
+| DeepSeek / ensemble influence | `ensemble_input` flag (default OFF) | step 4d (gates sizer use only) |
 | Block / Allow | `block` / `allow` lists | step 5 (`_clamp_blocked`, de-risk only) |
 | Scalper assign / gate / arm | `scalper_symbols` / `scalper_gate` / `scalper_armed[_force]` | steps 2 & 9 |
 | Pin / human view / take-profit | `overrides.json` | step 4e / step 5 (pins) |
@@ -131,9 +134,9 @@ The risk floor (step 1) runs **before** any of this and is never gated by a cont
 
 ## Appendix — exactly what we feed the LLMs
 
-Both models receive the **identical** system prompt and the **identical** market
-snapshot (`second_opinion.py` imports `SYSTEM` from `ai_signal.py`); Nemotron is a
-blind peer — same inputs, no sight of Claude's answer.
+All three models receive the **identical** system prompt and the **identical** market
+snapshot (`second_opinion.py` imports `SYSTEM` from `ai_signal.py`); Nemotron and
+DeepSeek-V4-Pro are blind peers — same inputs, no sight of Claude's answer.
 
 **The data payload** (`build_context`, one line per instrument, ~14 lines/call,
 refreshed every ~15 min): a token-cheap multi-timeframe *digest* — not raw bars.
@@ -156,11 +159,11 @@ barometers), and rate every instrument.
 **The user message** wraps the context and asks for a directional view +
 calibrated confidence per instrument. **Output contract:** Claude is forced into
 the Pydantic `MarketView` schema (`regime` + `{symbol, direction, confidence∈[0,1],
-rationale}`); Nemotron is asked for the same shape as a strict JSON object. A
-malformed/hallucinated reply can't validate and can't reach trade logic.
+rationale}`); Nemotron and DeepSeek are asked for the same shape as a strict JSON
+object. A malformed/hallucinated reply can't validate and can't reach trade logic.
 
 **Not fed:** raw ticks/candles, order book, account/equity/position state,
-Claude's answer (to Nemotron), or any news/text feed. The models decide
+Claude's answer (to the blind voters), or any news/text feed. The models decide
 *direction + conviction*; sizing, risk, and execution are the engine's job.
 
 ## Invariants (the things that must always hold)
@@ -169,5 +172,5 @@ Claude's answer (to Nemotron), or any news/text feed. The models decide
 2. **No naked positions.** Every open position has a broker-side stop within one tick of opening.
 3. **The scalper can never crash the engine.** Isolated, runs last, resets on launch.
 4. **The panel never trades.** It only reads, and writes intents the engine chooses to honor.
-5. **Every AI decision is auditable.** Both models, costs, rationale, and orders are persisted append-only.
+5. **Every AI decision is auditable.** All models, costs, rationale, and orders are persisted append-only.
 6. **AI output is schema-constrained.** A hallucinated/malformed response can't reach trade logic.

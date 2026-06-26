@@ -1,6 +1,6 @@
 # Quanthack — SIGNAL//LAYER
 
-**An AI-native autonomous trading system.** A frontier LLM (Claude Opus 4.8) reads the market across multiple timeframes and *is* the strategy; a deterministic, risk-controlled engine sizes and executes its views; a second AI (NVIDIA Nemotron) cross-checks every call; and a real-time operator console lets a human supervise — all beneath a hard risk floor no model can override.
+**An AI-native autonomous trading system.** A frontier LLM (Claude Opus 4.8) reads the market across multiple timeframes and *is* the strategy; a deterministic, risk-controlled engine sizes and executes its views; two additional AIs (NVIDIA Nemotron and DeepSeek-V4-Pro) blind-cross-check every call as a multi-model ensemble; and a real-time operator console lets a human supervise — all beneath a hard risk floor no model can override.
 
 Built for a multi-day simulated trading competition (forex, metals, crypto · $1,000,000 capital · 1:30 leverage · **liquidation = instant elimination**). Design goal: **maximize return rank without ever blowing up.**
 
@@ -11,7 +11,7 @@ Built for a multi-day simulated trading competition (forex, metals, crypto · $1
 - [What makes it AI-native (project description)](#what-makes-it-ai-native)
 - [Architecture at a glance](#architecture-at-a-glance)
 - [How a trade is decided](#how-a-trade-is-decided) → deep dive: **[docs/DECISION_FLOW.md](docs/DECISION_FLOW.md)**
-- [Dual-AI consensus](#dual-ai-consensus-claude--nemotron)
+- [Multi-model consensus](#multi-model-consensus-claude--nemotron--deepseek)
 - [Position sizing — one dial](#position-sizing--one-aggression-dial)
 - [Risk system](#risk-system)
 - [The integrated scalper](#the-integrated-scalper)
@@ -34,12 +34,12 @@ We arrived here honestly — momentum, mean-reversion, statistical-arbitrage and
 What elevates it from "an LLM that emits signals" to a genuine AI-native architecture:
 
 1. **AI is the strategy.** Claude is shown a purpose-built, multi-timeframe market snapshot and returns, per instrument, a **direction + a calibrated confidence + a one-line rationale**, plus a market-regime narrative. Those structured, schema-validated views flow *directly* into a sizer that puts real capital behind the model's conviction.
-2. **A blind multi-model ensemble.** NVIDIA **Nemotron** independently rates the *same* snapshot without seeing Claude's answer. Agreement amplifies conviction; it can never veto or flip direction. Strictly additive and graceful — no key, no problem (Claude-only).
-3. **The system grades its own AI.** A directional hit-rate scorer measures whether each model was actually right, so trust is earned from realized results, not assumed.
-4. **Full auditability.** Every 15-minute decision — both models' views, rationales, regimes, agreement verdicts, token costs, and the resulting orders — is persisted append-only as JSONL **and** human-readable Markdown.
+2. **A blind multi-model ensemble.** Two independent second opinions — NVIDIA **Nemotron** and **DeepSeek-V4-Pro** (live via the Pydantic AI Gateway) — each rate the *same* snapshot without seeing Claude's answer. Agreement amplifies conviction; neither can ever veto, set, or flip direction. Strictly additive and graceful — no key, no problem (Claude-only).
+3. **The system grades its own AI.** A directional hit-rate scorer measures whether each model (Claude vs Nemotron vs DeepSeek) was actually right, so trust is earned from realized results, not assumed.
+4. **Full auditability.** Every 15-minute decision — all models' views, rationales, regimes, agreement verdicts, token costs, and the resulting orders — is persisted append-only as JSONL **and** human-readable Markdown.
 5. **Human-in-the-loop, AI-respecting.** An operator can refresh the consensus on demand, re-weight risk, pin positions, or even override a single AI view as a deciding "third opinion" — but can never weaken the risk floor.
 
-The result is a closed loop: **AI decides → second AI cross-checks → human supervises → system grades itself**, with deterministic guardrails that run *first*, every tick.
+The result is a closed loop: **AI decides → blind ensemble cross-checks → human supervises → system grades itself**, with deterministic guardrails that run *first*, every tick.
 
 ---
 
@@ -49,7 +49,8 @@ The result is a closed loop: **AI decides → second AI cross-checks → human s
                 ┌──────────────────────────── every 15 min ───────────────────────────┐
                 │                                                                       │
  market (MT5)   │   build multi-timeframe snapshot ──► Claude Opus 4.8 ──► views+regime │
- ──────────────►│                                  └─► NVIDIA Nemotron (blind) ─┐       │
+ ──────────────►│                                  ├─► NVIDIA Nemotron (blind) ─┐       │
+                │                                  └─► DeepSeek-V4-Pro (blind) ─┤       │
                 │                                       consensus merge ◄────────┘       │
                 └───────────────────────────────────────────┬───────────────────────────┘
                                                              ▼
@@ -64,7 +65,7 @@ The result is a closed loop: **AI decides → second AI cross-checks → human s
    decision log (JSONL + Markdown)  ◄── state files ──►  SIGNAL//LAYER dashboard (read/steer)
 ```
 
-Two processes, decoupled by files: the **engine** (trades) and the **panel** (reads logs/state + live MT5 read-only, writes operator intents the engine polls). With the panel off, the engine is byte-for-byte unchanged.
+Two components, decoupled by files: the **engine** (trades) and the **panel** (reads logs/state + live MT5 read-only, writes operator intents the engine polls). With the panel off, the engine is byte-for-byte unchanged.
 
 ---
 
@@ -76,26 +77,26 @@ Short version (full walkthrough in **[docs/DECISION_FLOW.md](docs/DECISION_FLOW.
 1. RISK FIRST   → assess account; kill-switch can flatten everything before strategy is consulted
 2. CEDE/HANDOFF → remove any operator-assigned scalper symbols from the engine's universe
 3. METRICS      → equity curve, trailing-peak drawdown, 15-min Sharpe
-4. AI VIEWS     → (every 15 min, or on demand) Claude read + blind Nemotron + consensus merge
+4. AI VIEWS     → (every 15 min, or on demand) Claude read + blind Nemotron + blind DeepSeek + consensus merge
 5. SIZE & TRADE → views → target lots (confidence × aggression) → reconcile ONLY on signal change
 6. ENSURE STOPS → guarantee a broker-side stop-loss on every open position, every tick
 7. TRAIL STOPS  → ratchet stops into profit on winners
 8. SCALPER      → run the integrated scalper slot LAST (isolated; can never crash the engine)
-9. LOG          → persist the full decision (both models, costs, orders, account state)
+9. LOG          → persist the full decision (all models, costs, orders, account state)
 ```
 
 Risk runs first **by design**: the strategy can never talk the system out of protecting itself.
 
 ---
 
-## Dual-AI consensus (Claude + Nemotron)
+## Multi-model consensus (Claude + Nemotron + DeepSeek)
 
-Claude sets **direction**; NVIDIA **Nemotron** gives an independent, *blind* second opinion on the same snapshot. The merge rule is a **disagreement-aware conviction amplifier**:
+Claude is **always authoritative on direction**; two blind second opinions — NVIDIA **Nemotron** and **DeepSeek-V4-Pro** (live via the Pydantic AI Gateway) — independently rate the same snapshot without ever seeing Claude's answer. The merge rule is a **disagreement-aware conviction amplifier** — second opinions can *only raise* confidence on agreement, and can never set, flip, or veto direction:
 
-- **Agree** → confidence is boosted: `combined = c + (1 − c) · gain · n`  (`gain = 0.5`).
-- **Disagree / Nemotron flat / unavailable** → Claude's view stands. Nemotron never vetoes or flips.
+- **Agree** → confidence is boosted across the agreeing voters: `combined = cc + (1 − cc) · gain · mean(agreeing voters' confidence)`  (`gain = 0.5`).
+- **Disagree / voter flat / unavailable** → Claude's confidence is used as-is. No second opinion ever vetoes or flips direction.
 
-A deliberate design choice: **Nemotron is *always* queried and recorded; the toggle only gates whether the *sizer acts* on it.** Even with influence off, Claude/Nemotron/Combined are all computed and logged — so you can watch them diverge over time (heatmap, dumbbell, projection cones) and decide whether the second opinion earns its place *before* enabling it. See [`bot/second_opinion.py`](bot/second_opinion.py).
+A deliberate design choice: **both second opinions are *always* queried, recorded, and scored — the per-source influence toggles only gate whether the *sizer acts* on them.** Nemotron's sizing influence is gated by the `second_opinion` toggle (default ON); DeepSeek/ensemble influence by a separate `ensemble_input` toggle (default OFF). Either way, Claude/Nemotron/DeepSeek/Combined are all computed, logged, and graded — so you can watch them diverge over time (heatmap, dumbbell, projection lines) and decide whether each opinion earns its place *before* enabling it. See [`bot/second_opinion.py`](bot/second_opinion.py).
 
 ---
 
@@ -155,7 +156,7 @@ Everything is driven from the **Controls** panel: pick a symbol → Assign (auto
 
 A separate, opt-in web dashboard (**SIGNAL//LAYER**) that reads the logs + live MT5 and lets you watch — and optionally steer — the engine. It is the *sole writer* of control files; the engine polls and acks them, and the risk floor runs *before* and is never gated by any control.
 
-- **Watch** — live KPI header with clickable Claude/Nemotron reasoning, equity vs the risk floor, live risk gauges + 30-min tripwire clocks, the consensus **dumbbell** and over-time **heatmap** (Claude / Nemotron / Combined layers), per-symbol **projection cones**, positions + P/L, and a History view (entry/exit markers colored by direction).
+- **Watch** — live KPI header with clickable Claude/Nemotron/DeepSeek reasoning (brand-coded: Claude orange, Nemotron NVIDIA green, DeepSeek blue), a **model selector** (Claude / Nemotron / DeepSeek / Combined, default Claude) and a **Market Read** modal showing all three models' one-line regime reads, equity vs the risk floor, live risk gauges + 30-min tripwire clocks, the consensus **dumbbell** (up to 3 model dots per row, with a top-row colored-dot legend that doubles as the per-model directional-accuracy readout — dimmed for a model that didn't vote the latest read; dotted GREEN connector on agreement, dotted RED on disagreement) and over-time **heatmap** (Claude / Nemotron / DeepSeek / Combined layers), per-symbol **projection direction lines** (Claude/Nemotron/DeepSeek + dashed Consensus — no filled cone band), our open position drawn as a fixed dashed entry line plus a **draggable take-profit flag** (drag to set a per-symbol TP override, Trading212-style), a candle/line toggle and a 1m/15m/1h timeframe toggle pinned top-right (chart live-refreshes ~1s), positions + P/L, and a History view (entry/exit markers colored by direction).
 - **Steer** — aggression, pause, panic-flatten, **manual consensus refresh** (re-query the AI now, bypassing the 15-min cadence), per-symbol allow/block, named presets, the per-symbol scalper assign → gate → arm flow, and per-position pin / human-override / take-profit.
 
 Steering is **off by default**; the launcher's *With panel* choice enables it (`QUANTHACK_PANEL=1`). Standalone, the dashboard is read-only. Full details: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
@@ -164,9 +165,9 @@ Steering is **off by default**; the launcher's *With panel* choice enables it (`
 
 ## Decision logging & self-grading
 
-Every 15-minute refresh is persisted to per-day files — `logs/ai_decisions_YYYY-MM-DD.jsonl` (machine) and `.md` (human): the regime, **per-symbol rationale from both models**, the consensus verdict (✅/❌), the orders placed, token cost, and account state. It doubles as a Claude-vs-Nemotron audit trail ([`bot/decision_log.py`](bot/decision_log.py)).
+Every 15-minute refresh is persisted to per-day files — `logs/ai_decisions_YYYY-MM-DD.jsonl` (machine) and `.md` (human): the regime, **per-symbol rationale from all models**, the consensus verdict (✅/❌), the orders placed, token cost, and account state. It doubles as a Claude-vs-Nemotron-vs-DeepSeek audit trail ([`bot/decision_log.py`](bot/decision_log.py)).
 
-A directional **hit-rate scorer** ([`bot/model_scoring.py`](bot/model_scoring.py)) grades each model's calls against realized price moves — the foundation for trusting (or distrusting) a model from evidence.
+A directional **hit-rate scorer** ([`bot/model_scoring.py`](bot/model_scoring.py)) accumulates each model's calls (Claude vs Nemotron vs DeepSeek) against realized price moves across refreshes — persisted to `state/model_scores.json`, served at `/api/model_scores`, and surfaced in the panel's consensus header — the foundation for trusting (or distrusting) a model from evidence.
 
 ---
 
@@ -177,17 +178,18 @@ A directional **hit-rate scorer** ([`bot/model_scoring.py`](bot/model_scoring.py
 | **Language / runtime** | Python 3.13 · vanilla JS / HTML5 / CSS3 (no build step) |
 | **Primary AI** | **Claude Opus 4.8** (`claude-opus-4-8`) via the Anthropic SDK — adaptive extended thinking, `effort: high`, Pydantic structured output |
 | **Second-opinion AI** | **NVIDIA Nemotron** (`nvidia/nemotron-3-super-120b-a12b`) via the OpenAI-compatible NVIDIA NIM API (reasoning disabled for latency) |
-| **Backtest AI (cost-saving)** | **Doubleword** (`DeepSeek-V4-Flash`) via the **Pydantic AI Gateway** (batch/async tiers) |
+| **Ensemble AI (live voter)** | **DeepSeek-V4-Pro** (`deepseek-ai/DeepSeek-V4-Pro`) — a LIVE blind ensemble voter via the **Pydantic AI Gateway** → Doubleword, routed through the gateway's `/responses` endpoint |
+| **Pydantic AI Gateway** | live DeepSeek-V4-Pro ensemble voting **and** cheap AI backtesting on `DeepSeek-V4-Flash` (~98.7% cheaper than live) — a live + backtest dependency |
 | **Schema / validation** | Pydantic v2 (`MarketView` / `InstrumentView`) — malformed AI output can't reach trade logic |
 | **Broker / market data** | **MetaTrader 5** Python API (netting account, magic-tagged order streams) |
 | **Backend** | **FastAPI** + **Uvicorn** (read-only dashboard API) |
-| **Frontend / viz** | **Plotly.js** (equity, projection cones, consensus heatmap/dumbbell) + vanilla JS polling |
+| **Frontend / viz** | **Plotly.js** (equity, projection direction lines, consensus heatmap/dumbbell) + vanilla JS polling |
 | **Numeric / data** | NumPy · pandas · PyArrow (L2 tick Parquet → OHLC bars) |
 | **HTTP** | httpx (sync + async OpenAI-compatible calls) |
 | **Persistence** | JSON control/state files + JSONL/Markdown decision logs (atomic writes) |
 | **Testing** | 50+ script-style `test_*.py` (pure-logic modules are network-free) |
 
-API keys (`ANTHROPIC_API_KEY` required; `NVIDIA_API_KEY`, `PYDANTIC_AI_GATEWAY_API_KEY` optional) live in a **gitignored** `.env`.
+API keys (`ANTHROPIC_API_KEY` required; `NVIDIA_API_KEY` → Nemotron, `PYDANTIC_AI_GATEWAY_API_KEY` → DeepSeek live voter + backtesting, both optional) live in a **gitignored** `.env`.
 
 ---
 
@@ -223,11 +225,11 @@ The repo also includes the research/probe scripts used to validate the approach 
 
 ## Quickstart
 
-**Requirements:** Python 3.13+, a running [MetaTrader 5](https://www.metatrader5.com/) terminal with Algo Trading enabled, and an Anthropic API key. An NVIDIA `nvapi-…` key (free from [build.nvidia.com](https://build.nvidia.com)) enables the Nemotron second opinion but is **optional**.
+**Requirements:** Python 3.13+, a running [MetaTrader 5](https://www.metatrader5.com/) terminal with Algo Trading enabled, and an Anthropic API key. An NVIDIA `nvapi-…` key (free from [build.nvidia.com](https://build.nvidia.com)) enables the Nemotron second opinion, and a Pydantic AI Gateway key enables the live DeepSeek-V4-Pro ensemble voter (and AI backtesting) — both **optional**.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env     # edit: ANTHROPIC_API_KEY (required), NVIDIA_API_KEY (optional)
+cp .env.example .env     # edit: ANTHROPIC_API_KEY (required), NVIDIA_API_KEY + PYDANTIC_AI_GATEWAY_API_KEY (optional)
 ```
 
 **Launch** — the simplest path is the interactive launcher: double-click **`run_live.bat`**. It asks:
@@ -249,7 +251,7 @@ python -m bot.engine --live   # LIVE, no panel           (or:  .\run_live.ps1 -L
 
 ## Backtesting the AI signal
 
-The AI signal needs one LLM call per historical decision point — hundreds of latency-insensitive calls. Those run cheaply through **Doubleword's batch/async tiers** via the Pydantic AI Gateway:
+The same **Pydantic AI Gateway** that hosts the live DeepSeek-V4-Pro ensemble voter also powers cheap backtesting. The AI signal needs one LLM call per historical decision point — hundreds of latency-insensitive calls. Those run cheaply on **DeepSeek-V4-Flash** through Doubleword's batch/async tiers via the gateway:
 
 ```bash
 python run_ai_backtest.py --mode online  --cadence-bars 4                 # quick
@@ -257,7 +259,7 @@ python run_ai_backtest.py --mode export  --out requests.jsonl --cadence-bars 4  
 python run_ai_backtest.py --mode replay  --results results.jsonl --cadence-bars 4 # …then replay
 ```
 
-The first full 425-call backtest cost **≈ $0.29** on Doubleword vs **≈ $21.79** at the live model's rate (**~98.7% cheaper**). Note the backtest runs on a *different, cheaper model* (DeepSeek V4 Flash) — it validates the **architecture and prompt**, not live Claude performance. See **[docs/AI_BACKTEST.md](docs/AI_BACKTEST.md)** and **[docs/BACKTEST_RESULTS.md](docs/BACKTEST_RESULTS.md)**.
+The first full 425-call backtest cost **≈ $0.29** on Doubleword vs **≈ $21.79** at the live model's rate (**~98.7% cheaper**). Note the backtest runs on a *different, cheaper model* — **DeepSeek-V4-Flash** is the backtest model, while **DeepSeek-V4-Pro** is the live ensemble voter — so it validates the **architecture and prompt**, not live Claude performance. See **[docs/AI_BACKTEST.md](docs/AI_BACKTEST.md)** and **[docs/BACKTEST_RESULTS.md](docs/BACKTEST_RESULTS.md)**.
 
 ---
 
