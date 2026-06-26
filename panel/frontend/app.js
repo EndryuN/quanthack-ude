@@ -1,7 +1,8 @@
 // SIGNAL//LAYER — read-only dashboard. Polls the backend and renders.
 const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
   chartreuse:"#C8FF00", claude:"#FF8A1E", nemo:"#76B900", deepseek:"#4D6BFE", human:"#F5A623",
-  consensus:"#FF5CA8", long:"#2ECC71", short:"#FF4D4D", flat:"#3A3F50", ink:"#E8EAF0", muted:"#6B7080" };
+  consensus:"#FF5CA8", long:"#2ECC71", short:"#FF4D4D", flat:"#3A3F50", ink:"#E8EAF0", muted:"#6B7080",
+  fx:"#2DD4BF", metal:"#E0B84D", crypto:"#9B6BFF" };   // asset categories
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };
 
@@ -1426,7 +1427,8 @@ let _scalpState = {};
 
 // Volatility card (informational, panel-only): live realized-vol index from MT5
 // bars. ~14 bar reads per fetch, so poll slowly (vol changes slowly anyway).
-function _volColor(z){ return z == null ? C.muted : z >= 1.5 ? C.short : z >= 0.5 ? C.human : C.muted; }
+function _volColor(z){ return z == null ? C.muted : z >= 1.5 ? C.short : z >= 0.5 ? C.human : C.long; }   // traffic light: calm→elevated→high
+function _catColor(cls){ return cls === "CRYPTO" ? C.crypto : cls === "METAL" ? C.metal : C.fx; }       // asset category
 function renderVolatility(d){
   const idx = document.getElementById("vol-index");
   if(idx){
@@ -1442,10 +1444,10 @@ function renderVolatility(d){
   const rows = Object.keys(per).map(s => ({ s, ...per[s] })).sort((a, b) => b.raw - a.raw);
   if(!rows.length){ bars.innerHTML = `<div class="ctx-note">${_esc((d && d.note) || "live volatility needs the running engine")}</div>`; return; }
   const max = Math.max(...rows.map(r => r.raw)) || 1;
-  // ONE consistent heat scale across the whole card: bar + z + chips all colored by
-  // vol-level (calm grey / elevated amber / high red). Bar length = absolute vol%.
+  // bar = asset CATEGORY (FX/Metals/Crypto), length = absolute vol%; the z value on
+  // the side is traffic-light coded (green calm / yellow elevated / red high).
   bars.innerHTML = rows.map(r => `<div class="vol-row"><span class="vol-sym">${_esc(r.s)}</span>`
-    + `<span class="vol-track"><span class="vol-fill" style="width:${Math.round(r.raw / max * 100)}%;background:${_volColor(r.z)}"></span></span>`
+    + `<span class="vol-track"><span class="vol-fill" style="width:${Math.round(r.raw / max * 100)}%;background:${_catColor(r.cls)}"></span></span>`
     + `<span class="vol-val">${r.raw.toFixed(3)}% <span class="vol-z" style="color:${_volColor(r.z)}">z${r.z > 0 ? "+" : ""}${r.z}</span></span></div>`).join("");
 }
 async function loadVolatility(){ try { renderVolatility(await getJSON("/api/volatility")); } catch(e){} }

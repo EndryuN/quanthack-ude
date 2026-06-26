@@ -2,6 +2,7 @@
   --canvas:#0D0E12; --surface:#14161D; --lift:#1E2330; --chartreuse:#C8FF00;
   --claude:#FF8A1E; --nemo:#76B900; --deepseek:#4D6BFE; --human:#F5A623; --long:#2ECC71;
   --short:#FF4D4D; --flat:#3A3F50; --ink:#E8EAF0; --muted:#6B7080;
+  --fx:#2DD4BF; --metal:#E0B84D; --crypto:#9B6BFF;   /* asset categories */
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--canvas);color:var(--ink);
@@ -278,7 +279,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   background:var(--canvas);border-radius:6px;padding:10px;margin:8px 0 0;max-height:340px;overflow:auto}
 .ctx-rawbox{max-height:440px}
 .ctx-line{padding:1px 0;white-space:pre-wrap}
-.ctx-line.metals{color:var(--human)} .ctx-line.crypto{color:var(--deepseek)}
+.ctx-line.metals{color:var(--metal)} .ctx-line.crypto{color:var(--crypto)}
 .ctx-note{font-size:10px;color:var(--muted);margin-top:6px}
 .ctx-note code,.ctx-fr code{background:var(--lift);padding:1px 4px;border-radius:3px;color:var(--chartreuse)}
 .ctx-tabs{margin-left:8px}
