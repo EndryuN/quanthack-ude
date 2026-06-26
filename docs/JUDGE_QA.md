@@ -71,7 +71,7 @@ Layered: an **account-wide kill-switch flattens everything at 150% margin level*
 Drawdown is measured against the *trailing equity peak* (the scored metric). Instead of flatten-and-freeze (which forfeits return rank), we scale the whole book down in steps — 20%→½, 30%→¼, 40%→flat — and **re-arm automatically** as equity recovers.
 
 **Q. Don't concentration limits help? Why don't you hard-block on them?**
-We learned this the hard way: a hard new-risk gate on concentration/net-direction *froze the book* in a one-sided regime and even blocked diversifying trades. We now **compute** concentration/net for display and a 90%/30-min watch clock, but don't use them to block trades. Real protection is the kill-switch, leverage/margin caps, drawdown de-risk, and per-position stops.
+We learned this the hard way: a hard new-risk gate on concentration/net-direction *froze the book* in a one-sided regime and even blocked diversifying trades. We now **compute** concentration/net for display and an 85% watch clock (contest penalty at 90% for ≥30 min), but don't use them to block trades. Real protection is the kill-switch, leverage/margin caps, drawdown de-risk, and per-position stops.
 
 **Q. Can the human or the AI disable the safety?**
 No. The risk floor runs *before* strategy and operator controls every tick and is never gated by any of them. The panel physically cannot place an order or weaken the floor.

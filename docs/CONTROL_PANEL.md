@@ -4,9 +4,9 @@ A web dashboard for monitoring and (optionally) steering the live trading engine
 
 > **Safety in one line:** every engine behaviour the panel can trigger is gated behind `EngineConfig.use_control_panel` (default `False`). With that flag off, the panel cannot affect trading at all. The kill-switch and risk floor always run first and can never be overridden by an operator control.
 
-![SIGNAL//LAYER dashboard — left column (equity, positions/history, controls, risk gauges), main column (instrument & projection, consensus dumbbell)](panel-dashboard.jpeg)
+![SIGNAL//LAYER dashboard — left column (equity, positions/history, controls), main column (instrument & projection, three-model consensus dumbbell)](panel-dashboard.jpeg)
 
-*The Dashboard view. Header KPIs across the top; operator column on the left; signal column (instrument projection + Claude×Nemotron consensus dumbbell) on the right. Numbers shown are dry-run/sample data.*
+*The Dashboard view. Header bar (Market Read, refresh icon, AI-refresh countdown) and the pinned status/KPI strip across the top; a currency-strength ribbon on its own row; operator column on the left; signal column (instrument projection + Claude/Nemotron/DeepSeek consensus dumbbell) on the right. The risk gauges live in a popover off the KPI strip. Numbers shown are dry-run/sample data.*
 
 ---
 
@@ -14,8 +14,10 @@ A web dashboard for monitoring and (optionally) steering the live trading engine
 
 The normal way is the **interactive launcher** at the repo root — double-click `run_live.bat` (or run it from a terminal). It asks two questions, in order:
 
-1. **Mode** — `[L]ive trading` or `[D]ry-run` (dry-run sends no orders).
-2. **Panel** — `[W]ith panel` or `[N]o panel`.
+1. **Mode** — `[1] Live trading` or `[2] Dry-run` (dry-run sends no orders).
+2. **Panel** — `[1] With panel` or `[2] No panel`.
+
+So, for example, **live trading with panel = `1 1`**.
 
 Choosing **With panel** does two things: it launches this dashboard in its own window (uvicorn on port 8800) **and** sets `QUANTHACK_PANEL=1` for the engine, which flips `use_control_panel` on so the operator controls actually steer the bot. Choosing **No panel** runs the engine exactly as it would with no panel code at all. The engine itself runs in the launcher window; press Ctrl+C there to stop it.
 
@@ -24,8 +26,8 @@ Choosing **With panel** does two things: it launches this dashboard in its own w
            QUANTHACK  LAUNCHER
 ===============================================
 
-Mode  -  [L]ive trading   [D]ry-run : D
-Panel -  [W]ith panel   [N]o panel : W
+Mode  -  [1] Live trading   [2] Dry-run : 2
+Panel -  [1] With panel   [2] No panel : 1
 
   Mode : DRY-RUN (no orders sent)
   Panel: ON  -  dashboard at http://127.0.0.1:8800
@@ -47,52 +49,78 @@ Then open **http://127.0.0.1:8800**. First load: do a hard refresh (Ctrl+Shift+R
 
 ## The layout
 
-The dashboard (**SIGNAL//LAYER**) is a single-page app with three views, switched from the **hamburger menu** (top-left): **Dashboard** (the default), **History**, and **Scalper**. A persistent **header strip** sits above all of them:
+The dashboard (**SIGNAL//LAYER**) is a single-page app with two views, switched from the **hamburger menu** (top-left): **Dashboard** (the default) and **History**. A persistent **header bar** sits above both, with a **currency-strength ribbon** on its own row below it:
 
-- **Brand + nav** — `SIGNAL//LAYER` and the hamburger menu.
-- **Regime pills** — `CLAUDE` and `NEMOTRON` each show the model's one-word market regime; **click either pill** to open a modal with that model's full natural-language reasoning from the latest read (side-by-side Claude vs Nemotron).
-- **Views-age badge** — how long ago the AI last refreshed (a staleness guard; goes amber/red as the 15-min read ages).
-- **Currency-strength ribbon** — each currency/asset (USD, GBP, XAU, JPY, XAG, SOL…) aggregated **net up/down across all its pairs**, shown with a direction arrow.
-- **KPI strip** — live `EQUITY`, `RET` (return %), `LEV` (gross leverage), `ML` (margin level), `DD` (drawdown), `SHARPE`.
+- **Brand + nav** — `SIGNAL//LAYER` and the hamburger menu (Dashboard / History). Clicking the brand returns to the Dashboard.
+- **Market Read** button — opens a modal with all three models' full natural-language reasoning from the latest read, in stacked **Claude / Nemotron / DeepSeek** sections.
+- **Refresh icon** (↻) — a spinning re-query button: it POSTs `/api/refresh`, which tells the engine to re-query the AI consensus **now**, skipping the 15-min cadence. The icon spins until a fresher decision lands.
+- **AI-refresh countdown** — a `refreshing AI views in M:SS` clock counting down to the next scheduled 15-min refresh (it reads `refreshing AI views…` while a refresh is in flight, and goes amber/stale if the read ages well past its window).
+- **Status / KPI strip** — pinned to the **right** of the header: live `EQUITY`, `RET` (return %), `LEV` (gross leverage), `ML` (margin level), `DD` (drawdown), `SHARPE`. **Hover or click it to reveal the Risk popover** (below).
+- **Currency-strength ribbon** — its own row beneath the header, with a **Claude / Nemotron / DeepSeek / Combined** model selector on the left. Each currency/asset (USD, GBP, XAU, JPY, XAG, SOL…) is aggregated **net up/down across all its pairs** using the selected model's per-symbol views, shown with a direction arrow.
 
 ### Dashboard view
 
 **Left column (operator):**
 - **Equity Trend** — the equity curve with the **kill line drawn on it** (the −20% drawdown floor), framed tightly so real movement is visible.
-- **Positions / History split** — open positions (refreshing every **1 s**, signed lots + live P&L) beside a rolling order/decision feed (`more →` expands it).
-- **Controls** — the steering knobs (Phase 2/3 below): preset selector + Apply/Save, the `aggression` slider, **Pause**, **Flatten now**.
-- **Risk** — horizontal gauges (margin level, gross leverage, margin usage, drawdown) with **threshold ticks** (0 / competition tripwire / max) drawn on each bar, the bars re-colouring live as values move, plus the 30-minute tripwire clocks.
+- **Positions / History split** — open positions (refreshing every **1 s**, signed lots + live P&L, scalped symbols tagged) beside a rolling order/decision feed (`more →` jumps to the full History view).
+- **Controls** — the steering knobs (Phase 2/3 below): a preset selector + Apply/Save; the `aggression` slider with **Flatten now** on the same row; the two AI **influence toggles** (`Nemotron input`, `DeepSeek input`); and the **Scalper** section.
+
+The **Risk** panel is *not* a left-column card — it's a **popover** anchored off the status/KPI strip: **hover** the KPI strip to reveal it, **click** to pin it open, **✕** (or a click outside) to close. Its content is horizontal gauges (margin level, gross leverage, margin usage, drawdown) with **threshold ticks** (0 / competition tripwire / max) drawn on each bar, the bars re-colouring live as values move, plus the tripwire clocks.
 
 **Main column (signal):**
-- **Instrument & projection** — a symbol list grouped by asset class (FX / Metals / Crypto) with a **1m / 15m / 1h** timeframe toggle; the selected symbol's recent price (scroll/zoom, crosshair hover) with a forward **projection cone per model** (slope = confidence, width = volatility). This is an honest rendering of conviction + uncertainty — **not** a price forecast (the models output direction + confidence, not target levels). Below the chart is the per-position override row (Phase 3 below) and a per-ticker **Goal** note.
-- **Consensus** — tabbed **Latest** / **Over time**:
-  - **Latest** is the **dumbbell** — per instrument, Claude (violet) and Nemotron (teal) confidence + direction on a short↔long axis, with a connecting line that encodes agreement (chartreuse = agree/boosted, red = disagree). Sub-tabs split it by **FX / Crypto / Metals**.
-  - **Over time** is the **heatmap** — instruments × 15-min timesteps, coloured red→green by signed confidence (long = green, short = red), with a long/short legend.
+- **Instrument & projection** — a symbol list grouped by asset class (FX / Metals / Crypto), the selected symbol's recent price, and a forward **projection** drawn as **one line per model** (Claude, Nemotron, DeepSeek — slope = confidence) **plus a pink Consensus line** = the running average of Claude and whichever 2nd-opinion voters are toggled on. This is an honest rendering of conviction — **not** a price forecast (the models output direction + confidence, not target levels). The chart carries a full toolset (pinned-instrument chips, line/candle, 1m/15m/1h, zoom/pan, draggable SL/TP, …) detailed in **[The instrument panel](#the-instrument-panel)** below.
+- **Consensus** — tabbed **Latest** / **Over time**, with a per-model **hit-rate legend** in the card head (Claude / Nemotron / DeepSeek directional accuracy once scored, dimmed when a model didn't vote that read):
+  - **Latest** is the **dumbbell** — per instrument, up to **three** markers: Claude (orange `#FF8A1E`), Nemotron (green `#76B900`), DeepSeek (blue `#4D6BFE`), each at `sign(direction) × confidence` on a short↔long axis. Markers that land on the same point **split into colored halves** (three coinciding fall back to concentric rings). A dotted connector spans each row: **green = the voting models agree**, **red = they disagree**, **muted when fewer than two voted**. It is **not** zoomable/pannable. Sub-tabs split it by **FX / Crypto / Metals**.
+  - **Over time** is the **heatmap** — instruments × 15-min timesteps, coloured red→green by signed confidence (long = green, short = red), with **Claude / Nemotron / DeepSeek / Combined** layer buttons and a long/short legend.
 
     ![Consensus Over-time heatmap — instruments down the side, time across the bottom, cells red (short) to green (long)](panel-consensus-overtime.jpeg)
 
 ### History view
 Per-symbol stance-over-time chart plus that symbol's order history — the audit trail for "what did the AI think about EURUSD all day, and what did we trade."
 
-### Scalper view
-Status page for the **dormant** mean-reversion scalper (a separate process, own magic `990624`): its backtest verdict (no durable edge → stays disabled) and config. It only ever shows a live view if the scalper is armed and emitting state; by default it ships off. See [STRATEGY.md](STRATEGY.md).
+### The Scalper (engine-hosted)
+The scalper is **not** a separate process or a separate view — it's an engine-hosted slot driven from the **SCALPER** section of the Controls card. It's a crypto fast-momentum strategy that runs *alongside* the engine on **at most two** instruments ceded to it. The flow is:
+
+1. **Assign a symbol** — pick it from the dropdown and `Assign`; the engine cedes that instrument to the scalper.
+2. **Walk-forward backtest gate** — assigning a symbol kicks off a walk-forward backtest (`/api/scalper/gate`); the verdict (`clears ✓` / `no edge`, with locked params) is persisted into `controls.json` and shown on the symbol's chip.
+3. **Per-symbol arm** — each assigned symbol has its own `Arm` button. A gate-cleared symbol arms to **live**; one that didn't clear can only be **force-armed** (unvalidated) after a confirm. Un-armed symbols stay dry-run. Arming one symbol never disarms another. Live per-symbol state (watching / in-position / cooldown) shows inline.
+
+See [STRATEGY.md](STRATEGY.md).
+
+## The instrument panel
+
+The **Instrument & projection** card is the panel's workbench. Its toolset:
+
+- **Pinned-instrument chip bar** — pinned symbols show as chips across the top; click a chip to select it, **✕** to unpin.
+- **Chart-type toggle** — **line** or **candle**.
+- **Timeframe toggle** — **1m / 15m / 1h**.
+- **Zoom / pan toggle** — left-drag either **pans** (the default) or box-**zooms**; scroll always zooms.
+- **Reset-view** button — snaps the chart back to its default frame.
+- **Current-price line** — a live dotted price line with a **price tag on the right axis**.
+- **Open position** — the entry is drawn as a fixed **entry line** (signed lots + live P&L label).
+- **Draggable Stop-Loss and Take-Profit lines** — drag either line to stage a new level; a **✓ / ✕ confirm bar tracks the line** (✓ saves it as an override, ✕ discards). A far stop/target never squashes the price view.
+- **Stop Loss / Take Profit buttons** — create the line (at a sensible generated level) if none exists, otherwise locate the existing one and bring it into view to drag.
+- **AI-view override row** — a direction (`AI view` / Force LONG / SHORT / FLAT) + confidence that **auto-applies on change** (no Apply button), plus a **Pin** button.
 
 ## The three control phases
 
 The panel is built in three layers. Phase 1 is read-only; Phases 2–3 add the (default-off) control channel.
 
 ### Phase 1 — Watch (read-only, zero engine risk)
-Everything described under **Dashboard / History / Scalper** above reads only `logs/`, `state/`, and live MT5 (account / positions / bars). Charts that need MT5 degrade to an "unavailable" note when no terminal is connected; the rest renders from the logs alone.
+Everything described under **Dashboard / History** and the **Scalper** above reads only `logs/`, `state/`, and live MT5 (account / positions / bars). Charts that need MT5 degrade to an "unavailable" note when no terminal is connected; the rest renders from the logs alone.
 
 ### Phase 2 — Steer (global knobs + presets)
-- **Knobs:** an `aggression` slider, global **Pause** (no new risk), **Flatten now** (panic close-all), and per-symbol **allow/block** (a de-risk clamp — it never force-closes).
+- **Knobs:** an `aggression` slider, **Flatten now** (panic close-all), and the two AI **influence toggles** (below). The refresh icon (re-query AI now) and the Scalper section also live in this layer.
+- **Influence toggles** — *influence-only*; both models are always queried, recorded, and scored regardless:
+  - **`Nemotron input`** (default **ON**) — gates whether the **algorithm** acts on Nemotron in sizing. Off = Claude-only sizing; Nemotron is still shown/recorded.
+  - **`DeepSeek input`** (default **OFF**) — gates DeepSeek / ensemble influence in sizing. Off = DeepSeek is shown/recorded only.
 - **Presets:** named bundles of the knobs — ships with `Default` (the tuned 0.30 aggression), `Survival` (0.0), `Finals` (1.0); create / save / switch / reset.
 
 ### Phase 3 — Weigh in (per-position)
 - **Pin/lock** — the engine won't rebalance, close, or trail that position until you unpin.
-- **Override as your view** — set a direction + confidence for a symbol; it becomes the deciding "third opinion" alongside Claude and Nemotron and *can flip the AI's direction*.
-- **Take-profit** — an optional per-position broker-side TP (the default strategy has no TP and trails the winner instead; this is a manual override on chosen positions).
-- **Per-ticker note** — a persistent objective you write per instrument, shown alongside the AI's live rationale.
+- **Override as your view** — set a direction + confidence for a symbol; it becomes the deciding view alongside the AI models and *can flip the AI's direction*. Applies **immediately** (the POST bumps `apply_seq`), not at the next 15-min AI refresh.
+- **Take-profit** — an optional per-position broker-side TP (the default strategy has no TP and trails the winner instead; this is a manual override on chosen positions), set via the draggable TP line.
+- **Stop-loss** — an optional manual per-position SL, set via the draggable SL line. The engine honours it but **clamps it so it is never looser than the failsafe** — it can only tighten risk, never widen it.
 
 ---
 
@@ -113,14 +141,17 @@ The panel and engine communicate through small JSON files in `state/`, with a st
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
-| `state/controls.json` | panel (sole writer) | engine | paused, aggression, block/allow, active preset, one-shot `flatten_seq`/`apply_seq` |
+| `state/controls.json` | panel (sole writer) | engine | `aggression`, `active_preset`, `second_opinion`, `ensemble_input`, the scalper fields (`scalper_symbols`, `scalper_armed`, `scalper_armed_force`, `scalper_gate`), and one-shot `flatten_seq` / `apply_seq` / `refresh_seq` |
 | `state/presets.json` | panel (sole writer) | panel | named knob bundles |
-| `state/overrides.json` | panel (sole writer) | engine | per-symbol `{pinned, view, take_profit, note}` |
-| `state/control_ack.json` | **engine** (sole writer) | panel | processed one-shot sequence numbers |
+| `state/overrides.json` | panel (sole writer) | engine | per-symbol `{pinned, view, take_profit, stop_loss, note}` |
+| `state/control_ack.json` | **engine** (sole writer) | panel | processed one-shot sequence numbers (`flatten_seq_done`, `apply_seq_done`, `refresh_seq_done`) |
+
+(`controls.json` still carries `block` / `allow` de-risk fields for backward-compatible plumbing, but the panel no longer exposes any per-symbol block/allow control.)
 
 Cadence:
 - **`flatten_seq`** (panic flatten) is honoured **intra-tick**, right after the kill-switch.
-- **Pause / block / aggression / human view** apply on the *apply-forced reconcile*: the panel bumps `apply_seq` on every change, the engine forces a reconcile on the next tick, so a change takes effect within ~2 ticks (~10s). (Forcing it literally every tick would defeat the anti-churn gate and bleed spread.)
+- **aggression / influence toggles / human view / TP / SL** apply on the *apply-forced reconcile*: the panel bumps `apply_seq` on every change, the engine forces a reconcile on the next tick, so a change takes effect within ~2 ticks (~10s). (Forcing it literally every tick would defeat the anti-churn gate and bleed spread.) Per-symbol overrides also bump `apply_seq`, so they apply immediately.
+- **`refresh_seq`** (re-query AI now) makes the engine re-query the AI consensus on its next tick, **bypassing the 15-min cadence**. Triggered by the header refresh icon (`POST /api/refresh`); the engine acks via `refresh_seq_done`.
 
 ---
 
@@ -131,9 +162,9 @@ The control layer was designed and reviewed so it can never compromise the engin
 - **Default-off.** All engine integration is behind `use_control_panel` (default `False`) → flag-off behaviour is byte-for-byte identical to a build without the panel (verified branch-by-branch + by regression tests).
 - **The risk floor is never gated.** `risk.assess` / the kill-switch / `flatten_all` / the soft de-risk path run **before** any control or override is even loaded. A pinned or human-overridden position **is still flattened by the kill-switch**.
 - **Read-only Phase 1.** The dashboard only reads logs/state/MT5; it has no order/modify path. Live MT5 calls are read-only (account / positions / bars) and degrade cleanly when absent.
-- **Dry-run sends nothing.** Operator flatten and take-profit print intended actions in dry-run and never hit the broker.
-- **Single-writer + one-shot ack.** The engine never writes the control files; one-shot commands use monotonic sequence numbers acknowledged in an engine-owned file, so there are no two-writer races.
-- **Block = de-risk clamp, not close.** Blocking a symbol forbids new/increased risk; it never actively closes a position.
+- **Dry-run sends nothing.** Operator flatten, take-profit, and stop-loss print intended actions in dry-run and never hit the broker.
+- **A manual stop-loss can only tighten.** The engine clamps an operator SL so it is **never looser than the failsafe** — it can reduce risk, never widen it.
+- **Single-writer + one-shot ack.** The engine never writes the control files; one-shot commands (`flatten_seq` / `apply_seq` / `refresh_seq`) use monotonic sequence numbers acknowledged in an engine-owned file, so there are no two-writer races.
 - **A malformed control/override file can never crash the trading loop** — the accessors skip bad entries defensively.
 
 ---
@@ -148,5 +179,5 @@ The control layer was designed and reviewed so it can never compromise the engin
                                                                               panel frontend (Plotly SPA)
 ```
 
-- **Backend:** `panel/backend/` — `data.py` (pure log/equity transforms), `projection.py` (cone geometry), `app.py` (FastAPI routes + the control/override read-write API).
+- **Backend:** `panel/backend/` — `data.py` (pure log/equity transforms), `projection.py` (projection geometry for the per-model + consensus lines), `app.py` (FastAPI routes + the control/override read-write API).
 - **Frontend:** `panel/frontend/` — `index.html` / `styles.css` / `app.js`, the SIGNAL//LAYER theme and Plotly charts.

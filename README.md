@@ -157,7 +157,7 @@ Everything is driven from the **Controls** panel: pick a symbol → Assign (auto
 A separate, opt-in web dashboard (**SIGNAL//LAYER**) that reads the logs + live MT5 and lets you watch — and optionally steer — the engine. It is the *sole writer* of control files; the engine polls and acks them, and the risk floor runs *before* and is never gated by any control.
 
 - **Watch** — live KPI header with clickable Claude/Nemotron/DeepSeek reasoning (brand-coded: Claude orange, Nemotron NVIDIA green, DeepSeek blue), a **model selector** (Claude / Nemotron / DeepSeek / Combined, default Claude) and a **Market Read** modal showing all three models' one-line regime reads, equity vs the risk floor, live risk gauges + 30-min tripwire clocks, the consensus **dumbbell** (up to 3 model dots per row, with a top-row colored-dot legend that doubles as the per-model directional-accuracy readout — dimmed for a model that didn't vote the latest read; dotted GREEN connector on agreement, dotted RED on disagreement) and over-time **heatmap** (Claude / Nemotron / DeepSeek / Combined layers), per-symbol **projection direction lines** (Claude/Nemotron/DeepSeek + dashed Consensus — no filled cone band), our open position drawn as a fixed dashed entry line plus a **draggable take-profit flag** (drag to set a per-symbol TP override, Trading212-style), a candle/line toggle and a 1m/15m/1h timeframe toggle pinned top-right (chart live-refreshes ~1s), positions + P/L, and a History view (entry/exit markers colored by direction).
-- **Steer** — aggression, pause, panic-flatten, **manual consensus refresh** (re-query the AI now, bypassing the 15-min cadence), per-symbol allow/block, named presets, the per-symbol scalper assign → gate → arm flow, and per-position pin / human-override / take-profit.
+- **Steer** — aggression, pause, panic-flatten, **manual consensus refresh** (re-query the AI now, bypassing the 15-min cadence), per-symbol allow/block, named presets, the per-symbol scalper assign → gate → arm flow, and per-position pin / human-override / take-profit / stop-loss (a manual SL is honored by the engine, clamped so it can never be looser than the failsafe floor).
 
 Steering is **off by default**; the launcher's *With panel* choice enables it (`QUANTHACK_PANEL=1`). Standalone, the dashboard is read-only. Full details: **[docs/CONTROL_PANEL.md](docs/CONTROL_PANEL.md)**.
 
@@ -212,7 +212,8 @@ bot/
   overrides.py     # per-position overrides (pin / human view / take-profit) — gated
   state.py         # equity history, drawdown, 15-min Sharpe; crash-resilient persistence
   config.py        # all tunables: symbols, risk limits, sizer dial, cadence, scalper params
-  gateway.py / ai_signal_gw.py / ai_backtest.py / ensemble.py   # backtest + ensemble (gateway)
+  gateway_ensemble.py # live blind ensemble voter(s) (DeepSeek-V4-Pro via the gateway)
+  gateway.py / ai_signal_gw.py / ai_backtest.py   # cheap AI backtesting (gateway)
 panel/             # opt-in operator dashboard (FastAPI backend + Plotly frontend)
 docs/              # DECISION_FLOW · CONTROL_PANEL · STRATEGY · AI_BACKTEST · BACKTEST_RESULTS
 run_live.bat / run_live.ps1   # interactive launcher (Live/Dry · With/No panel)
@@ -234,8 +235,8 @@ cp .env.example .env     # edit: ANTHROPIC_API_KEY (required), NVIDIA_API_KEY + 
 
 **Launch** — the simplest path is the interactive launcher: double-click **`run_live.bat`**. It asks:
 
-1. **Mode** — `[L]ive` or `[D]ry-run` (dry-run computes & logs intended trades but sends NO orders).
-2. **Panel** — `[W]ith panel` (opens **SIGNAL//LAYER** at `http://127.0.0.1:8800` and enables steering) or `[N]o panel`.
+1. **Mode** — `[1] Live` or `[2] Dry-run` (dry-run computes & logs intended trades but sends NO orders).
+2. **Panel** — `[1] With panel` (opens **SIGNAL//LAYER** at `http://127.0.0.1:8800` and enables steering) or `[2] No panel`. (e.g. live + panel = `1 1`.)
 
 Or directly:
 

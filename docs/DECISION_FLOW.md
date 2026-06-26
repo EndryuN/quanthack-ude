@@ -7,7 +7,7 @@ to the high-level [README](../README.md).
 Two cadences run concurrently:
 
 - **The tick loop — every `loop_seconds = 5s`** (`bot/engine.py::Engine.tick`). Risk, reconciliation, stops, and the scalper run here.
-- **The AI refresh — every `ai_refresh_seconds = 900s` (15 min)**, checked on the tick (`_refresh_ai_views`). This is when new *opinions* are formed; the tick loop *acts* on the latest opinion.
+- **The AI refresh — every `ai_refresh_seconds = 900s` (15 min)**, checked on the tick. This is when new *opinions* are formed; the tick loop *acts* on the latest opinion. The refresh is **non-blocking**: the slow LLM calls run off-thread in a daemon worker (`_refresh_prep` on the main thread → `_refresh_worker_into`), and the result is installed on a *subsequent* tick (`_apply_refresh_result`). `_refresh_ai_views` is a synchronous wrapper kept only for direct/test invocation. Risk and stops run every 5s regardless of whether a refresh is in flight.
 
 The separation matters: the LLM is queried infrequently (cost + the market doesn't change its multi-timeframe story every 5s), while risk and execution stay continuous.
 
@@ -37,7 +37,7 @@ Before strategy is even consulted, `bot/risk.py::RiskEngine.assess()` builds a `
 `state.update(equity)` appends to the equity curve and recomputes drawdown and the **15-minute Sharpe** (mirroring the competition's exact non-annualized definition). Persisted atomically so a crash/restart keeps history.
 
 ### 4. AI VIEWS — formed every 15 min (or on demand)
-`_signal_changed()` is true when `_views_ts != _last_acted_ts`. The refresh itself (`_refresh_ai_views`) runs on cadence, or immediately when the operator presses **Refresh views** (which bumps `refresh_seq`; the engine sets `_force_refresh`, zeroes the failure backoff, and re-queries that tick). On API failure it backs off 30s → doubling → 300s cap.
+`_signal_changed()` is true when `self._views is not None and self._views_ts != self._last_acted_ts` (views must already exist — during the first async refresh after a restart `_views` is `None`, so the empty target set can't flatten the open book before the views land). The refresh itself runs off-thread in a daemon worker (its result installed on a later tick), on cadence, or immediately when the operator presses **Refresh views** (which bumps `refresh_seq`; the engine sets `_force_refresh`, zeroes the failure backoff, and re-queries that tick). On API failure it backs off 30s → doubling → 300s cap.
 
 The refresh is a multi-stage merge:
 
@@ -47,7 +47,7 @@ The refresh is a multi-stage merge:
 
 **4c. Nemotron (blind second opinion)** — `bot/second_opinion.py::get_second_opinion()` sends the **same** context (never Claude's answer) to `nvidia/nemotron-3-super-120b-a12b` over the OpenAI-compatible NVIDIA API, asking for the identical JSON schema. Reasoning is disabled (`enable_thinking: False`) for latency. Any failure raises → that voter is simply absent.
 
-**4c′. DeepSeek (blind ensemble voter)** — a second, independent blind opinion sends the **same** context (never Claude's answer) to `deepseek-ai/DeepSeek-V4-Pro` **live** via the Pydantic AI Gateway → Doubleword, routed through the gateway's `/responses` endpoint (the `/chat/completions` path 400s on an injected `safety_identifier`), asking for the identical schema. Any failure raises → that voter is simply absent.
+**4c′. DeepSeek (blind ensemble voter)** — a second, independent blind opinion sends the **same** context (never Claude's answer) to `deepseek-ai/DeepSeek-V4-Pro` **live** via the Pydantic AI Gateway → Doubleword, routed through the gateway's `/responses` endpoint (the `/chat/completions` path 400s on an injected `safety_identifier`), asking for the identical schema. It reasons before answering, so it gets `max_tokens=12000` (gateway_ensemble.py:43) and a generous `ensemble_timeout=300` (config.py:190). Any failure raises → that voter is simply absent.
 
 **4d. Consensus merge** — `apply_consensus()`:
 - Claude is **always authoritative on direction** — neither second opinion can set, flip, or veto it.

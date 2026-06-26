@@ -6,7 +6,7 @@
 
 ## 1. Overview / Thesis
 
-The bot is designed for a simulated multi-day FX/metals/crypto trading competition. Scoring is approximately **70% return-rank among surviving accounts**, with smaller weights on drawdown and Sharpe ratio. Forced liquidation is instant elimination (`ai_signal.py:105`).
+The bot is designed for a simulated multi-day FX/metals/crypto trading competition. Scoring is approximately **70% return-rank among surviving accounts**, with smaller weights on drawdown and Sharpe ratio. Forced liquidation is instant elimination (`ai_signal.py:116`).
 
 The core philosophy, stated directly in `sizer.py:17`:
 
@@ -58,7 +58,7 @@ All instruments are concatenated line-by-line with no separator. The entire bloc
 
 **What is deliberately excluded:** bid/ask spread, open interest, news, fundamentals, individual bar OHLC data, volume, tick data. The snapshot is intentionally terse to fit the token budget.
 
-### 2b. The System Prompt (`ai_signal.py:101-119`)
+### 2b. The System Prompt (`ai_signal.py:113-131`)
 
 The full `SYSTEM` constant is reproduced here because its calibration instructions directly shape how the model assigns confidence:
 
@@ -71,20 +71,20 @@ Key behavioural instructions in the system prompt:
 3. **Calibrated confidence** — Most liquid-FX pairs deserve *low* confidence because markets are efficient; reserve higher confidence for multi-horizon trend alignment or coherent cross-asset macro stories (e.g. broad USD strength/weakness, risk-on/off).
 4. **Prefer flat** — Output `flat` when there is no genuine view, rather than guessing.
 5. **Cross-asset consistency** — USD pairs should agree on a single USD direction; metals and crypto should behave as risk barometers.
-6. **Coverage** — Return a view for every instrument provided (any omitted symbol is silently assigned flat by the engine, `ai_signal.py:168-170`).
+6. **Coverage** — Return a view for every instrument provided (any omitted symbol is silently assigned flat by the engine, `ai_signal.py:181-182`).
 
-### 2c. The Claude Call: Model and Settings (`ai_signal.py:122-171`)
+### 2c. The Claude Call: Model and Settings (`ai_signal.py:134-183`)
 
 | Setting | Value | Notes |
 |---|---|---|
 | Model | `claude-opus-4-8` | `ai_signal.py:24` |
 | `max_tokens` | 16,000 | Generous ceiling so adaptive thinking doesn't truncate structured output |
-| `thinking` | `{"type": "adaptive"}` | Extended thinking enabled; effort level defaults to `"high"` (`config.py:86`) |
+| `thinking` | `{"type": "adaptive"}` | Extended thinking enabled; effort level defaults to `"high"` (`config.py:161`) |
 | `output_format` | `MarketView` Pydantic model | Structured output — parse failure raises immediately |
-| Cadence | Every 900 seconds (15 min) | `config.py:85`; controlled by `ai_refresh_seconds` |
+| Cadence | Every 900 seconds (15 min) | `config.py:160`; controlled by `ai_refresh_seconds` |
 | Retry / backoff | 30s → doubles → 300s cap | On any failure, stale views are held until the next successful call |
 
-**The user message** sent to Claude (`ai_signal.py:132-134`):
+**The user message** sent to Claude (`ai_signal.py:144-146`):
 
 ```
 Instruments and recent action (competition universe = exactly these {N} symbols):
@@ -94,7 +94,7 @@ Instruments and recent action (competition universe = exactly these {N} symbols)
 Give a directional view + calibrated confidence for each.
 ```
 
-**What Claude outputs — the `MarketView` schema** (`ai_signal.py:36-48`):
+**What Claude outputs — the `MarketView` schema** (`ai_signal.py:36-46`):
 
 ```python
 class InstrumentView(BaseModel):
@@ -110,75 +110,102 @@ class MarketView(BaseModel):
 
 Claude does **not** output price targets, entry levels, stop distances, or holding periods. It outputs only: direction + calibrated confidence + one-sentence rationale + one regime line. The engine converts these directly to position sizes.
 
-### 2d. The Nemotron Second Opinion (`second_opinion.py`)
+### 2d. The Blind Second-Opinion Ensemble (`second_opinion.py`, `gateway_ensemble.py`)
 
-After Claude responds, the bot optionally queries **NVIDIA's Nemotron-3-Super-120B** model via the NVIDIA NIM OpenAI-compatible API. This is a "blind" second opinion: Nemotron sees the **same market context string** and the **same `SYSTEM` prompt**, but it never sees Claude's answer (`second_opinion.py:88-128`).
+After Claude responds, the bot queries one or more **blind co-equal voters** on the **same market context string** and the **same `SYSTEM` prompt** — none of them ever sees Claude's answer:
+
+- **NVIDIA Nemotron-3-Super-120B** via the NVIDIA NIM OpenAI-compatible API (`get_second_opinion`, `second_opinion.py:130-170`). Master switch `use_second_opinion` (`config.py:176`); auto-off if `NVIDIA_API_KEY` is unset.
+- **DeepSeek-V4-Pro** via the Pydantic AI Gateway → Doubleword (`gateway_ensemble.py`, model id at `config.py:188`). Master switch `use_ensemble` (`config.py:186`); no-op if the gateway key is unconfigured.
 
 Key differences from the Claude call:
 
-- Thinking is **explicitly disabled** (`"chat_template_kwargs": {"enable_thinking": False}`, `second_opinion.py:113`) — Nemotron must return the JSON directly to fit in the 30-second timeout and 4,000-token budget.
+- For Nemotron, thinking is **explicitly disabled** (`"chat_template_kwargs": {"enable_thinking": False}`, `second_opinion.py:156`) — it must return the JSON directly to fit in the 30-second timeout (`config.py:179`) and 4,000-token budget. DeepSeek-V4-Pro instead reasons before answering (~73s typical; `ensemble_timeout=300s`, `config.py:190`).
 - The response format is a plain JSON object requested via a prompt instruction, not a structured-output API feature.
-- Temperature is 0.2 (deterministic).
-- If Nemotron is unavailable or fails for any reason, the bot proceeds on Claude-only with no degradation in logic.
+- Temperature is 0.2 (deterministic) for both voters.
+- If any voter is unavailable or fails for any reason, the bot proceeds on the remaining voters (Claude-only in the worst case) with no degradation in logic.
 
-**Consensus rule — `apply_consensus()` (`second_opinion.py:19-57`):**
+**Consensus rule — `apply_consensus()` (`second_opinion.py:19-99`):**
 
-Claude always sets the direction. Nemotron can only raise confidence when it independently agrees — it can never veto or reverse Claude's direction.
+Claude always sets the direction. A voter can only **raise** confidence when it independently agrees with Claude's non-flat direction — it can never veto, reverse, or shrink. The boost uses the **mean of all agreeing voters' confidences** (`second_opinion.py:76`):
 
-| Nemotron outcome | Effect |
+```
+combined = claude_conf + (1 - claude_conf) × gain × mean(agreeing voters' confidences)
+```
+
+| Voter outcome | Effect |
 |---|---|
-| Agrees (same non-flat direction as Claude) | `final_conf = claude_conf + (1.0 - claude_conf) × 0.5 × nemotron_conf` |
-| Disagrees (opposite direction) | No change — Claude's confidence is unchanged |
-| Returns flat | No change |
-| Unavailable / failed | No change |
+| Agrees (same non-flat direction as Claude) | its confidence joins the mean; combined boosted as above |
+| Disagrees (opposite direction) | excluded from the mean — no boost from it |
+| Returns flat | excluded — no boost |
+| Unavailable / failed | excluded — no boost |
 
-The `0.5` multiplier is the `nemotron_consensus_gain` parameter (`config.py:97`). With `gain=0.5`, if Claude says LONG at 0.50 and Nemotron says LONG at 0.80, the final confidence is `0.50 + (0.50 × 0.5 × 0.80) = 0.70`. The boost is additive and capped at 1.0.
+The `gain` is `nemotron_consensus_gain = 0.5` (`config.py:178`); the gateway voters use `ensemble_gain = 0.5` (`config.py:189`). With a single agreeing voter this reduces to the original rule: if Claude says LONG at 0.50 and one voter says LONG at 0.80, combined `= 0.50 + (1 - 0.50) × 0.5 × 0.80 = 0.70`. Boosts are additive and clamped to [0, 1].
+
+**Influence is gated PER SOURCE.** Every voter is always recorded and scored, but whether it actually moves the value the sizer uses is controlled separately: Nemotron influence defaults **on** (`second_opinion`/`influence`), the gateway voters (DeepSeek) default **off** (`ensemble_input`/`extra_influence`, `config.py:184`). `apply_consensus` therefore computes two numbers (`second_opinion.py:78-79`): `combined` (all agreeing voters, for display/logs) and `used` (only influence-enabled agreeing voters, what the sizer acts on). So by default DeepSeek is queried, logged, and hit-rate-scored but does **not** change sizing. The `boosted` flag is influence-aware — it is true only when an **influence-enabled** voter agreed (`second_opinion.py:80-82`).
 
 ---
 
 ## 3. From Decision to Order: The Execution Workflow
 
-The engine runs a **5-second loop** (`config.py:74`). Each tick executes in strict order of authority (`engine.py:71-112`):
+The engine runs a **5-second loop** (`loop_seconds`, `config.py:148`). Each tick executes in strict order of authority (`tick()`, `engine.py:151-283`):
 
 ```
 Every 5 seconds (tick):
   │
-  ├─ 1. RISK ASSESS  ──────────────────────────────────────── engine.py:75-81
+  ├─ 1. RISK ASSESS  ──────────────────────────────────────── engine.py:154-160
   │        RiskEngine.assess() evaluates margin level, drawdown, leverage.
   │        If kill=True: flatten ALL positions, print, RETURN immediately.
   │        Nothing below this line runs while kill is active.
   │
-  ├─ 2. STATE / METRICS  ──────────────────────────────────── engine.py:83
+  ├─ 2. STATE / METRICS  ──────────────────────────────────── engine.py:206
   │        StateTracker.update(equity): update return%, max drawdown, Sharpe.
   │
-  ├─ 3. AI REFRESH (every 15 min, not every tick)  ─────────── engine.py:86-92
-  │        If views are stale (>900s old) and no backoff:
-  │          a. build_context()  → market snapshot string
-  │          b. get_ai_views()   → Claude call → MarketView
-  │          c. get_second_opinion() → Nemotron call (if enabled)
-  │          d. apply_consensus() → merge → sizer_views
-  │          Views timestamp updated. `refreshed` flag set.
+  ├─ 3. AI REFRESH — NON-BLOCKING (every 15 min, not every tick)  engine.py:208-237
+  │        The LLM calls are SLOW (DeepSeek reasons ~73s), so the tick NEVER
+  │        blocks on them. The refresh is split across ticks:
+  │          a. _refresh_prep() (engine.py:353-373) — MAIN thread, fast: the one
+  │             MT5 read (build_context → snapshot string) + control/override snap.
+  │          b. _refresh_worker_into() (engine.py:430-432) — spawned as a DAEMON
+  │             thread: get_ai_views() Claude call, get_second_opinion() Nemotron,
+  │             get_ensemble_views() DeepSeek, then apply_consensus(). Network +
+  │             pure logic only; touches no MT5 and no shared state.
+  │          c. _apply_refresh_result() (engine.py:434-474) — installed on a LATER
+  │             main-thread tick once the worker finishes: sets _views/_views_ts,
+  │             regime, model scoring. On failure: doubling backoff (30s→300s).
+  │        While the call is in flight, risk/reconcile/ensure-stops/trailing keep
+  │        running every 5s on the latest installed views.
   │
-  ├─ 4. RECONCILE (ONLY if views changed since last reconcile)  engine.py:96-101
-  │        Anti-churn gate: compares views_ts vs last_acted_ts.
-  │        Fires at most once per AI refresh (not every 5s tick).
-  │          a. build_targets() → sizer converts views → target signed lots
-  │          b. _derisk_only() if allow_new_risk=False
-  │          c. _reconcile() → diff current vs target per symbol
+  ├─ 4. RECONCILE (ONLY if the signal set changed)  ─────────── engine.py:241-256
+  │        Anti-churn gate _signal_changed(): views must EXIST and views_ts must
+  │        differ from last_acted_ts. Fires at most once per applied refresh.
+  │          a. _build_targets() → sizer converts views → target signed lots
+  │          b. graduated-drawdown risk_scale applied to every target (if <1.0)
+  │          c. _derisk_only() (engine.py:482-497) if paused or allow_new_risk=False
+  │          d. _reconcile() (engine.py:622-651) → diff current vs target per symbol
   │             • target=0 and held: _do_close() → market order to close
-  │             • delta ≥ volume_min: _do_order() → market order BUY/SELL
-  │               Attaches broker-side SL (catastrophe backstop):
-  │               FX ±5%, METAL ±8%, CRYPTO ±15%  (config.py:19)
+  │             • delta ≥ volume_min: _do_order() → market order BUY/SELL,
+  │               opened CLEAN (no inline SL — see below), engine.py:823-840
   │
-  └─ 5. TRAILING STOPS (every tick)  ───────────────────────── engine.py:105-107
-           For each open position: if price has moved past entry by trail_pct,
-           ratchet the broker SL toward profit. SL only ever tightens.
-           FX: trail 1.0%, METAL: 2.0%, CRYPTO: 4.0%  (config.py:25)
+  ├─ 4.5 ENSURE STOPS (every tick)  ────────────────────────── engine.py:259-261
+  │        _ensure_stops() (engine.py:676-709): for every open position with no
+  │        broker SL, attach the SL_PCT failsafe via the SLTP action. This is what
+  │        actually puts the catastrophe stop on each fresh fill — a naked position
+  │        means possible liquidation = elimination.
+  │        FX ±5%, METAL ±8%, CRYPTO ±15%  (SL_PCT, config.py:20)
+  │
+  └─ 5. TRAILING STOPS (every tick)  ───────────────────────── engine.py:264-265
+           _update_trailing_stops() (engine.py:711-740): once a position is up by
+           the ARM distance, ratchet the broker SL to trail behind price. SL only
+           ever tightens, never below break-even.
+           ARM  (TRAIL_ACTIVATE_PCT, config.py:24): FX 1.0%, METAL 2.0%, CRYPTO 4.0%
+           TRAIL behind (TRAIL_PCT, config.py:28):   FX 0.5%, METAL 1.0%, CRYPTO 2.0%
 ```
 
-**Key anti-churn gate detail** (`engine.py:114-117`, `engine.py:101`): `_signal_changed()` returns `True` only when `views_ts != last_acted_ts`. After reconcile runs, `last_acted_ts` is set to `views_ts`. So reconcile fires **exactly once** after each successful AI refresh, regardless of how many 5-second ticks occur before the next refresh.
+**Why open clean, then attach the SL separately:** this broker REJECTS a market DEAL that carries an inline SL (ret 10006, observed live on metals; `engine.py:828-840`). So `_do_order()` opens with no stop and returns `0.0`, and `_ensure_stops()` (step 4.5, every tick) attaches the SL_PCT failsafe via the reliable SLTP action. Ensure only sets a stop when `sl == 0`, so it never loosens an already-trailed stop.
 
-**Orders are always market orders** with immediate fill. The broker-side SL (`use_broker_sl=True`, `config.py:87`) is a catastrophe backstop for when the process is offline — it is set loose enough not to trip on normal volatility. The live kill-switch is the primary liquidation guard.
+**Key anti-churn gate detail** (`_signal_changed()`, `engine.py:285-293`): returns `True` only when `self._views is not None and self._views_ts != self._last_acted_ts`. The `_views is not None` guard matters with the non-blocking refresh — `_views` is `None` during the first async refresh after a restart, and without the guard an empty target set would flatten the whole open book before the views land. After reconcile, `last_acted_ts` is set to `views_ts`, so reconcile fires **exactly once** per applied refresh regardless of how many 5-second ticks pass.
+
+**Orders are always market orders** with immediate fill. The broker-side SL (`use_broker_sl=True`, `config.py:162`) is a catastrophe backstop set loose enough not to trip on normal volatility; the live kill-switch is the primary liquidation guard. `use_broker_sl` is load-bearing — the engine refuses to start live with it off (`engine.py:127-129`).
 
 ---
 
@@ -188,7 +215,7 @@ Every 5 seconds (tick):
 
 ### The Aggression Dial
 
-A single parameter `aggression` in `[0, 1]` (default **0.30**, `config.py:84`) interpolates the entire risk posture:
+A single parameter `aggression` in `[0, 1]` (default **0.30**, `config.py:159`) interpolates the entire risk posture:
 
 | Parameter | `aggression=0` (Survival) | `aggression=1` (Finals) | Default (0.30) |
 |---|---|---|---|
@@ -218,26 +245,40 @@ The risk engine sits **below the strategy** and cannot be overridden by AI decis
 
 | Condition | Threshold | Source |
 |---|---|---|
-| Margin level too low | `margin_level < 150%` | `config.py:52`, `risk.py:84-86` |
-| Round drawdown breaker | `(initial_equity - equity) / initial_equity >= 20%` | `config.py:67`, `risk.py:89-92` |
+| Margin level too low | `margin_level < 150%` | `config.py:66`, `risk.py:92-94` |
+| Drawdown hard backstop | peak-to-trough DD `≥ 40%` (2× `daily_max_drawdown`) | `config.py:81`, `risk.py:105-107` |
 
 When either kill condition fires: all positions are closed immediately via `flatten_all()`. The tick returns without executing reconcile, sizer, or trailing-stop logic.
 
 The competition stop-out is at `margin_level=30%`. The bot's kill-switch fires at **150%** — far above the competition's liquidation level, giving substantial buffer.
 
+### Graduated Drawdown De-Risk (not a binary kill)
+
+Drawdown is measured against the **trailing equity peak** (the scored metric), not the round's starting equity, and it scales the whole book down as DD deepens rather than flatten-and-freeze. It **re-arms automatically** as equity recovers and DD shrinks (`risk.py:96-115`; base limit `daily_max_drawdown = 0.20`, `config.py:81`):
+
+| Peak-to-trough drawdown | Effect |
+|---|---|
+| `≥ 20%` (1× limit) | `risk_scale = 0.5` — every target halved; no new risk |
+| `≥ 30%` (1.5× limit) | `risk_scale = 0.25` — every target quartered; no new risk |
+| `≥ 40%` (2× limit) | KILL — flatten everything (hard backstop) |
+
+`risk_scale < 1.0` is applied to every target in reconcile (`engine.py:244-246`) and also sets `allow_new_risk = False` (`risk.py:114-115`).
+
 ### Soft Guards (block new risk, don't close)
 
-| Condition | Threshold | Effect |
-|---|---|---|
-| Margin level warning | `margin_level < 250%` | `allow_new_risk = False` |
-| Gross leverage cap | `gross_leverage > 12×` | `allow_new_risk = False` |
-| Margin usage cap | `margin_usage > 60%` | `allow_new_risk = False` |
+| Condition | Threshold | Effect | Source |
+|---|---|---|---|
+| Margin level warning | `margin_level < 250%` | `allow_new_risk = False` | `config.py:67`, `risk.py:118-120` |
+| Gross leverage cap | `gross_leverage > 12×` | `allow_new_risk = False` | `config.py:70`, `risk.py:121-123` |
+| Margin usage cap | `margin_usage > 60%` | `allow_new_risk = False` | `config.py:74`, `risk.py:124-126` |
 
-When `allow_new_risk=False`, `_derisk_only()` (`engine.py:194-209`) is applied: position increases and flips are suppressed; only reductions toward flat are allowed.
+(Concentration and net-directional are computed for display + the watch tripwires below but deliberately do **not** block new risk — `risk.py:127-134`.)
+
+When `allow_new_risk=False`, `_derisk_only()` (`engine.py:482-497`) is applied: position increases and flips are suppressed; only reductions toward flat are allowed.
 
 ### Competition Tripwire Trackers (30-minute timers)
 
-The risk engine tracks how long specific conditions have been continuously true. These are **warnings only** — they do not trigger the kill-switch but print to the console so a human operator can intervene (`risk.py:107-115`):
+The risk engine tracks how long specific conditions have been continuously true. These are **warnings only** — they do not trigger the kill-switch but print to the console so a human operator can intervene (`risk.py:138-146`):
 
 | Condition tracked | Warn threshold | Competition penalty threshold |
 |---|---|---|
@@ -257,7 +298,7 @@ The bot trades **14 instruments** (15 defined minus 1 excluded):
 | Metals (2) | XAGUSD (silver), XAUUSD (gold) |
 | Crypto (4) | BTCUSD, ETHUSD, SOLUSD, XRPUSD |
 
-**BARUSD is explicitly excluded from trading** (`config.py:78`), with the reason documented in the config:
+**BARUSD is explicitly excluded from trading** (`config.py:151-152`), with the reason documented in the config:
 
 > "BARUSD excluded: max notional ~$786 (tiny contract + 100-lot cap) makes it untradeable in size — pure spread cost."
 
@@ -267,19 +308,19 @@ BARUSD remains in `ALL_SYMBOLS` for data-collection purposes but is filtered out
 
 ## 7. Strategies in the Code vs. in the Live Algorithm
 
-Several classical strategies are **implemented and backtestable**, but only the AI path and the momentum scalper actually trade live. This is deliberate: the rule-based edges (momentum, mean-reversion) were built, then ruled out on the data, so the LLM became the live signal — but the code is kept for backtesting/validation.
+Several classical strategies are **implemented and backtestable**, but in the default config only the AI path trades live. The integrated momentum scalper exists but is **OFF by default** (`ScalperConfig.enabled=False`, `config.py:91`) and only goes live after the operator explicitly assigns symbols, clears the arming gate, and arms it per symbol (`engine.py:569-611`). This is deliberate: the rule-based edges (momentum, mean-reversion) were built, then ruled out on the data, so the LLM became the live signal — but the code is kept for backtesting/validation.
 
 | Strategy | Where it lives | Live? |
 |---|---|---|
-| **AI (Claude + ensemble) → sizer** | `ai_signal.py`, `sizer.py` | **Yes — the main engine** (`signal_source="ai"`, `config.py:158`; engine takes the AI branch at `engine.py:207, 263`) |
-| **Momentum (rules)** | `strategy.py` `HybridStrategy`, `mode="momentum"` (`strategy.py:73-78`) | **No** — only the `"hybrid"` branch (`engine.py:268-270`) uses it; never reached with the default config |
+| **AI (Claude + ensemble) → sizer** | `ai_signal.py`, `sizer.py` | **Yes — the main engine** (`signal_source="ai"`, `config.py:158`; engine takes the AI branch at `engine.py:213`, sizing via `_build_targets`, `engine.py:295-321`) |
+| **Momentum (rules)** | `strategy.py` `HybridStrategy`, `mode="momentum"` (`strategy.py:73-78`) | **No** — only the `"hybrid"` branch (`engine.py:296-299`) uses it; never reached with the default config |
 | **Mean reversion (rules)** | `strategy.py` `mode="meanrev"` — flips the trend signal: `direction = -direction` ("fade the move", `strategy.py:79-80`) | **No** — hybrid/backtest only |
-| **Crypto momentum / breakout** | `crypto_signal.py` | **Yes — the optional scalper only** (alts confirmed by BTC lead-lag) |
+| **Crypto momentum / breakout** | `crypto_signal.py`, integrated scalper slot | **Off by default** — operator must assign + gate + arm before any live order (alts confirmed by BTC lead-lag) |
 | **Mean-reversion "fade" scalper** | `scalp_signal.py`, `scalp_backtest.py` | **No** — dormant/reference only |
 
 **Key facts to remember:**
 
-- The default `signal_source = "ai"` (`config.py:158`) means the engine **never** calls `HybridStrategy.target_positions()` in normal operation — `HybridStrategy` is instantiated (`engine.py:101`) but only drives targets in the `"hybrid"` branch and in the backtester (`backtest.py:111`).
+- The default `signal_source = "ai"` (`config.py:158`) means the engine **never** calls `HybridStrategy.target_positions()` in normal operation — `HybridStrategy` is instantiated (`engine.py:102`) but only drives targets in the `"hybrid"` branch and in the backtester (`backtest.py:111`).
 - So **mean reversion is NOT part of the live algorithm.** It exists as a flag (`StrategyConfig.mode="meanrev"`) for research only.
 - The live scalper is explicitly momentum, *not* mean reversion. Its own docstring (`crypto_signal.py:3-5`): *"The fade scalper died because tiny mean-reversion edges drowned in spread… trade WITH momentum/breakouts, not against noise."*
 - To test the rule-based strategies live you would set `signal_source="hybrid"` (and `StrategyConfig.mode`); nothing in the default config does this.
@@ -288,4 +329,4 @@ Several classical strategies are **implemented and backtestable**, but only the 
 
 ## Appendix: Cost Tracking
 
-Every Claude call records token usage and an approximate USD cost (`ai_signal.py:27-33`): `$5/M input tokens, $25/M output tokens`. At the 15-minute cadence with 14 instruments, a single competition session incurs roughly one call every 900 seconds. Cost is written to the per-day decision log (`engine.py:168-174`) and printed to the console after each call (`ai_signal.py:154-155`).
+Every Claude call records token usage and an approximate USD cost (`ai_signal.py:26-33`): `$5/M input tokens, $25/M output tokens`. At the 15-minute cadence with 14 instruments, a single competition session incurs roughly one call every 900 seconds. Cost is written to the per-day decision log (`_write_decision_record`, `engine.py:653-673`) and printed to the console after each call (`ai_signal.py:166-167`).
