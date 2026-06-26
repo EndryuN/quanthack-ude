@@ -6,8 +6,13 @@ pricer-output-*/
 *.zip
 
 
-# runtime state
-state/
+# runtime CONTROL state — the engine reads/writes these live every tick, so do NOT
+# sync them via git (a pull could overwrite the running engine's controls/overrides)
+state/controls.json
+state/control_ack.json
+state/overrides.json
+state/scalper.json
+# (state/equity_samples.json + state/model_scores.json ARE tracked — analytics data)
 
 
 # AI-backtest artifacts (batch request/result files, cached views)
@@ -20,5 +25,6 @@ __pycache__/
 .venv/
 venv/
 
-# ...but DO track committed test fixtures
+# ...but DO track the AI decision logs (synced for the dashboard/demo) + test fixtures
+!logs/ai_decisions_*.jsonl
 !panel/backend/_fixtures/*.jsonl
