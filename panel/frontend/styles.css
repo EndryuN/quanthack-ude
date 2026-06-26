@@ -304,8 +304,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .vol-row{display:flex;align-items:center;gap:8px}
 .vol-sym{width:64px;color:var(--ink)}
 .vol-track{flex:1;height:8px;background:var(--lift);border-radius:4px;overflow:hidden}
-.vol-fill{display:block;height:100%}
-.vol-fill.fx{background:var(--muted)} .vol-fill.metals{background:var(--human)} .vol-fill.crypto{background:var(--deepseek)}
+.vol-fill{display:block;height:100%}   /* color set inline by vol-level (heat scale) */
 .vol-val{width:140px;text-align:right;color:var(--muted)}
 .vol-val .vol-z{margin-left:4px}
 /* Risk is now a popover off the status bar: hover reveals, click pins, ✕/outside closes */

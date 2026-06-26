@@ -1442,9 +1442,10 @@ function renderVolatility(d){
   const rows = Object.keys(per).map(s => ({ s, ...per[s] })).sort((a, b) => b.raw - a.raw);
   if(!rows.length){ bars.innerHTML = `<div class="ctx-note">${_esc((d && d.note) || "live volatility needs the running engine")}</div>`; return; }
   const max = Math.max(...rows.map(r => r.raw)) || 1;
-  const cls = c => c === "CRYPTO" ? "crypto" : c === "METAL" ? "metals" : "fx";
+  // ONE consistent heat scale across the whole card: bar + z + chips all colored by
+  // vol-level (calm grey / elevated amber / high red). Bar length = absolute vol%.
   bars.innerHTML = rows.map(r => `<div class="vol-row"><span class="vol-sym">${_esc(r.s)}</span>`
-    + `<span class="vol-track"><span class="vol-fill ${cls(r.cls)}" style="width:${Math.round(r.raw / max * 100)}%"></span></span>`
+    + `<span class="vol-track"><span class="vol-fill" style="width:${Math.round(r.raw / max * 100)}%;background:${_volColor(r.z)}"></span></span>`
     + `<span class="vol-val">${r.raw.toFixed(3)}% <span class="vol-z" style="color:${_volColor(r.z)}">z${r.z > 0 ? "+" : ""}${r.z}</span></span></div>`).join("");
 }
 async function loadVolatility(){ try { renderVolatility(await getJSON("/api/volatility")); } catch(e){} }
