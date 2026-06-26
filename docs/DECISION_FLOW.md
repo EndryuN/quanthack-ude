@@ -129,6 +129,40 @@ The risk floor (step 1) runs **before** any of this and is never gated by a cont
 
 ---
 
+## Appendix — exactly what we feed the LLMs
+
+Both models receive the **identical** system prompt and the **identical** market
+snapshot (`second_opinion.py` imports `SYSTEM` from `ai_signal.py`); Nemotron is a
+blind peer — same inputs, no sight of Claude's answer.
+
+**The data payload** (`build_context`, one line per instrument, ~14 lines/call,
+refreshed every ~15 min): a token-cheap multi-timeframe *digest* — not raw bars.
+Per symbol: `px` (M15 close); returns over 1h/4h/1d (4/16/96 M15 bars) and 3d (72
+H1 bars); trend up/dn from fast/slow EMAs on M15(20/80), H1(10/40), H4(6/24);
+`mom_z` (32-bar momentum z-score); `vol/bar` (48-bar volatility %); `5d-range`
+(price's position in its ~5-day H1 high/low band, 0–100). Example line:
+
+```
+EURUSD: px=1.08423 | ret 1h=+0.03 4h=-0.12 1d=+0.21 3d=+0.55% | trend M15=up H1=up H4=dn | mom_z=+0.84 vol/bar=0.04% | 5d-range=62%
+```
+
+**The system prompt** frames the model as the signal engine, states the scoring
+rules (≈70% return rank; liquidation = elimination), and instructs: weight
+timeframe-aligned setups higher, stay calibrated (liquid FX deserves low
+confidence), don't chase stretched moves, prefer `flat` over guessing, keep
+cross-asset macro coherent (USD pairs agree on USD; metals/crypto as risk
+barometers), and rate every instrument.
+
+**The user message** wraps the context and asks for a directional view +
+calibrated confidence per instrument. **Output contract:** Claude is forced into
+the Pydantic `MarketView` schema (`regime` + `{symbol, direction, confidence∈[0,1],
+rationale}`); Nemotron is asked for the same shape as a strict JSON object. A
+malformed/hallucinated reply can't validate and can't reach trade logic.
+
+**Not fed:** raw ticks/candles, order book, account/equity/position state,
+Claude's answer (to Nemotron), or any news/text feed. The models decide
+*direction + conviction*; sizing, risk, and execution are the engine's job.
+
 ## Invariants (the things that must always hold)
 
 1. **Risk runs first.** The kill-switch can flatten the account before strategy is consulted; no model or control can override it.
