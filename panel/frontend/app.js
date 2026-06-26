@@ -541,29 +541,35 @@ function wireModelSelector(){
 
 // per-model directional hit-rates from /api/model_scores (rate is a 0..1 fraction
 // or null; the long DeepSeek model-id key is mapped to "DeepSeek").
-function renderHitRates(ms){
+function renderHitRates(ms, s){
   // Doubles as the dumbbell LEGEND (colored dot + model name) AND the model
-  // self-grading readout (directional accuracy % once scored).
+  // self-grading readout (directional accuracy % once scored). A model that did
+  // NOT contribute to the latest market read is dimmed + shown "off" (its
+  // historical % isn't shown, so it never looks "present" when it's unavailable).
   const el = document.getElementById("hitrates"); if(!el) return;
   const rates = (ms && ms.rates) || {};
   const n = (ms && ms.n != null) ? ms.n : 0;
+  const cons = (s && s.consensus) || [];
+  const avail = key => key === "claude" ? true : cons.some(r => r[key] && r[key].direction);
   el.title = n
-    ? `Directional accuracy over the last ${n} scored market reads — how often each model's long/short call was right (price moved its way).`
+    ? `Directional accuracy over the last ${n} scored market reads — how often each model's long/short call was right (price moved its way). Dimmed = didn't vote this read.`
     : "Model color key. Directional accuracy appears after 2 market reads.";
-  const acc = r => (r && r.rate != null) ? ` ${Math.round(r.rate * 100)}%` : "";
   const dsKey = Object.keys(rates).find(k => /deepseek/i.test(k));
-  const item = (cls, label, r) =>
-    `<span class="lg"><span class="dot ${cls}"></span>${label}<span class="acc">${acc(r)}</span></span>`;
-  el.innerHTML = item("claude", "Claude", rates.claude)
-    + item("nemo", "Nemotron", rates.nemotron)
-    + item("deepseek", "DeepSeek", dsKey ? rates[dsKey] : null);
+  const item = (cls, label, key, r) => {
+    const on = avail(key);
+    const tail = on ? ((r && r.rate != null) ? ` ${Math.round(r.rate * 100)}%` : "") : " off";
+    return `<span class="lg${on?'':' off'}"><span class="dot ${cls}"></span>${label}<span class="acc">${tail}</span></span>`;
+  };
+  el.innerHTML = item("claude", "Claude", "claude", rates.claude)
+    + item("nemo", "Nemotron", "nemotron", rates.nemotron)
+    + item("deepseek", "DeepSeek", "deepseek", dsKey ? rates[dsKey] : null);
 }
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
   wireDumbTabs();
   wireConsensusTabs();
   wireModelSelector();
-  renderHitRates(await getJSON("/api/model_scores"));
+  renderHitRates(await getJSON("/api/model_scores"), s);
   const hm = await getJSON("/api/heatmap");
   if(hm) plotHeatmap(hm);
   const symbols = (hm && hm.symbols && hm.symbols.length) ? hm.symbols

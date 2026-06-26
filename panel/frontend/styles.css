@@ -174,6 +174,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   flex:1;min-width:0;margin:0 12px;display:flex;gap:14px;align-items:center;
   white-space:nowrap;overflow:hidden}
 .hitrates .lg{display:inline-flex;align-items:center;gap:5px}
+.hitrates .lg.off{opacity:.4}   /* model didn't contribute to the latest market read */
 .hitrates .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 .hitrates .dot.claude{background:var(--claude)}
 .hitrates .dot.nemo{background:var(--nemo)}
