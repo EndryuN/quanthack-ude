@@ -386,6 +386,7 @@ let _pendingTP = {}, _pendingSL = {};   // {sym: price} STAGED TP/SL (dragged, n
 let _editLine = null;                   // "sl" | "tp" while a line edit awaits Apply/✕
 let _focusSL = false, _focusTP = false; // include the SL/TP line in the y-range (locate it)
 let _chartRev = 0;                      // bump to force the chart view back to default (reset zoom)
+let _dragMode = "pan";                  // chart left-drag mode: "pan" (default) or "zoom"
 let _refreshAtTs = null, _refreshTimer = null;   // header refresh-icon progress spinner
 
 async function plotSymbol(symbol, tf){
@@ -508,6 +509,7 @@ async function plotSymbol(symbol, tf){
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
+    dragmode: _dragMode,                   // left-drag pans (default) or box-zooms
     uirevision: curSymbol + "|" + curTF + "|" + _chartRev,   // keep zoom across refreshes; reset on switch / reset-button
     margin:{l:10, r:58, t:22, b:26},       // fill the card edge-to-edge; price axis on the right
     xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M", rangeslider:{visible:false},
@@ -519,7 +521,7 @@ async function plotSymbol(symbol, tf){
     {displayModeBar:false, displaylogo:false, scrollZoom:true,
      edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
                                       // modebar hidden so the top-right toggles own the corner
-  wireLineDrag(); wireLineButtons(); wireEditConfirm(); wireChartPan();
+  wireLineDrag(); wireLineButtons(); wireEditConfirm();
   // keep the confirm bar glued to its line across live re-renders
   if(_editLine){
     const ec = document.getElementById("edit-confirm");
@@ -544,35 +546,6 @@ function wireLineDrag(){
       _editLine = which; showEditConfirm(which, +y);
     }
   });
-}
-
-// Right-click + drag pans the chart (left-drag still box-zooms). We shift the
-// axis ranges by the pixel delta; uirevision keeps the pan across live re-renders.
-function wireChartPan(){
-  const el = document.getElementById("symbol-chart");
-  if(!el || el._panWired) return;
-  el._panWired = true;
-  el.addEventListener("contextmenu", e=> e.preventDefault());   // no browser menu on right-click
-  let on = false, sx = 0, sy = 0, x0 = null, y0 = null;
-  el.addEventListener("mousedown", (e)=>{
-    if(e.button !== 2) return;                                  // right button only
-    const fl = el._fullLayout; if(!fl || !fl.xaxis || !fl.yaxis) return;
-    on = true; sx = e.clientX; sy = e.clientY;
-    x0 = (fl.xaxis.range || []).slice(); y0 = (fl.yaxis.range || []).slice();
-    e.preventDefault();
-  });
-  window.addEventListener("mousemove", (e)=>{
-    if(!on) return;
-    const fl = el._fullLayout; if(!fl) return;
-    const xa = fl.xaxis, ya = fl.yaxis;
-    const xl0 = xa.r2l(x0[0]), xl1 = xa.r2l(x0[1]);
-    const yl0 = ya.r2l(y0[0]), yl1 = ya.r2l(y0[1]);
-    const dxl = -((e.clientX - sx) / (xa._length || 1)) * (xl1 - xl0);   // drag right -> earlier
-    const dyl =  ((e.clientY - sy) / (ya._length || 1)) * (yl1 - yl0);   // drag down -> higher
-    Plotly.relayout(el, {"xaxis.range":[xa.l2r(xl0+dxl), xa.l2r(xl1+dxl)],
-                         "yaxis.range":[ya.l2r(yl0+dyl), ya.l2r(yl1+dyl)]});
-  });
-  window.addEventListener("mouseup", ()=>{ on = false; });
 }
 
 function showEditConfirm(which, y){
@@ -720,6 +693,11 @@ function buildSymbolList(symbols){
     });
     const rst = document.getElementById("chart-reset");
     if(rst) rst.onclick = ()=>{ _chartRev++; _focusSL = false; _focusTP = false; plotSymbol(curSymbol, curTF); };
+    document.querySelectorAll(".drag-mode .dm").forEach(btn=> btn.onclick = ()=>{
+      _dragMode = btn.dataset.dm;
+      document.querySelectorAll(".drag-mode .dm").forEach(b=>b.classList.toggle("active", b===btn));
+      plotSymbol(curSymbol, curTF);
+    });
     _tfWired = true;
   }
 }

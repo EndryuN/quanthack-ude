@@ -135,12 +135,12 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .chart-reset{display:flex;align-items:center;justify-content:center;background:rgba(20,22,29,.85);
   color:var(--muted);border:1px solid var(--lift);border-radius:5px;padding:3px 6px;cursor:pointer}
 .chart-reset:hover{color:var(--chartreuse);border-color:var(--chartreuse)}
-.chart-type,.tf-toggle{display:flex;border:1px solid var(--lift);border-radius:5px;overflow:hidden}
-.chart-type .ct,.tf-toggle .tf{background:rgba(20,22,29,.85);color:var(--muted);border:none;
+.chart-type,.tf-toggle,.drag-mode{display:flex;border:1px solid var(--lift);border-radius:5px;overflow:hidden}
+.chart-type .ct,.tf-toggle .tf,.drag-mode .dm{background:rgba(20,22,29,.85);color:var(--muted);border:none;
   border-right:1px solid var(--lift);padding:3px 8px;font-family:"JetBrains Mono";font-size:10px;
   cursor:pointer;display:flex;align-items:center}
-.chart-type .ct:last-child,.tf-toggle .tf:last-child{border-right:none}
-.chart-type .ct.active,.tf-toggle .tf.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
+.chart-type .ct:last-child,.tf-toggle .tf:last-child,.drag-mode .dm:last-child{border-right:none}
+.chart-type .ct.active,.tf-toggle .tf.active,.drag-mode .dm.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
 #symbol-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto}
 #symbol-list .sym{padding:5px 8px;border-radius:5px;font-family:"JetBrains Mono";
   font-size:12px;cursor:pointer;color:var(--ink);border-left:2px solid transparent}
