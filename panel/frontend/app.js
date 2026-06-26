@@ -1459,6 +1459,12 @@ function renderVolatility(d){
     + `<span class="vol-track"><span class="vol-fill" style="width:${Math.round(r.raw / max * 100)}%;background:${_catColor(r.cls)}"></span></span>`
     + `<span class="vol-val">${r.raw.toFixed(3)}% <span class="vol-z" style="color:${_volColor(r.z)}">z${r.z > 0 ? "+" : ""}${r.z}</span></span></div>`).join("");
 }
-async function loadVolatility(){ try { renderVolatility(await getJSON("/api/volatility")); } catch(e){} }
+let _volTf = "15m";
+async function loadVolatility(){ try { renderVolatility(await getJSON(`/api/volatility?tf=${_volTf}`)); } catch(e){} }
+document.querySelectorAll(".vol-tf .vtf").forEach(b => b.onclick = ()=>{
+  _volTf = b.dataset.vtf;
+  document.querySelectorAll(".vol-tf .vtf").forEach(x => x.classList.toggle("active", x === b));
+  loadVolatility();
+});
 loadVolatility();
 setInterval(loadVolatility, 20000);   // realized vol drifts slowly; 14 bar reads/fetch

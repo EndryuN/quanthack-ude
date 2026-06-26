@@ -299,6 +299,11 @@ main{display:grid;grid-template-columns:34% 66%;gap:14px;padding:14px;align-item
 /* Volatility card (informational) */
 #vol-card .card-head h2{font-size:15px;letter-spacing:.06em}
 .vol-note{font-size:12px;color:var(--muted)}
+.vol-tf{display:flex;gap:3px;margin-left:10px}
+.vol-tf .vtf{background:var(--lift);color:var(--muted);border:1px solid var(--lift);border-radius:5px;
+  padding:2px 9px;font-family:"JetBrains Mono";font-size:10px;cursor:pointer}
+.vol-tf .vtf:hover{color:var(--ink)}
+.vol-tf .vtf.active{background:var(--chartreuse);color:var(--canvas)}
 .vol-index{display:flex;gap:14px;margin-left:auto}
 .vol-chip{display:flex;flex-direction:column;text-align:right;font-family:"JetBrains Mono"}
 .vol-chip label{font-size:11px;letter-spacing:.08em;font-weight:600}   /* color set inline by category */

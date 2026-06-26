@@ -199,23 +199,24 @@ def context():
 
 
 @app.get("/api/volatility")
-def volatility():
+def volatility(tf: str = "15m"):
     """INFORMATIONAL (panel-only, not wired into the engine): a live realized-vol
-    index from current MT5 bars. Per symbol = std of M15 returns over 48 bars; a
-    robust z-score vs the symbol's own rolling baseline makes classes comparable
-    (crypto's absolute vol dwarfs FX). Aggregated to Combined + FX/Metals/Crypto.
-    Needs MT5; degrades to available:false offline."""
+    index from current MT5 bars on the chosen timeframe (15m or 1h). Per symbol =
+    std of returns over 48 bars; a robust z-score vs the symbol's own rolling
+    baseline makes classes comparable (crypto's absolute vol dwarfs FX). Aggregated
+    to Combined + FX/Metals/Crypto. Needs MT5; degrades to available:false offline."""
     import datetime as _dt
     c = _mt5()
     if c is None:
-        return {"available": False, "note": "Live volatility needs the running engine (MT5)."}
+        return {"available": False, "tf": tf, "note": "Live volatility needs the running engine (MT5)."}
     try:
         import numpy as _np
         import MetaTrader5 as _mtlib
         from bot.config import ALL_SYMBOLS, asset_class
+        timeframe = {"15m": _mtlib.TIMEFRAME_M15, "1h": _mtlib.TIMEFRAME_H1}.get(tf, _mtlib.TIMEFRAME_M15)
         per = {}
         for s in (x for x in ALL_SYMBOLS if x != "BARUSD"):
-            rates = c.bars(s, _mtlib.TIMEFRAME_M15, 160)
+            rates = c.bars(s, timeframe, 160)
             if rates is None or len(rates) < 70:
                 continue
             closes = _np.asarray(rates["close"], dtype=float)
@@ -233,12 +234,12 @@ def volatility():
         def _agg(cls):
             zs = [v["z"] for v in per.values() if cls is None or v["cls"] == cls]
             return round(sum(zs) / len(zs), 2) if zs else None
-        return {"available": True, "ts": _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        return {"available": True, "tf": tf, "ts": _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                 "combined": _agg(None), "fx": _agg("FX"), "metals": _agg("METAL"),
                 "crypto": _agg("CRYPTO"), "per_symbol": per,
-                "method": "M15 ret_vol(48), robust z vs own rolling baseline"}
+                "method": f"{tf} ret_vol(48), robust z vs own rolling baseline"}
     except Exception as e:
-        return {"available": False, "note": f"volatility build failed: {e}"}
+        return {"available": False, "tf": tf, "note": f"volatility build failed: {e}"}
     finally:
         try: c.shutdown()
         except Exception: pass
