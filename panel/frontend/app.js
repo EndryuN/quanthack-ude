@@ -1,7 +1,7 @@
 // SIGNAL//LAYER — read-only dashboard. Polls the backend and renders.
 const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
   chartreuse:"#C8FF00", claude:"#FF8A1E", nemo:"#76B900", deepseek:"#4D6BFE", human:"#F5A623",
-  long:"#2ECC71", short:"#FF4D4D", flat:"#3A3F50", ink:"#E8EAF0", muted:"#6B7080" };
+  consensus:"#FF5CA8", long:"#2ECC71", short:"#FF4D4D", flat:"#3A3F50", ink:"#E8EAF0", muted:"#6B7080" };
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };
 
@@ -466,11 +466,25 @@ async function plotSymbol(symbol, tf){
       text:` ${_fmtPx(_lastPx)} `, showarrow:false, font:{size:9, color:"#0c0d11", family:"JetBrains Mono"},
       bgcolor:C.ink, bordercolor:C.ink, borderpad:2});
   }
+  // CONSENSUS line = live average of Claude + whichever 2nd opinions are SELECTED
+  // (Nemotron via "Nemotron input", DeepSeek via "DeepSeek input"). Toggling either
+  // recomputes it on the next ~1s render, so the line moves. Pointwise price average.
+  const avgCone = (cones)=>{
+    const valid = cones.filter(c=> c && c.mid && c.mid.length);
+    if(!valid.length) return null;
+    const m = Math.min(...valid.map(c=>c.mid.length)), mid = [];
+    for(let i=0;i<m;i++) mid.push([valid[0].mid[i][0], valid.reduce((s,c)=>s+c.mid[i][1],0)/valid.length]);
+    return {mid};
+  };
+  const _selCones = [b.cones.claude].filter(Boolean);
+  if(_ctl && _ctl.second_opinion !== false && b.cones.nemotron) _selCones.push(b.cones.nemotron);
+  if(_ctl && _ctl.ensemble_input && b.cones.deepseek) _selCones.push(b.cones.deepseek);
+  const _consCone = avgCone(_selCones) || b.cones.consensus;
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
-    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash"),
+    ...coneTrace(_consCone, C.consensus, "Consensus", "dash"),
     ...posTraces];
   // size the chart to the symbol list so the panel has no dead space below it
   const _lst = document.getElementById("symbol-list");
