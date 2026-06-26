@@ -34,7 +34,7 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 /* refresh icon (header) — re-query AI now; spins while a refresh is in flight */
 .refresh-icon{padding:6px 9px;font-size:14px;line-height:1}
 .refresh-icon.spin{color:var(--chartreuse);border-color:var(--chartreuse);
-  animation:spin 1s linear infinite}
+  animation:spin 2.4s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* global model selector — segmented control; active button takes its model's color */
 .model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden}

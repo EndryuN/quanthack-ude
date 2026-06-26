@@ -363,6 +363,11 @@ def post_override(symbol: str, body: dict):
             entry[k] = body[k]
     o[symbol] = entry
     ctrl.atomic_write_json(_overrides_path(), o)
+    # apply immediately: nudge the engine to reconcile on its next ~5s tick (so a
+    # Force LONG/SHORT/FLAT or take-profit doesn't wait for the 15-min AI refresh)
+    c = ctrl.load_controls(STATE_DIR)
+    c["apply_seq"] = int(c.get("apply_seq", 0)) + 1
+    ctrl.atomic_write_json(_controls_path(), c)
     return o
 
 
