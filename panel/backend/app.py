@@ -198,6 +198,52 @@ def context():
         except Exception: pass
 
 
+@app.get("/api/volatility")
+def volatility():
+    """INFORMATIONAL (panel-only, not wired into the engine): a live realized-vol
+    index from current MT5 bars. Per symbol = std of M15 returns over 48 bars; a
+    robust z-score vs the symbol's own rolling baseline makes classes comparable
+    (crypto's absolute vol dwarfs FX). Aggregated to Combined + FX/Metals/Crypto.
+    Needs MT5; degrades to available:false offline."""
+    import datetime as _dt
+    c = _mt5()
+    if c is None:
+        return {"available": False, "note": "Live volatility needs the running engine (MT5)."}
+    try:
+        import numpy as _np
+        import MetaTrader5 as _mtlib
+        from bot.config import ALL_SYMBOLS, asset_class
+        per = {}
+        for s in (x for x in ALL_SYMBOLS if x != "BARUSD"):
+            rates = c.bars(s, _mtlib.TIMEFRAME_M15, 160)
+            if rates is None or len(rates) < 70:
+                continue
+            closes = _np.asarray(rates["close"], dtype=float)
+            rets = _np.diff(closes) / closes[:-1]
+            if len(rets) < 58:
+                continue
+            W = 48
+            series = _np.array([rets[i - W:i].std() for i in range(W, len(rets) + 1)])  # rolling realized vol
+            cur = float(series[-1])
+            med = float(_np.median(series))
+            mad = float(_np.median(_np.abs(series - med)))
+            z = (cur - med) / (1.4826 * mad + 1e-12)
+            per[s] = {"raw": round(cur * 100, 3), "z": round(max(-4.0, min(4.0, z)), 2),
+                      "cls": asset_class(s)}
+        def _agg(cls):
+            zs = [v["z"] for v in per.values() if cls is None or v["cls"] == cls]
+            return round(sum(zs) / len(zs), 2) if zs else None
+        return {"available": True, "ts": _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "combined": _agg(None), "fx": _agg("FX"), "metals": _agg("METAL"),
+                "crypto": _agg("CRYPTO"), "per_symbol": per,
+                "method": "M15 ret_vol(48), robust z vs own rolling baseline"}
+    except Exception as e:
+        return {"available": False, "note": f"volatility build failed: {e}"}
+    finally:
+        try: c.shutdown()
+        except Exception: pass
+
+
 @app.get("/api/model_scores")
 def model_scores():
     """Per-model directional hit-rates (Claude / Nemotron / DeepSeek) from

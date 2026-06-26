@@ -293,6 +293,21 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ctx-fields{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:11px;color:var(--muted)}
 .ctx-fr{display:flex;gap:6px;align-items:baseline}
 .ctx-notfed{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--short)}
+/* Volatility card (informational) */
+.vol-note{font-size:10px;color:var(--muted)}
+.vol-index{display:flex;gap:14px;margin-left:auto}
+.vol-chip{display:flex;flex-direction:column;text-align:right;font-family:"JetBrains Mono"}
+.vol-chip label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
+.vol-chip b{font-size:14px;font-weight:600}
+.vol-warn{color:var(--short);font-size:11px}
+.vol-bars{display:flex;flex-direction:column;gap:3px;margin-top:8px;font-family:"JetBrains Mono";font-size:10px}
+.vol-row{display:flex;align-items:center;gap:8px}
+.vol-sym{width:64px;color:var(--ink)}
+.vol-track{flex:1;height:8px;background:var(--lift);border-radius:4px;overflow:hidden}
+.vol-fill{display:block;height:100%}
+.vol-fill.fx{background:var(--muted)} .vol-fill.metals{background:var(--human)} .vol-fill.crypto{background:var(--deepseek)}
+.vol-val{width:140px;text-align:right;color:var(--muted)}
+.vol-val .vol-z{margin-left:4px}
 /* Risk is now a popover off the status bar: hover reveals, click pins, ✕/outside closes */
 #kpis{cursor:pointer}
 #gauges-card{position:fixed;top:48px;right:14px;width:560px;max-width:92vw;max-height:82vh;overflow:auto;

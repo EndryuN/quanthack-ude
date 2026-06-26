@@ -1423,3 +1423,30 @@ let _scalpState = {};
     if(s){ window._lastState = s; renderKpis(s.account || {}); renderViewsAge(s); } } catch(e){}
   setTimeout(pollState, 1000);
 })();
+
+// Volatility card (informational, panel-only): live realized-vol index from MT5
+// bars. ~14 bar reads per fetch, so poll slowly (vol changes slowly anyway).
+function _volColor(z){ return z == null ? C.muted : z >= 1.5 ? C.short : z >= 0.5 ? C.human : C.muted; }
+function renderVolatility(d){
+  const idx = document.getElementById("vol-index");
+  if(idx){
+    if(!d || !d.available){ idx.innerHTML = `<span class="vol-warn">${_esc((d && d.note) || "unavailable")}</span>`; }
+    else {
+      const chip = (lbl, z)=> `<span class="vol-chip"><label>${lbl}</label>`
+        + `<b style="color:${_volColor(z)}">${z == null ? "—" : (z > 0 ? "+" : "") + z}</b></span>`;
+      idx.innerHTML = chip("Combined", d.combined) + chip("FX", d.fx) + chip("Metals", d.metals) + chip("Crypto", d.crypto);
+    }
+  }
+  const bars = document.getElementById("vol-bars"); if(!bars) return;
+  const per = (d && d.per_symbol) || {};
+  const rows = Object.keys(per).map(s => ({ s, ...per[s] })).sort((a, b) => b.raw - a.raw);
+  if(!rows.length){ bars.innerHTML = `<div class="ctx-note">${_esc((d && d.note) || "live volatility needs the running engine")}</div>`; return; }
+  const max = Math.max(...rows.map(r => r.raw)) || 1;
+  const cls = c => c === "CRYPTO" ? "crypto" : c === "METAL" ? "metals" : "fx";
+  bars.innerHTML = rows.map(r => `<div class="vol-row"><span class="vol-sym">${_esc(r.s)}</span>`
+    + `<span class="vol-track"><span class="vol-fill ${cls(r.cls)}" style="width:${Math.round(r.raw / max * 100)}%"></span></span>`
+    + `<span class="vol-val">${r.raw.toFixed(3)}% <span class="vol-z" style="color:${_volColor(r.z)}">z${r.z > 0 ? "+" : ""}${r.z}</span></span></div>`).join("");
+}
+async function loadVolatility(){ try { renderVolatility(await getJSON("/api/volatility")); } catch(e){} }
+loadVolatility();
+setInterval(loadVolatility, 20000);   // realized vol drifts slowly; 14 bar reads/fetch
