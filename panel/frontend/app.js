@@ -794,9 +794,15 @@ loadOverrides(); wireOverride();
 // Also pulls per-symbol scalper status for the inline ·s sub-lines (spec §6.3).
 let _scalpState = {};
 (async function pollPositions(){
+  // Only poll the scalper status when a symbol is actually assigned — otherwise
+  // it's pointless traffic (the scalper isn't running with nothing assigned).
   try {
-    const sc = await getJSON("/api/scalper");
-    _scalpState = {}; ((sc && sc.symbols) || []).forEach(s => { _scalpState[s.symbol] = s; });
+    if(_ctl && (_ctl.scalper_symbols || []).length){
+      const sc = await getJSON("/api/scalper");
+      _scalpState = {}; ((sc && sc.symbols) || []).forEach(s => { _scalpState[s.symbol] = s; });
+    } else {
+      _scalpState = {};
+    }
     updateScalpLive();   // refresh the per-symbol live state under each assigned chip
   } catch(e){}
   try { renderPositions(await getJSON("/api/positions")); } catch(e){}
