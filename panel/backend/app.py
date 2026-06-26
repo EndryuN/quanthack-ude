@@ -325,11 +325,29 @@ def bars(symbol: str, tf: str = "15m"):
             rates = c.bars(symbol, timeframe, n_cap)
         if rates is None or len(rates) < 20:
             return {"available": False}
-        closes = [float(x) for x in rates["close"]]
-        opens = [float(x) for x in rates["open"]]
-        highs = [float(x) for x in rates["high"]]
-        lows = [float(x) for x in rates["low"]]
-        times = [int(x) for x in rates["time"]]
+        live = [(int(rates["time"][i]), float(rates["open"][i]), float(rates["high"][i]),
+                 float(rates["low"][i]), float(rates["close"][i])) for i in range(len(rates))]
+        # DEEPEN beyond the broker's shallow cache:
+        #  - crypto -> Binance (years, free) for the whole series (no broker seam);
+        #  - FX/metals -> prepend the backtest pricer cache (same prices -> seamless).
+        # Best-effort; on any failure we keep the live MT5 series.
+        from panel.backend import history as _hist
+        from bot.config import asset_class
+        series = None
+        if asset_class(symbol) == "CRYPTO":
+            bn = _hist.binance_history(symbol, tf, n_cap)
+            if len(bn) >= 20:
+                series = bn
+        if series is None:
+            older = _hist.parquet_history(symbol, tf)        # [] for crypto / missing
+            cutoff = live[0][0]
+            series = [b for b in older if b[0] < cutoff] + live if older else live
+        series = series[-n_cap:]
+        times = [b[0] for b in series]
+        opens = [b[1] for b in series]
+        highs = [b[2] for b in series]
+        lows = [b[3] for b in series]
+        closes = [b[4] for b in series]
         price = closes[-1]
         rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes))]
         vol = (sum(r * r for r in rets[-48:]) / max(len(rets[-48:]), 1)) ** 0.5
