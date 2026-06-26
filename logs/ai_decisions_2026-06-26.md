@@ -1551,3 +1551,43 @@
 - SELL 97.0 ETHUSD  (-3.00 → -100.00)
 
 ---
+## 21:46:12 · LIVE
+**Regime (Claude):** Mixed USD signal with no dominant macro theme; crypto broadly weak (ex-SOL squeeze), metals consolidating after a 3d pullback — risk slightly cautious.
+**Regime (Nemotron):** Mixed signals: USD strength vs. risk-on in crypto/metals, with conflicting timeframes in majors reducing conviction.
+**Account:** eq=972,373 · lev=4.4x · margin=15% · ML=685% · sharpe=-0.06
+**Cost:** Claude in=2482 out=1378 ~$0.047 · Nemotron in=1737 out=986 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.42 | short 0.42 | short 0.65 | ✅ agree |
+| USDCAD | SHORT 0.40 | short 0.40 | long 0.70 | ❌ disagree → Claude stands |
+| SOLUSD | LONG 0.40 | long 0.40 | long 0.75 | ✅ agree |
+| USDJPY | LONG 0.38 | long 0.38 | long 0.60 | ✅ agree |
+| BTCUSD | SHORT 0.30 | short 0.30 | flat 0.25 | ⚪ no boost |
+| ETHUSD | SHORT 0.28 | short 0.28 | flat 0.20 | ⚪ no boost |
+| XAUUSD | LONG 0.25 | long 0.25 | long 0.55 | ✅ agree |
+| USDCHF | LONG 0.22 | long 0.22 | flat 0.20 | ⚪ no boost |
+
+**Orders placed:**
+- BUY 2.41 USDCHF  (+0.00 → +2.41)
+- BUY 0.81 XAUUSD  (+0.00 → +0.81)
+- SELL 42.0 ETHUSD  (-58.00 → -100.00)
+
+---
+## 22:02:22 · LIVE
+**Regime (Claude):** Mixed USD signals with no clear broad dollar trend; risk assets soft on 3d basis but bouncing intraday — choppy, range-bound regime favoring selectivity
+**Regime (Nemotron):** Mixed signals with USD weakness vs. risk assets; crypto divergence
+**Account:** eq=969,056 · lev=5.0x · margin=17% · ML=601% · sharpe=-0.06
+**Cost:** Claude in=2482 out=1313 ~$0.045 · Nemotron in=1722 out=871 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| AUDUSD | SHORT 0.45 | short 0.45 | short 0.65 | ✅ agree |
+| SOLUSD | LONG 0.40 | long 0.40 | long 0.70 | ✅ agree |
+| XAUUSD | LONG 0.35 | long 0.35 | long 0.50 | ✅ agree |
+
+**Orders placed:**
+- SELL 16.5 AUDUSD  (-20.50 → -37.00)
+- BUY 2.52 XAUUSD  (+0.81 → +3.33)
+
+---
