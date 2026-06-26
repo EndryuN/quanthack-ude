@@ -239,7 +239,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .contab.active{color:var(--canvas);background:var(--chartreuse);border-color:var(--chartreuse);font-weight:600}
 .con-pane[hidden]{display:none}
 .con-sub{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap;margin-left:auto}
+.views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap;margin-left:8px}
 .views-age.stale{color:var(--human);font-weight:600}
 
 /* Consensus asset-class tabs */

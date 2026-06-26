@@ -46,9 +46,10 @@ function renderRibbon(consensus){
   if(_rib) _rib.innerHTML = _chips || '<span class="rchip flat">awaiting market read…</span>';
 }
 
-function renderStrip(s){
-  renderRibbon(s.consensus || []);   // currency-strength ribbon follows the selected model
-  const a = s.account || {};
+const AI_REFRESH_SECS = 900;   // engine ai_refresh_seconds (15 min) — for the countdown
+
+// KPI tiles — split out so the fast 1s state poll can refresh them every snapshot.
+function renderKpis(a){
   const kpis = [
     ["EQUITY", fmt(a.equity)], ["RET", a.return_pct!=null? (a.return_pct*100).toFixed(2)+"%":"—"],
     ["LEV", a.gross_leverage!=null? a.gross_leverage.toFixed(1)+"x":"—"],
@@ -56,20 +57,31 @@ function renderStrip(s){
     ["DD", a.drawdown!=null? (a.drawdown*100).toFixed(1)+"%":"—"],
     ["SHARPE", a.sharpe!=null? a.sharpe.toFixed(2):"—"],
   ];
-  document.getElementById("kpis").innerHTML = kpis.map(([k,v])=>
-    `<div class="kpi"><label>${k}</label><b>${v}</b></div>`).join("");
-  const _age = s.views_age_secs, _va = document.getElementById("views-age");
-  if(_va){
-    if(_age == null){ _va.textContent = ""; }
-    else { const _m = Math.floor(_age/60);
-      _va.textContent = "views " + (_m < 1 ? "<1m" : _m + "m") + (_age > 1200 ? " ⚠" : "");
-      _va.classList.toggle("stale", _age > 1200); }
-  }
-  // refresh spinner: stop once a NEW decision (newer ts) has landed
-  const rb = document.getElementById("refresh-btn");
-  if(rb && rb.classList.contains("spin") && s.ts && s.ts !== _refreshAtTs){
+  const el = document.getElementById("kpis"); if(!el) return;
+  el.innerHTML = kpis.map(([k,v])=> `<div class="kpi"><label>${k}</label><b>${v}</b></div>`).join("");
+}
+
+// "refreshing AI views in M:SS" countdown next to the refresh icon + spinner stop.
+function renderViewsAge(s){
+  const rb = document.getElementById("refresh-btn"), va = document.getElementById("views-age");
+  const spinning = rb && rb.classList.contains("spin");
+  if(spinning && s.ts && s.ts !== _refreshAtTs){      // a new decision landed -> stop the spinner
     rb.classList.remove("spin"); clearTimeout(_refreshTimer); setStatus("Consensus refreshed");
   }
+  if(!va) return;
+  const age = s.views_age_secs;
+  if(age == null){ va.textContent = ""; return; }
+  if(rb && rb.classList.contains("spin")){ va.textContent = "refreshing AI views…"; va.classList.remove("stale"); return; }
+  const rem = Math.max(0, AI_REFRESH_SECS - age);
+  const m = Math.floor(rem/60), sec = Math.floor(rem%60);
+  va.textContent = rem <= 0 ? "refreshing AI views…" : `refreshing AI views in ${m}:${String(sec).padStart(2,"0")}`;
+  va.classList.toggle("stale", age > AI_REFRESH_SECS + 300);
+}
+
+function renderStrip(s){
+  renderRibbon(s.consensus || []);   // currency-strength ribbon follows the selected model
+  renderKpis(s.account || {});
+  renderViewsAge(s);
 }
 
 function plotEquity(series){
@@ -1089,4 +1101,12 @@ let _scalpState = {};
 (async function pollSymbol(){
   try { if(curSymbol) await plotSymbol(curSymbol, curTF); } catch(e){}
   setTimeout(pollSymbol, 1000);
+})();
+
+// Status bar (KPIs) + the "refreshing in M:SS" countdown update every snapshot (~1s),
+// not just on the 15s tick. Lightweight: no ribbon/consensus re-render here.
+(async function pollState(){
+  try { const s = await getJSON("/api/state");
+    if(s){ window._lastState = s; renderKpis(s.account || {}); renderViewsAge(s); } } catch(e){}
+  setTimeout(pollState, 1000);
 })();
