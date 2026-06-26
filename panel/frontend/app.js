@@ -1140,10 +1140,11 @@ function renderOverride(){
                   : v.agreement === "disagree" ? `<span class="dir-short">disagree</span>` : "";
       const models = [m("Claude", "claude", v.claude), m("Nemotron", "nemo", v.nemotron),
                       m("DeepSeek", "deepseek", v.deepseek)].concat(agree ? [agree] : []).join(" · ");
-      const overridden = !!(o.view && o.view.direction);
-      let html = overridden ? `<span class="ov-struck">${models}</span>` : models;
-      if(overridden) html += ` · <span class="human">Human:</span> ${dir(o.view.direction)}`
-        + `${o.view.confidence != null ? " " + Number(o.view.confidence).toFixed(2) : ""}`;
+      const hv = (o.view && o.view.direction) ? o.view : null;
+      const forced = hv && (hv.mode || "override") === "override";   // override strikes the models; additive just adds
+      let html = forced ? `<span class="ov-struck">${models}</span>` : models;
+      if(hv) html += ` · <span class="human">${forced ? "Human (force):" : "+ Human:"}</span> ${dir(hv.direction)}`
+        + `${hv.confidence != null ? " " + Number(hv.confidence).toFixed(2) : ""}`;
       ai.innerHTML = html;
     }
   }
@@ -1159,22 +1160,28 @@ function wireOverride(){
   const pin = document.getElementById("ov-pin");
   if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol; if(!sym) return;
     postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}); }; }   // loadOverrides re-renders the bar
-  // Human input: Override applies the forced view (sized + risk-capped like an AI
-  // trade); Cancel clears it back to the AI view. No auto-apply on dropdown change.
-  const apply = document.getElementById("ov-apply");
-  if(apply && !apply.dataset.w){ apply.dataset.w="1"; apply.onclick=()=>{
+  // Human input — Apply = ADDITIVE (boosts AI confidence when it agrees, never flips);
+  // Override = forces the direction. Both sized + risk-capped like an AI trade.
+  // Cancel clears back to the AI view. No auto-apply on dropdown change.
+  const postHuman = (mode)=>{
     const sym = curSymbol; if(!sym) return;
     const dir = document.getElementById("ov-dir").value;
     const conf = parseFloat(document.getElementById("ov-conf").value);
-    if(!dir){ setStatus("pick a direction (Force LONG/SHORT) to override"); return; }
-    const cc = isNaN(conf) ? 1.0 : conf;   // Force = full conviction unless a value is given
-    postOverride(sym, {view: {direction: dir, confidence: cc}})
-      .then(()=> setStatus(`${sym} HUMAN OVERRIDE: ${dir.toUpperCase()} @ ${cc} — sized within the preset's risk caps`));
-  }; }
+    if(!dir){ setStatus("pick a direction (Force LONG/SHORT) first"); return; }
+    const cc = isNaN(conf) ? 1.0 : conf;   // full conviction unless a value is given
+    postOverride(sym, {view: {direction: dir, confidence: cc, mode}}).then(()=> setStatus(
+      mode === "additive"
+        ? `${sym} human APPLIED (additive boost): ${dir.toUpperCase()} @ ${cc}`
+        : `${sym} HUMAN OVERRIDE (forced): ${dir.toUpperCase()} @ ${cc} — within the preset's risk caps`));
+  };
+  const add = document.getElementById("ov-add");
+  if(add && !add.dataset.w){ add.dataset.w="1"; add.onclick=()=> postHuman("additive"); }
+  const ov = document.getElementById("ov-override");
+  if(ov && !ov.dataset.w){ ov.dataset.w="1"; ov.onclick=()=> postHuman("override"); }
   const cancel = document.getElementById("ov-cancel");
   if(cancel && !cancel.dataset.w){ cancel.dataset.w="1"; cancel.onclick=()=>{
     const sym = curSymbol; if(!sym) return;
-    postOverride(sym, {view: null}).then(()=> setStatus(`${sym} human override cancelled — back to AI view`));
+    postOverride(sym, {view: null}).then(()=> setStatus(`${sym} human input cleared — back to AI view`));
   }; }
 }
 

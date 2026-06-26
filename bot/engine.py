@@ -309,16 +309,14 @@ class Engine:
         # stands down on "held by another system").
         active = set(self._active_symbols)
         views = {s: v for s, v in self._views.items() if s in active}
-        # Human overrides apply at RECONCILE time (every tick), reflecting the
-        # latest overrides.json — so a Force LONG/SHORT/FLAT set in the panel
-        # takes effect on the next tick, not only at the 15-min AI refresh.
+        # Human input applies at RECONCILE time (every tick) from the latest
+        # overrides.json — 'override' forces the direction, 'additive' boosts
+        # confidence when it agrees — so it takes effect on the next tick, not only
+        # at the 15-min AI refresh.
         if self._overrides:
             from .overrides import human_views
-            from .ai_signal import _DIR
-            for sym, hv in human_views(self._overrides).items():
-                if sym in views:
-                    d = _DIR.get(str(hv.get("direction", "flat")).lower(), 0)
-                    views[sym] = (d, max(0.0, min(1.0, float(hv.get("confidence", 0.0)))))
+            from .second_opinion import apply_human_input
+            apply_human_input(views, human_views(self._overrides), self.cfg.nemotron_consensus_gain)
         return build_targets(self.client, views, acct.equity, agg, self.sizer_cfg)
 
     def _score_models(self, claude_views, nemo_views, extra_voters):

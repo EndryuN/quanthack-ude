@@ -130,8 +130,9 @@
               <option value="long">Force LONG</option>
               <option value="short">Force SHORT</option></select>
             <input id="ov-conf" type="number" min="0" max="1" step="0.05" placeholder="conf 1.0">
-            <button id="ov-apply" class="ctl-btn" title="apply this human view (sized + risk-capped like an AI trade)">Override</button>
-            <button id="ov-cancel" class="ctl-btn" title="clear the human override — revert to the AI view">Cancel</button>
+            <button id="ov-add" class="ctl-btn" title="apply as an ADDITIONAL opinion — boosts the AI's confidence when it agrees (never flips direction)">Apply</button>
+            <button id="ov-override" class="ctl-btn" title="OVERRIDE — force this direction over the AI (sized + risk-capped like an AI trade)">Override</button>
+            <button id="ov-cancel" class="ctl-btn" title="clear the human input — revert to the AI view">Cancel</button>
             <button id="ov-pin" class="ctl-btn ov-pin-btn" title="pin this instrument to the top of the list">&#128204; Pin</button>
             <button id="sl-btn" class="line-btn sl" title="set or locate the stop-loss">Stop Loss</button>
             <button id="tp-btn" class="line-btn tp" title="set or locate the take-profit">Take Profit</button>

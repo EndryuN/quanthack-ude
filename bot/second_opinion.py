@@ -171,12 +171,15 @@ def get_second_opinion(context: str, symbols, model: str, *, timeout: float = 30
 
 
 def apply_human_override(sizer_views, records, overrides):
-    """After apply_consensus, let a human view be the DECIDING voice for a symbol
-    — it can flip the AI's direction. `overrides` is {sym: {direction, confidence}}
-    (already filtered to non-null human views). Mutates sizer_views + records in
-    place and returns them."""
+    """After apply_consensus, let a human view in mode 'override' be the DECIDING
+    voice for a symbol — it can flip the AI's direction. `overrides` is
+    {sym: {direction, confidence, mode}} (non-null human views). 'additive' entries
+    are SKIPPED here — they boost at sizing time (engine via apply_human_input), not
+    as a forced override. Mutates sizer_views + records in place; returns them."""
     by_sym = {r["symbol"]: r for r in records}
     for sym, hv in overrides.items():
+        if str(hv.get("mode", "override")).lower() == "additive":
+            continue
         d = _DIR.get(str(hv.get("direction", "flat")).lower(), 0)
         c = max(0.0, min(1.0, float(hv.get("confidence", 0.0))))
         if sym in sizer_views:
@@ -189,3 +192,26 @@ def apply_human_override(sizer_views, records, overrides):
             rec["agreement"] = "human_override"
             rec["boosted"] = False
     return sizer_views, records
+
+
+def apply_human_input(views, overrides, gain=0.5):
+    """Overlay operator HUMAN input onto sizer views {sym: (dir, conf)} at sizing
+    time. Two modes:
+      - 'override' (deciding): FORCE the direction + confidence (can flip the AI).
+      - 'additive' (a second opinion): only RAISE confidence when the human AGREES
+        with the current direction — `cc + (1-cc)*gain*c` — never sets/flips/vetoes,
+        exactly like a Nemotron/DeepSeek voter.
+    `overrides` is {sym: {direction, confidence, mode}}. Mutates + returns views."""
+    for sym, hv in overrides.items():
+        if sym not in views:
+            continue
+        d = _DIR.get(str(hv.get("direction", "flat")).lower(), 0)
+        c = max(0.0, min(1.0, float(hv.get("confidence", 0.0))))
+        if str(hv.get("mode", "override")).lower() == "additive":
+            cd, cc = views[sym]
+            if cd == d and d != 0:                       # human agrees -> additive boost
+                views[sym] = (cd, max(0.0, min(1.0, cc + (1.0 - cc) * gain * c)))
+            # disagree / flat -> additive does nothing (never vetoes)
+        else:
+            views[sym] = (d, c)                          # override -> force
+    return views

@@ -372,7 +372,10 @@ def post_override(symbol: str, body: dict):
             c = 0.5
         if c != c or c in (float("inf"), float("-inf")):   # NaN / inf guard
             c = 0.5
-        body["view"] = {"direction": d, "confidence": max(0.0, min(1.0, c))}
+        mode = str(vw.get("mode", "override")).lower()
+        if mode not in ("override", "additive"):
+            mode = "override"
+        body["view"] = {"direction": d, "confidence": max(0.0, min(1.0, c)), "mode": mode}
     for k in ("pinned", "view", "take_profit", "stop_loss", "note"):
         if k in body:
             entry[k] = body[k]
