@@ -46,10 +46,10 @@ def yahoo_history(symbol: str, tf: str) -> list:
         return []
     if tf == "1d":
         interval, rng = "1d", "5y"
-    elif tf == "4h":
-        interval, rng = "60m", "730d"
+    elif tf in ("1h", "4h"):
+        interval, rng = "60m", "730d"   # ~2.8y of hourly; 4h resampled from it
     else:
-        return []   # short timeframes stay on the broker feed (recent-accurate)
+        return []   # 1m/15m stay on the broker feed (recent-accurate)
     try:
         import httpx
         r = httpx.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}",

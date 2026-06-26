@@ -339,8 +339,8 @@ def bars(symbol: str, tf: str = "15m"):
             bn = _hist.binance_history(symbol, tf, n_cap)          # deep for all timeframes
             if len(bn) >= 20:
                 series = bn
-        elif tf in ("4h", "1d"):
-            yh = _hist.yahoo_history(symbol, tf)                   # deep FX/metals long-tf history
+        elif tf in ("1h", "4h", "1d"):
+            yh = _hist.yahoo_history(symbol, tf)                   # deep FX/metals history (1h+)
             if len(yh) >= 20:
                 series = yh
         if series is not None and live:
