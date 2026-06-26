@@ -8,45 +8,48 @@ code referenced in the [README](../README.md) and [DECISION_FLOW.md](DECISION_FL
 ## The pitch & innovation
 
 **Q. What is it, in one sentence?**
-An AI-native autonomous trading system where a frontier LLM (Claude Opus 4.8) *is* the strategy — reading the market across timeframes and emitting calibrated directional views — wrapped in a deterministic risk engine, cross-checked by a blind second AI (NVIDIA Nemotron), and supervised by a human through a live console, with a hard risk floor no model can override.
+An AI-native autonomous trading system where a frontier LLM (Claude Opus 4.8) *is* the strategy — reading the market across timeframes and emitting calibrated directional views — wrapped in a deterministic risk engine, cross-checked by a blind multi-model ensemble (NVIDIA Nemotron + DeepSeek-V4-Pro, live via the Pydantic AI Gateway), and supervised by a human through a live console, with a hard risk floor no model can override.
 
 **Q. Why is this "AI-native" and not just an LLM bolted onto a trading bot?**
 The LLM *is* the signal source, not a sentiment add-on. We built and backtested momentum, mean-reversion, stat-arb and order-flow strategies — none had a durable edge after costs — so the model's cross-asset reasoning became the *sole* generator of direction and conviction, flowing directly into capital allocation. Around it we built a true multi-model ensemble, AI self-grading, full decision auditability, and human-in-the-loop overrides. The whole system is organized around the AI being the decision-maker.
 
 **Q. What's genuinely novel here?**
-(1) A **blind multi-model ensemble** that amplifies conviction on agreement but never lets the second model veto. (2) The **"always recorded, influence-gated"** design — you can watch Claude vs Nemotron vs Combined diverge over time before trusting the second model. (3) **Self-grading** via per-model directional hit-rates. (4) **Trailing-peak graduated drawdown de-risk** that protects rank instead of flatten-and-freeze. (5) A **walk-forward-gated** second strategy (scalper) that can only go live after clearing an out-of-sample backtest.
+(1) A **blind multi-model ensemble** — Claude direction plus two blind voters (NVIDIA Nemotron + DeepSeek-V4-Pro, live via the Pydantic AI Gateway) that amplify conviction on agreement but can never set, flip, or veto direction. (2) The **"always recorded, influence-gated"** design — both voters are always queried, recorded, and scored, with per-source influence toggles (Nemotron's `second_opinion` default ON, DeepSeek's `ensemble_input` default OFF), so you can watch Claude vs Nemotron vs DeepSeek vs Combined diverge over time before trusting a model. (3) **Self-grading** via per-model directional hit-rates (Claude vs Nemotron vs DeepSeek), persisted and surfaced in the panel. (4) **Trailing-peak graduated drawdown de-risk** that protects rank instead of flatten-and-freeze. (5) A **walk-forward-gated** second strategy (scalper) that can only go live after clearing an out-of-sample backtest.
 
 ---
 
 ## The AI / LLM specifics
 
 **Q. What exactly do you feed the models?**
-Not raw market data — a distilled, token-cheap **multi-timeframe snapshot**, one line per instrument: returns over 1h/4h/1d/3d, trend up/dn on M15/H1/H4 (EMA cross), a momentum z-score, per-bar volatility, and price's position in its ~5-day range. Plus a shared system prompt stating the scoring rules and demanding calibrated, timeframe-agreement-weighted, cross-asset-coherent views. Both models get the *identical* prompt and snapshot. (Full spec: DECISION_FLOW.md appendix.)
+Not raw market data — a distilled, token-cheap **multi-timeframe snapshot**, one line per instrument: returns over 1h/4h/1d/3d, trend up/dn on M15/H1/H4 (EMA cross), a momentum z-score, per-bar volatility, and price's position in its ~5-day range. Plus a shared system prompt stating the scoring rules and demanding calibrated, timeframe-agreement-weighted, cross-asset-coherent views. All three models get the *identical* prompt and snapshot. (Full spec: DECISION_FLOW.md appendix.)
 
 **Q. What do the models return?**
-Per instrument: `direction ∈ {long, short, flat}`, a `confidence ∈ [0,1]`, and a one-line rationale — plus a market-regime narrative. Claude is forced into a Pydantic-validated schema; Nemotron returns the same shape as strict JSON. A hallucinated/malformed reply can't validate and never reaches trade logic.
+Per instrument: `direction ∈ {long, short, flat}`, a `confidence ∈ [0,1]`, and a one-line rationale — plus a market-regime narrative. Claude is forced into a Pydantic-validated schema; Nemotron and DeepSeek return the same shape as strict JSON. A hallucinated/malformed reply can't validate and never reaches trade logic.
 
-**Q. How is Nemotron used — does it ever override Claude?**
-No. Claude is authoritative on direction. Nemotron rates the same snapshot *blind* (it never sees Claude's answer). On agreement it *raises* confidence (`combined = c + (1−c)·0.5·n`); on disagreement Claude stands. It's strictly additive — no NVIDIA key, or any failure → identical Claude-only behavior.
+**Q. What is the "Market Read" and how is it derived?**
+It's each model's one-line **regime narrative** — its top-down read of the macro/risk regime (e.g. *"Risk-off: broad crypto/metals selling, USD firm against EUR/CHF/JPY"*). It's not hand-written or a separate call: when we query a model with the multi-timeframe snapshot, its structured response carries a `regime` field *alongside* the per-instrument views (Claude via the Pydantic `MarketView.regime`; Nemotron/DeepSeek via the same JSON shape). All three models' regime strings are captured into the decision log, normalized to claude/nemotron/deepseek, and the panel's **"Market Read"** button shows them side by side — each in the model's color, or "unavailable" when that voter didn't run. So it's the models' own qualitative context for the *same* snapshot that produced the quantitative views — useful for the operator to sanity-check *why* the book is positioned the way it is, and to spot when the models narratively disagree.
 
-**Q. Why query Nemotron even when its influence is toggled off?**
-So we can *measure* whether it adds value before trusting it. It's always queried and recorded; the toggle only decides whether the *sizer acts* on the combined confidence. The panel plots Claude / Nemotron / Combined over time, so the operator makes an evidence-based call.
+**Q. How are the second opinions used — do they ever override Claude?**
+No. Claude is **always authoritative on direction**. Two blind voters — NVIDIA Nemotron (OpenAI-compatible NIM) and DeepSeek-V4-Pro (live via the Pydantic AI Gateway) — rate the same snapshot *blind* (neither sees Claude's answer). On agreement they can only *raise* confidence (`combined = cc + (1−cc)·0.5·mean(agreeing voters' confidence)`); on disagreement Claude's confidence stands. Strictly additive — no key, or any failure → identical Claude-only behavior.
+
+**Q. Why query the second opinions even when their influence is toggled off?**
+So we can *measure* whether each adds value before trusting it. Both are always queried, recorded, and scored; per-source influence toggles only decide whether the *sizer acts* on the combined confidence — Nemotron via `second_opinion` (default ON), DeepSeek via a separate `ensemble_input` (default OFF). The panel plots Claude / Nemotron / DeepSeek / Combined over time, so the operator makes an evidence-based call.
 
 **Q. How do you know the AI is actually any good / right?**
-A directional hit-rate scorer (`model_scoring.py`) grades each model's non-flat calls against realized price moves, per model. Every decision is also logged append-only (both models' views, rationales, regimes, costs, orders) so performance is fully auditable after the fact.
+A directional hit-rate scorer (`model_scoring.py`) grades each model's non-flat calls (Claude vs Nemotron vs DeepSeek) against realized price moves, persisted to `state/model_scores.json` and surfaced in the panel's consensus header. Every decision is also logged append-only (all models' views, rationales, regimes, costs, orders) so performance is fully auditable after the fact.
 
 **Q. How often does it call the LLM, and what does that cost?**
-Every 15 minutes (or on a manual "Refresh"), ~14 instruments in one structured call. Each Claude call is on the order of a few cents (logged live with token counts + USD). Backtesting — which needs hundreds of calls — runs on a cheaper model via the Pydantic AI Gateway (~98.7% cheaper).
+Every 15 minutes (or on a manual "Refresh"), ~14 instruments in one structured call (per model). Each Claude call is on the order of a few cents (logged live with token counts + USD). Backtesting — which needs hundreds of calls — runs on the cheaper DeepSeek-V4-Flash via the Pydantic AI Gateway (~98.7% cheaper), the same gateway that hosts the live DeepSeek-V4-Pro voter.
 
 **Q. What if the model hallucinates or returns garbage?**
-Output is schema-constrained (Pydantic). Invalid output raises and the engine degrades gracefully (Claude-only if Nemotron fails; skip-and-retry-with-backoff if Claude fails). Bad data can never become a trade.
+Output is schema-constrained (Pydantic). Invalid output raises and the engine degrades gracefully (a failing blind voter simply drops out, leaving Claude-only; skip-and-retry-with-backoff if Claude fails). Bad data can never become a trade.
 
 ---
 
 ## Architecture & execution
 
 **Q. How is a single trade decided, start to finish?**
-Risk-assessed first (kill-switch can flatten before strategy runs) → snapshot built → Claude + blind Nemotron → consensus merge → sizer maps confidence×aggression to target lots → reconcile issues only the delta → a broker-side stop is guaranteed on every position → trailing stops ratchet → the decision is logged. (Full trace: DECISION_FLOW.md.)
+Risk-assessed first (kill-switch can flatten before strategy runs) → snapshot built → Claude + blind Nemotron + blind DeepSeek → consensus merge → sizer maps confidence×aggression to target lots → reconcile issues only the delta → a broker-side stop is guaranteed on every position → trailing stops ratchet → the decision is logged. (Full trace: DECISION_FLOW.md.)
 
 **Q. Why separate "judgment" from "execution"?**
 LLMs are great at reading context, bad at disciplined risk arithmetic and never to be trusted with hard limits. So the AI decides *what* and *how strongly*; deterministic code decides *how much* and enforces *what it must never do*. The risk layer runs first every tick and the AI cannot override it.
@@ -91,7 +94,7 @@ No. It's hosted *inside* the engine (own magic, no order races on the netting ac
 ## Tech, validation, limits
 
 **Q. What's the stack?**
-Python 3.13; Claude Opus 4.8 (Anthropic SDK, structured output); NVIDIA Nemotron (OpenAI-compatible NIM); Doubleword/DeepSeek-V4-Flash via the Pydantic AI Gateway (cheap backtesting); MetaTrader 5; FastAPI + Uvicorn; Plotly.js; Pydantic v2; NumPy/pandas/PyArrow; httpx. 50+ script-style tests.
+Python 3.13; Claude Opus 4.8 (Anthropic SDK, structured output); NVIDIA Nemotron (OpenAI-compatible NIM); DeepSeek-V4-Pro as a LIVE blind ensemble voter via the Pydantic AI Gateway → Doubleword (`/responses` endpoint), with the same gateway also running cheap backtesting on DeepSeek-V4-Flash; MetaTrader 5; FastAPI + Uvicorn; Plotly.js; Pydantic v2; NumPy/pandas/PyArrow; httpx. 50+ script-style tests.
 
 **Q. How did you validate it?**
 Unit tests across engine/risk/sizer/consensus/scalper (pure-logic modules are network-free). The AI signal is backtested over historical bars via the gateway. The honest finding: the *architecture* is survivable (drawdown capped, no liquidation on real data), and the cheap *backtest* model showed no standalone edge — which is why the live edge rests on the frontier model + consensus, not on the backtest model.
@@ -106,4 +109,4 @@ Keys live in a gitignored `.env`, never committed. The dashboard is read-only ov
 Yes — the judgment/execution split, schema-constrained multi-model consensus, self-grading, and the deterministic risk cage are broker- and asset-agnostic patterns. Swapping MT5 or the instrument universe is localized to the client/config.
 
 **Q. What's the single most impressive thing to remember?**
-Frontier-LLM judgment driving real (simulated) capital, **cross-checked by a second AI and graded by the system itself**, inside a risk cage that makes blow-up structurally impossible — with every decision fully auditable.
+Frontier-LLM judgment driving real (simulated) capital, **cross-checked by a blind multi-model ensemble (Nemotron + DeepSeek) and graded by the system itself**, inside a risk cage that makes blow-up structurally impossible — with every decision fully auditable.
