@@ -265,6 +265,27 @@ BARUSD remains in `ALL_SYMBOLS` for data-collection purposes but is filtered out
 
 ---
 
+## 7. Strategies in the Code vs. in the Live Algorithm
+
+Several classical strategies are **implemented and backtestable**, but only the AI path and the momentum scalper actually trade live. This is deliberate: the rule-based edges (momentum, mean-reversion) were built, then ruled out on the data, so the LLM became the live signal — but the code is kept for backtesting/validation.
+
+| Strategy | Where it lives | Live? |
+|---|---|---|
+| **AI (Claude + ensemble) → sizer** | `ai_signal.py`, `sizer.py` | **Yes — the main engine** (`signal_source="ai"`, `config.py:158`; engine takes the AI branch at `engine.py:207, 263`) |
+| **Momentum (rules)** | `strategy.py` `HybridStrategy`, `mode="momentum"` (`strategy.py:73-78`) | **No** — only the `"hybrid"` branch (`engine.py:268-270`) uses it; never reached with the default config |
+| **Mean reversion (rules)** | `strategy.py` `mode="meanrev"` — flips the trend signal: `direction = -direction` ("fade the move", `strategy.py:79-80`) | **No** — hybrid/backtest only |
+| **Crypto momentum / breakout** | `crypto_signal.py` | **Yes — the optional scalper only** (alts confirmed by BTC lead-lag) |
+| **Mean-reversion "fade" scalper** | `scalp_signal.py`, `scalp_backtest.py` | **No** — dormant/reference only |
+
+**Key facts to remember:**
+
+- The default `signal_source = "ai"` (`config.py:158`) means the engine **never** calls `HybridStrategy.target_positions()` in normal operation — `HybridStrategy` is instantiated (`engine.py:101`) but only drives targets in the `"hybrid"` branch and in the backtester (`backtest.py:111`).
+- So **mean reversion is NOT part of the live algorithm.** It exists as a flag (`StrategyConfig.mode="meanrev"`) for research only.
+- The live scalper is explicitly momentum, *not* mean reversion. Its own docstring (`crypto_signal.py:3-5`): *"The fade scalper died because tiny mean-reversion edges drowned in spread… trade WITH momentum/breakouts, not against noise."*
+- To test the rule-based strategies live you would set `signal_source="hybrid"` (and `StrategyConfig.mode`); nothing in the default config does this.
+
+---
+
 ## Appendix: Cost Tracking
 
 Every Claude call records token usage and an approximate USD cost (`ai_signal.py:27-33`): `$5/M input tokens, $25/M output tokens`. At the 15-minute cadence with 14 instruments, a single competition session incurs roughly one call every 900 seconds. Cost is written to the per-day decision log (`engine.py:168-174`) and printed to the console after each call (`ai_signal.py:154-155`).
