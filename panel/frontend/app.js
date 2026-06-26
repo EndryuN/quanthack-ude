@@ -268,9 +268,12 @@ function plotDumbbell(allRows){
     const present = [cx[i], nx[i], dx[i]].filter(v=>v!=null);
     const lo = present.length ? Math.min(...present) : 0;
     const hi = present.length ? Math.max(...present) : 0;
+    // connector: dotted GREEN when the models agree (all same direction),
+    // dotted RED when they disagree (mixed directions); muted if <2 models voted.
+    const signs = new Set(present.filter(v=>v!==0).map(v=> v>0?1:-1));
+    const col = present.length < 2 ? C.muted : (signs.size > 1 ? C.short : C.long);
     return {x:[lo, hi], y:[r.symbol,r.symbol], type:"scatter", mode:"lines",
-      line:{color: r.agreement==="agree"? C.chartreuse : r.agreement==="disagree"? C.short : C.muted,
-        width:2, dash: r.boosted? "solid":"dot"}, showlegend:false, hoverinfo:"skip"};
+      line:{color: col, width:2, dash:"dot"}, showlegend:false, hoverinfo:"skip"};
   });
   const claudePts = {x:cx, y:ys, type:"scatter", mode:"markers", name:"Claude",
     marker:{color:C.claude, size:11}, hovertemplate:"Claude %{y}: %{x:.2f}<extra></extra>"};
