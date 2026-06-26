@@ -115,10 +115,10 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
 .sym-pane #chart-wrap{flex:1;min-width:0;position:relative}
 #chart-wrap #symbol-chart{width:100%}
-/* SL / TP create-or-locate buttons pinned to the chart's BOTTOM-right */
-.chart-ctl-b{position:absolute;bottom:30px;right:10px;z-index:5;display:flex;gap:6px}
+/* SL / TP create-or-locate buttons — bottom-right of the override row */
+#sl-btn{margin-left:auto}   /* push the SL/TP pair to the right edge */
 .line-btn{background:rgba(20,22,29,.9);border:1px solid var(--lift);border-radius:5px;
-  padding:4px 9px;font-family:"JetBrains Mono";font-size:10px;letter-spacing:.03em;cursor:pointer;color:var(--muted)}
+  padding:6px 10px;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.03em;cursor:pointer;color:var(--muted)}
 .line-btn.sl:hover,.line-btn.sl.on{border-color:var(--short);color:var(--short)}
 .line-btn.tp:hover,.line-btn.tp.on{border-color:var(--chartreuse);color:var(--chartreuse)}
 /* drag-a-line confirm bar (top-center of the chart) */
