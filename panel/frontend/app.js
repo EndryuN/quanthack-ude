@@ -300,7 +300,9 @@ function plotDumbbell(allRows){
   const TOL = 0.045;   // x-distance counted as "overlapping" (≈ one marker width)
   const M = [["Claude", C.claude, cx], ["Nemotron", C.nemo, nx], ["DeepSeek", C.deepseek, dx]];
   const GLYPHFONT = "Segoe UI Symbol, Arial, sans-serif";
-  const fx = [], fy = [], fc = [], overlap = [];   // single dots + overlap traces
+  // every marker's tooltip: "<Model> <SYMBOL>: <dir> <conf>" using its OWN value
+  const lbl = (m, sym, x)=> `${m} ${sym}: ${x>0?"long":x<0?"short":"flat"} ${Math.abs(x).toFixed(2)}<extra></extra>`;
+  const fx = [], fy = [], fc = [], fd = [], overlap = [];   // single dots (+ customdata) + overlap traces
   rows.forEach((r, i) => {
     const pts = M.map(([m, col, arr]) => ({m, col, x: arr[i]})).filter(p => p.x != null);
     const used = pts.map(() => false);
@@ -309,21 +311,21 @@ function plotDumbbell(allRows){
       const grp = [pts[a]]; used[a] = true;
       for(let b = a + 1; b < pts.length; b++)
         if(!used[b] && Math.abs(pts[b].x - pts[a].x) <= TOL){ grp.push(pts[b]); used[b] = true; }
-      const mxv = grp.reduce((s, p) => s + p.x, 0) / grp.length;
-      if(grp.length === 1){ fx.push(grp[0].x); fy.push(r.symbol); fc.push(grp[0].col); continue; }
-      if(grp.length === 2){   // split the ball: left half + right half
+      const mxv = grp.reduce((s, p) => s + p.x, 0) / grp.length;   // shared draw position (visual merge)
+      if(grp.length === 1){ fx.push(grp[0].x); fy.push(r.symbol); fc.push(grp[0].col); fd.push(lbl(grp[0].m, r.symbol, grp[0].x)); continue; }
+      if(grp.length === 2){   // split the ball: left half + right half, each its own value
         ["◖", "◗"].forEach((g, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"text",
           text:[g], textposition:"middle center", textfont:{color:grp[gi].col, size:19, family:GLYPHFONT},
-          hovertemplate:`${grp[gi].m} ${r.symbol}: ${mxv.toFixed(2)}<extra></extra>`, showlegend:false}));
+          hovertemplate:lbl(grp[gi].m, r.symbol, grp[gi].x), showlegend:false}));
       } else {                // 3-way: concentric rings, decreasing size
         grp.forEach((p, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"markers",
           marker:{color:p.col, size:[15,10,6][gi] || 6},
-          hovertemplate:`${p.m} ${r.symbol}: ${mxv.toFixed(2)}<extra></extra>`, showlegend:false}));
+          hovertemplate:lbl(p.m, r.symbol, p.x), showlegend:false}));
       }
     }
   });
   const fullDots = {x:fx, y:fy, type:"scatter", mode:"markers", marker:{color:fc, size:11},
-    hovertemplate:"%{y}: %{x:.2f}<extra></extra>", showlegend:false};
+    customdata:fd, hovertemplate:"%{customdata}", showlegend:false};
   // Legend lives in the card-head (renderHitRates) — no Plotly legend overlapping row 1.
   Plotly.react("dumbbell", [...lines, fullDots, ...overlap],
     {...PLOT_BG, height: Math.max(120, ys.length*30+36),
