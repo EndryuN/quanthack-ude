@@ -1130,15 +1130,16 @@ function renderOverride(){
     const v = (window._lastState.consensus || []).find(r=>r.symbol===sym);
     if(!v){ ai.innerHTML = ""; }
     else {
+      const dir = d => `<span class="dir-${d}">${d}</span>`;   // long=green, short=red, flat=grey
       const m = (label, cls, mv) => mv && mv.direction
-        ? `<span class="${cls}">${label}:</span> ${mv.direction} ${mv.confidence != null ? Number(mv.confidence).toFixed(2) : "—"}`
+        ? `<span class="${cls}">${label}:</span> ${dir(mv.direction)} ${mv.confidence != null ? Number(mv.confidence).toFixed(2) : "—"}`
         : `<span class="${cls}">${label}:</span> —`;
       const models = [m("Claude", "claude", v.claude), m("Nemotron", "nemo", v.nemotron),
                       m("DeepSeek", "deepseek", v.deepseek), v.agreement].join(" · ");
       const overridden = !!(o.view && o.view.direction);
       let html = overridden ? `<span class="ov-struck">${models}</span>` : models;
-      if(overridden) html += ` · <span class="human">Human: ${o.view.direction}`
-        + `${o.view.confidence != null ? " " + Number(o.view.confidence).toFixed(2) : ""}</span>`;
+      if(overridden) html += ` · <span class="human">Human:</span> ${dir(o.view.direction)}`
+        + `${o.view.confidence != null ? " " + Number(o.view.confidence).toFixed(2) : ""}`;
       ai.innerHTML = html;
     }
   }
@@ -1161,9 +1162,10 @@ function wireOverride(){
     const sym = curSymbol; if(!sym) return;
     const dir = document.getElementById("ov-dir").value;
     const conf = parseFloat(document.getElementById("ov-conf").value);
-    if(!dir){ setStatus("pick a direction (Force LONG/SHORT/FLAT) to override"); return; }
-    postOverride(sym, {view: {direction: dir, confidence: isNaN(conf) ? 0.6 : conf}})
-      .then(()=> setStatus(`${sym} HUMAN OVERRIDE: ${dir.toUpperCase()} @ ${isNaN(conf)?0.6:conf} — sized within the preset's risk caps`));
+    if(!dir){ setStatus("pick a direction (Force LONG/SHORT) to override"); return; }
+    const cc = isNaN(conf) ? 1.0 : conf;   // Force = full conviction unless a value is given
+    postOverride(sym, {view: {direction: dir, confidence: cc}})
+      .then(()=> setStatus(`${sym} HUMAN OVERRIDE: ${dir.toUpperCase()} @ ${cc} — sized within the preset's risk caps`));
   }; }
   const cancel = document.getElementById("ov-cancel");
   if(cancel && !cancel.dataset.w){ cancel.dataset.w="1"; cancel.onclick=()=>{
