@@ -35,15 +35,19 @@ def assess(notionals):
     return RiskEngine(FakeClient(notionals), lim).assess(now=0.0)
 
 
-# A) Concentration: one name = 60% of gross (>0.50), net only 20% -> block new risk
-a = assess({"XAUUSD": +360_000, "EURUSD": -240_000})
-assert not a.allow_new_risk and not a.kill
-assert any("of gross" in r for r in a.reasons), a.reasons
+# Concentration & net-directional are COMPUTED but NO LONGER block new risk
+# (a hard gate froze the book and stopped it diversifying out / expressing a
+# one-sided regime). Margin/leverage/drawdown/kill remain the real guards.
 
-# B) Net-directional: two longs -> net 100% (>0.85), largest only 50% -> block
+# A) Concentration: one name = 60% of gross -> reported, but new risk STILL allowed
+a = assess({"XAUUSD": +360_000, "EURUSD": -240_000})
+assert a.allow_new_risk and not a.kill, a.reasons
+assert abs(a.largest_frac - 0.60) < 1e-9, a.largest_frac
+
+# B) Net-directional: two longs -> net 100% -> reported, but new risk STILL allowed
 b = assess({"EURUSD": +300_000, "GBPUSD": +300_000})
-assert not b.allow_new_risk and not b.kill
-assert any("net directional" in r for r in b.reasons), b.reasons
+assert b.allow_new_risk and not b.kill, b.reasons
+assert abs(b.net_directional_frac - 1.0) < 1e-9, b.net_directional_frac
 
 # C) Diversified & balanced: largest 33%, net 33% -> new risk allowed
 c = assess({"EURUSD": +200_000, "GBPUSD": -200_000, "USDJPY": +200_000})

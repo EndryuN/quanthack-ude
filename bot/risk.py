@@ -124,17 +124,14 @@ class RiskEngine:
         if margin_usage > self.lim.max_margin_usage:
             allow = False
             reasons.append(f"no-new-risk: margin usage {margin_usage*100:.0f}% > {self.lim.max_margin_usage*100:.0f}%")
-        # Concentration & net-directional caps (previously computed but never
-        # enforced — see engine-improvements spec E0.1). Block NEW risk when the
-        # book is too concentrated in one instrument or too one-sided overall.
-        if gross > 0 and largest_frac > self.lim.max_single_instrument_frac:
-            allow = False
-            reasons.append(f"no-new-risk: {largest_symbol} {largest_frac*100:.0f}% of gross "
-                           f"> {self.lim.max_single_instrument_frac*100:.0f}%")
-        if gross > 0 and net_frac > self.lim.max_net_directional_frac:
-            allow = False
-            reasons.append(f"no-new-risk: net directional {net_frac*100:.0f}% "
-                           f"> {self.lim.max_net_directional_frac*100:.0f}%")
+        # Concentration & net-directional are COMPUTED for display + the watch
+        # tripwires below, but NOT used to block new risk. A hard new-risk gate
+        # here froze the book: once one symbol drifted past the cap the engine
+        # couldn't even add diversifying positions to dilute it, and in a
+        # one-sided regime it couldn't express the view at all — so no trades.
+        # Real protection stays via the margin kill, leverage/margin gates,
+        # drawdown de-risk and per-position stops. (Competition only penalizes
+        # concentration >90% / 30min, surfaced as a watch below.)
 
         # --- Competition tripwire proximity (track duration, warn early) ---
         # >28x for >=30min = -20pts. Warn the moment we cross 25x.
