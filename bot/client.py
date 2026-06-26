@@ -125,6 +125,16 @@ class MT5Client:
         """Return recent OHLC bars (numpy structured array) or None."""
         return mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
 
+    def bars_range(self, symbol: str, timeframe, date_from, date_to=None):
+        """OHLC bars in [date_from, date_to] (datetimes). Unlike copy_rates_from_pos
+        (which returns only what the terminal has cached), a date range makes the
+        terminal PULL deeper history from the broker — so 1h/4h/1d charts can reach
+        back further. date_to defaults to now+1d so the latest bar is always included."""
+        import datetime as _dt
+        if date_to is None:
+            date_to = _dt.datetime.now() + _dt.timedelta(days=1)
+        return mt5.copy_rates_range(symbol, timeframe, date_from, date_to)
+
     # ---- account / positions ------------------------------------------
     def account(self) -> Account:
         a = mt5.account_info()

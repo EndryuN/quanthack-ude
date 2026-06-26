@@ -303,11 +303,26 @@ def bars(symbol: str, tf: str = "15m"):
         return {"available": False}
     try:
         import MetaTrader5 as mt5
-        _TF = {"1m": mt5.TIMEFRAME_M1, "15m": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1}
+        import datetime as _dt
+        _TF = {"1m": mt5.TIMEFRAME_M1, "15m": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1,
+               "4h": mt5.TIMEFRAME_H4, "1d": mt5.TIMEFRAME_D1}
         timeframe = _TF.get(tf, mt5.TIMEFRAME_M15)
-        # lots of back-data per timeframe: 1m ~20h, 15m ~12.5 days, 1h ~33 days
-        _N = {"1m": 1200, "15m": 1200, "1h": 800}
-        rates = c.bars(symbol, timeframe, _N.get(tf, 600))
+        _N = {"1m": 1500, "15m": 1500, "1h": 1500, "4h": 1500, "1d": 2000}   # max bars to return
+        _LOOKBACK_DAYS = {"1m": 7, "15m": 45, "1h": 240, "4h": 540, "1d": 2200}  # how far back to ASK
+        n_cap = _N.get(tf, 1000)
+        # Pull a DATE RANGE first — this forces the terminal to download deeper history
+        # from the broker than copy_rates_from_pos has cached. Fall back to from_pos if
+        # the range path returns nothing (never regress below the old behavior).
+        rates = None
+        try:
+            date_from = _dt.datetime.now() - _dt.timedelta(days=_LOOKBACK_DAYS.get(tf, 30))
+            rr = c.bars_range(symbol, timeframe, date_from)
+            if rr is not None and len(rr) > 0:
+                rates = rr[-n_cap:]
+        except Exception:
+            rates = None
+        if rates is None or len(rates) < 20:
+            rates = c.bars(symbol, timeframe, n_cap)
         if rates is None or len(rates) < 20:
             return {"available": False}
         closes = [float(x) for x in rates["close"]]
