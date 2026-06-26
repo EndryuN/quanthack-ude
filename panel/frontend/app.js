@@ -5,9 +5,11 @@ const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };
 
-// GLOBAL MODEL SELECTOR — single source of truth for every model-dependent view
-// (ribbon, heatmap layer, instrument chart). Values: claude|nemotron|deepseek|combined.
-let _modelLayer = "claude";
+// Header model selector — drives the currency-strength RIBBON ONLY.
+// Values: claude|nemotron|deepseek|combined. (The consensus heatmap has its own
+// independent layer buttons -> _heatLayer; the instrument cones show all models.)
+let _ribbonModel = "claude";
+let _heatLayer = "claude";
 
 async function getJSON(u){
   try { const r = await fetch(u); if(!r.ok) return null; return await r.json(); }
@@ -21,9 +23,9 @@ const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maxim
 // has no view are skipped; "combined" uses the row's top-level direction/confidence.
 function renderRibbon(consensus){
   const _sgn = d => d==="long"?1 : d==="short"?-1 : 0;
-  const _view = r => _modelLayer === "combined"
+  const _view = r => _ribbonModel === "combined"
     ? {direction:r.direction, confidence:r.confidence}
-    : r[_modelLayer];   // claude / nemotron / deepseek — may be null/undefined
+    : r[_ribbonModel];   // claude / nemotron / deepseek — may be null/undefined
   const _acc = {};
   for(const r of (consensus || [])){
     if(!r.symbol || r.symbol.length < 6) continue;
@@ -289,9 +291,9 @@ let _lastHm = null, _conWired = false;
 // combined (used), Claude-only, Nemotron-only, or DeepSeek-only.
 function _cellLayer(c){
   if(c==null) return null;
-  if(_modelLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
-  if(_modelLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
-  if(_modelLayer === "deepseek") return c.deepseek || null;   // null when DeepSeek absent that refresh
+  if(_heatLayer === "claude")   return c.claude   || {direction:c.direction, confidence:c.confidence};
+  if(_heatLayer === "nemotron") return c.nemotron || null;   // null when no 2nd opinion that refresh
+  if(_heatLayer === "deepseek") return c.deepseek || null;   // null when DeepSeek absent that refresh
   return c.combined || {direction:c.direction, confidence:c.confidence};
 }
 function plotHeatmap(hm){
@@ -303,7 +305,7 @@ function plotHeatmap(hm){
     return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
   const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
     if(c==null || c.confidence==null) return "";
-    return `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_modelLayer==="combined"?" ★":""}`; }));
+    return `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_heatLayer==="combined"?" ★":""}`; }));
   // Each refresh is ONE evenly-spaced column (a heatmap must be categorical) —
   // a continuous date axis distorts widths/gaps when refreshes are irregular
   // (15-min cadence + manual "Refresh views"). x = column index; the real
@@ -443,22 +445,27 @@ function wireConsensusTabs(){
     if(ot) ot.hidden = which !== "overtime";
     if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
   });
-  // over-time layer buttons are now slaved to the global selector (_modelLayer)
+  // the consensus heatmap's OWN layer buttons (independent of the header selector)
   const layers = document.querySelectorAll(".ot-layers .otlayer");
-  layers.forEach(btn=> btn.onclick = ()=> setModelLayer(btn.dataset.layer));
+  layers.forEach(btn=> btn.onclick = ()=> setHeatLayer(btn.dataset.layer));
+  layers.forEach(b=>b.classList.toggle("active", b.dataset.layer===_heatLayer));   // init
   _conWired = true;
 }
 
-// THE single global model selector. Every model-dependent view reads _modelLayer;
-// this is the only place it changes, keeping the header control + over-time layer
-// buttons + ribbon + heatmap + instrument chart in lockstep.
-function setModelLayer(layer){
-  _modelLayer = layer;
+// Header selector -> RIBBON ONLY, with a smooth fade on toggle.
+function setRibbonModel(layer){
+  _ribbonModel = layer;
   document.querySelectorAll("#model-sel .mbtn").forEach(b=>b.classList.toggle("active", b.dataset.layer===layer));
-  document.querySelectorAll(".ot-layers .otlayer").forEach(b=>b.classList.toggle("active", b.dataset.layer===layer));
   renderRibbon((window._lastState && window._lastState.consensus) || []);
+  const rib = document.getElementById("ribbon");
+  if(rib){ rib.classList.remove("ribbon-anim"); void rib.offsetWidth; rib.classList.add("ribbon-anim"); }
+}
+
+// Consensus-heatmap layer buttons -> HEATMAP ONLY.
+function setHeatLayer(layer){
+  _heatLayer = layer;
+  document.querySelectorAll(".ot-layers .otlayer").forEach(b=>b.classList.toggle("active", b.dataset.layer===layer));
   if(_lastHm) plotHeatmap(_lastHm);
-  if(curSymbol) plotSymbol(curSymbol, curTF);
 }
 
 let _modelSelWired = false;
@@ -466,9 +473,8 @@ function wireModelSelector(){
   if(_modelSelWired) return;
   const btns = document.querySelectorAll("#model-sel .mbtn");
   if(!btns.length) return;
-  btns.forEach(b=> b.onclick = ()=> setModelLayer(b.dataset.layer));
-  // sync initial active styling to _modelLayer (defaults to "claude")
-  btns.forEach(b=>b.classList.toggle("active", b.dataset.layer===_modelLayer));
+  btns.forEach(b=> b.onclick = ()=> setRibbonModel(b.dataset.layer));
+  btns.forEach(b=>b.classList.toggle("active", b.dataset.layer===_ribbonModel));   // init -> claude
   _modelSelWired = true;
 }
 

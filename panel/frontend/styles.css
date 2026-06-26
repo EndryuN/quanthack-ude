@@ -19,6 +19,9 @@ body{margin:0;background:var(--canvas);color:var(--ink);
 .rchip.short{color:var(--short);border-color:rgba(255,77,77,.35)}
 .rchip.flat{color:var(--muted)}
 /* currency-strength ribbon in its own row under the header */
+/* smooth fade when the model selector switches the ribbon's source */
+@keyframes ribbonfade{from{opacity:.15;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.ribbon-anim{animation:ribbonfade .3s ease}
 #ribbon{display:flex;gap:6px;align-items:center;padding:6px 18px;background:var(--canvas);
   border-bottom:1px solid var(--lift);overflow-x:auto;white-space:nowrap;position:sticky;top:56px;z-index:9}
 #ribbon::-webkit-scrollbar{height:5px}
@@ -28,7 +31,8 @@ body{margin:0;background:var(--canvas);color:var(--ink);
   padding:6px 12px;font-family:"JetBrains Mono";font-size:11px;letter-spacing:.04em;cursor:pointer;white-space:nowrap}
 .market-read-btn:hover{border-color:var(--chartreuse);color:var(--chartreuse)}
 /* global model selector — segmented control; active button takes its model's color */
-.model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden;margin-right:auto}
+.model-sel{display:flex;border:1px solid var(--lift);border-radius:6px;overflow:hidden}
+.model-sel .mbtn{transition:background .18s ease, color .18s ease}   /* smooth selector toggle */
 .model-sel .mbtn{background:var(--surface);color:var(--muted);border:none;border-right:1px solid var(--lift);
   padding:6px 11px;font-family:"JetBrains Mono";font-size:11px;cursor:pointer;transition:color .1s,background .1s}
 .model-sel .mbtn:last-child{border-right:none}
@@ -190,7 +194,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .contab.active{color:var(--canvas);background:var(--chartreuse);border-color:var(--chartreuse);font-weight:600}
 .con-pane[hidden]{display:none}
 .con-sub{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap}
+.views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap;margin-left:auto}
 .views-age.stale{color:var(--human);font-weight:600}
 
 /* Consensus asset-class tabs */
