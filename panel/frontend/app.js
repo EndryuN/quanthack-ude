@@ -778,20 +778,24 @@ function buildSymbolList(symbols){
 
 function wireConsensusTabs(){
   if(_conWired) return;
-  const tabs = document.querySelectorAll(".con-tabs .contab");
+  const tabs = document.querySelectorAll(".con-tabs .contab[data-con]");   // exclude the Present toggle
   if(!tabs.length) return;
+  const pres = document.getElementById("ot-present");
   tabs.forEach(btn=> btn.onclick = ()=>{
     const which = btn.dataset.con;
     tabs.forEach(b=>b.classList.toggle("active", b===btn));
     const lt = document.getElementById("con-latest"), ot = document.getElementById("con-overtime");
     if(lt) lt.hidden = which !== "latest";
     if(ot) ot.hidden = which !== "overtime";
+    if(pres) pres.style.display = which === "overtime" ? "" : "none";   // Present only on Over time
+    if(which !== "overtime" && _followMode && pres) pres.click();        // leaving -> stop Present
     if(which === "overtime"){          // render now that the pane is visible (was 0-width while hidden)
       if(_lastHm) plotHeatmap(_lastHm);
       else getJSON("/api/heatmap").then(hm => hm && plotHeatmap(hm));   // recover from a failed first fetch
       try { Plotly.Plots.resize("heatmap"); } catch(e){}
     }
   });
+  if(pres) pres.style.display = "none";   // hidden until Over time is shown (default tab is Latest)
   // the consensus heatmap's OWN layer buttons (independent of the header selector)
   const layers = document.querySelectorAll(".ot-layers .otlayer");
   layers.forEach(btn=> btn.onclick = ()=> setHeatLayer(btn.dataset.layer));
