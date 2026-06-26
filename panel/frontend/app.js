@@ -432,7 +432,10 @@ async function plotSymbol(symbol, tf){
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
     ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
-  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
+  // size the chart to the symbol list so the panel has no dead space below it
+  const _lst = document.getElementById("symbol-list");
+  const chartH = Math.max(340, _lst ? _lst.scrollHeight : 340);
+  Plotly.react("symbol-chart", traces, {...PLOT_BG, height:chartH, showlegend:true,
     shapes:_shapes,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},

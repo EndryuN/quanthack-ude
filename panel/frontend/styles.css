@@ -122,7 +122,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
   cursor:pointer;display:flex;align-items:center}
 .chart-type .ct:last-child,.tf-toggle .tf:last-child{border-right:none}
 .chart-type .ct.active,.tf-toggle .tf.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
-#symbol-list{display:flex;flex-direction:column;gap:2px;flex:1;min-height:0;overflow-y:auto}
+#symbol-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto}
 #symbol-list .sym{padding:5px 8px;border-radius:5px;font-family:"JetBrains Mono";
   font-size:12px;cursor:pointer;color:var(--ink);border-left:2px solid transparent}
 #symbol-list .sym:hover{background:var(--lift)}
