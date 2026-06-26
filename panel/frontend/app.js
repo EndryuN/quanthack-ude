@@ -383,7 +383,7 @@ function plotHeatmap(hm){
   for(let i = 0; i < n; i += step){ tickvals.push(i); ticktext.push(fmtT(ts[i])); }
   const ctime = hm.symbols.map(()=> ts.map(fmtT));  // real time per cell (hover)
   Plotly.react("heatmap", [{z, x:xi, y:hm.symbols, customdata:ctime,
-    type:"heatmap", text, xgap:1, ygap:1,
+    type:"heatmap", text, xgap:(n>60?0:1), ygap:1,
     hovertemplate:"%{y} · %{customdata}: %{text}<extra></extra>",
     colorscale:[[0,C.short],[0.5,C.canvas],[1,C.long]], zmid:0, showscale:false}],
     {...PLOT_BG, height: Math.max(160, hm.symbols.length*22+40), margin:{l:64,r:8,t:8,b:30},
@@ -725,7 +725,11 @@ function wireConsensusTabs(){
     const lt = document.getElementById("con-latest"), ot = document.getElementById("con-overtime");
     if(lt) lt.hidden = which !== "latest";
     if(ot) ot.hidden = which !== "overtime";
-    if(which === "overtime" && _lastHm) plotHeatmap(_lastHm);   // re-render now that it's visible
+    if(which === "overtime"){          // render now that the pane is visible (was 0-width while hidden)
+      if(_lastHm) plotHeatmap(_lastHm);
+      else getJSON("/api/heatmap").then(hm => hm && plotHeatmap(hm));   // recover from a failed first fetch
+      try { Plotly.Plots.resize("heatmap"); } catch(e){}
+    }
   });
   // the consensus heatmap's OWN layer buttons (independent of the header selector)
   const layers = document.querySelectorAll(".ot-layers .otlayer");

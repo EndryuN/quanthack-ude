@@ -23,8 +23,12 @@ def load_decisions(log_dir: str, day: str | None = None) -> list[dict]:
         with open(p, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                try:
                     out.append(json.loads(line))
+                except ValueError:
+                    continue   # skip a half-written/corrupt line (engine appends concurrently)
     return out
 
 
@@ -52,9 +56,9 @@ def equity_series(state_dir: str) -> list[dict]:
 
 
 def _slim(side: dict | None) -> dict | None:
-    if side is None:
+    if not isinstance(side, dict):
         return None
-    return {"direction": side["direction"], "confidence": side["confidence"]}
+    return {"direction": side.get("direction", "flat"), "confidence": side.get("confidence")}
 
 
 def _deepseek_of(v: dict) -> dict | None:
@@ -100,23 +104,34 @@ def consensus_rows(record: dict) -> list[dict]:
 def heatmap_matrix(records: list[dict]) -> dict:
     """instruments x timesteps grid. cells[r][c] is the view dict or None."""
     decisions = [r for r in records if r.get("event") != "refresh_failed"]
+    # keep the over-time grid readable + light: downsample to <= MAX columns,
+    # preserving the full time span (every k-th refresh). Otherwise hundreds of
+    # 1-2px columns render washed-out/blank and bloat the payload.
+    MAX = 180
+    if len(decisions) > MAX:
+        k = (len(decisions) + MAX - 1) // MAX
+        decisions = decisions[::k]
     symbols: list[str] = []
     for rec in decisions:
         for v in rec.get("views", []):
-            if v["symbol"] not in symbols:
-                symbols.append(v["symbol"])
-    timestamps = [rec["ts"] for rec in decisions]
+            s = v.get("symbol")
+            if s and s not in symbols:
+                symbols.append(s)
+    timestamps = [rec.get("ts", "") for rec in decisions]
     cells = [[None] * len(decisions) for _ in symbols]
     sidx = {s: i for i, s in enumerate(symbols)}
     for c, rec in enumerate(decisions):
         for v in rec.get("views", []):
-            used = {"direction": v["direction"], "confidence": v["confidence"]}
+            s = v.get("symbol")
+            if s not in sidx:
+                continue
+            used = {"direction": v.get("direction", "flat"), "confidence": v.get("confidence")}
             claude = _slim(v.get("claude")) or used        # old records: fall back to `used`
             nemo = _slim(v.get("nemotron"))                 # None when no second opinion
             combined = _slim(v.get("combined")) or used     # old records: `used` was the combined
-            cells[sidx[v["symbol"]]][c] = {
-                "direction": v["direction"], "confidence": v["confidence"],
-                "agreement": v["agreement"], "boosted": v.get("boosted", False),
+            cells[sidx[s]][c] = {
+                "direction": v.get("direction", "flat"), "confidence": v.get("confidence"),
+                "agreement": v.get("agreement", ""), "boosted": v.get("boosted", False),
                 "claude": claude, "nemotron": nemo, "combined": combined,
                 "deepseek": _deepseek_of(v),
             }

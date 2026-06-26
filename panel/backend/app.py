@@ -28,7 +28,11 @@ app = FastAPI(title="SIGNAL//LAYER")
 
 def _mt5():
     """Return a connected read-only MT5Client, or None if unavailable.
-    Read-only: we only call account()/positions()/bars()."""
+    Read-only: we only call account()/positions()/bars(). PANEL_NO_LIVE=1 forces
+    offline mode (no MT5 at all) so the panel renders purely from logs/state —
+    used for the demo/replay dashboard and to avoid spawning the MT5 terminal."""
+    if os.environ.get("PANEL_NO_LIVE") == "1":
+        return None
     try:
         from bot.client import MT5Client
         c = MT5Client()
