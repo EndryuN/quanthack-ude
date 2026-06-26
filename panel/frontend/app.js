@@ -328,11 +328,11 @@ function plotDumbbell(allRows){
     customdata:fd, hovertemplate:"%{customdata}", showlegend:false};
   // Legend lives in the card-head (renderHitRates) — no Plotly legend overlapping row 1.
   Plotly.react("dumbbell", [...lines, fullDots, ...overlap],
-    {...PLOT_BG, height: Math.max(120, ys.length*30+36),
-     margin:{l:66, r:14, t:10, b:30}, yaxis:{automargin:true, color:C.muted},
-     xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
+    {...PLOT_BG, height: Math.max(120, ys.length*30+36), dragmode:false,   // not pannable/zoomable
+     margin:{l:66, r:14, t:10, b:30}, yaxis:{automargin:true, color:C.muted, fixedrange:true},
+     xaxis:{range:[-1.05,1.05], fixedrange:true, zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
      showlegend:false},
-    {displayModeBar:false});
+    {displayModeBar:false, scrollZoom:false, staticPlot:false});
 }
 
 let _lastHm = null, _conWired = false;
