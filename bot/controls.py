@@ -13,7 +13,8 @@ DEFAULT_CONTROLS = {
     "block": [],            # symbols clamped toward flat (no new/increased risk)
     "allow": None,          # if a list, every symbol NOT listed is clamped toward flat
     "active_preset": "Default",
-    "second_opinion": None, # None -> use CONFIG.use_second_opinion; True/False -> override
+    "second_opinion": None, # Nemotron INFLUENCE on sizing: None->default on; True/False override
+    "ensemble_input": None,  # gateway voters' (DeepSeek) INFLUENCE on sizing: None->default OFF
     "scalper_symbols": [],  # symbols assigned to the scalper (ceded from the engine live)
     "scalper_armed": [],    # per-symbol arm: symbols cleared to trade LIVE (rest are dry-run)
     "scalper_armed_force": [],  # per-symbol override: armed despite not clearing the gate

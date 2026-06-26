@@ -17,39 +17,67 @@ _DIR_STR = {1: "long", -1: "short", 0: "flat"}
 
 
 def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5,
-                    influence=True):
-    """Merge Claude (primary, authoritative direction) with Nemotron (booster).
+                    influence=True, extra_voters=None, extra_influence=False):
+    """Merge Claude (primary, AUTHORITATIVE direction) with additive second
+    opinions: Nemotron plus any extra gateway voters (e.g. DeepSeek). A voter only
+    RAISES confidence when it independently agrees with Claude's direction — it
+    never sets/flips direction and never shrinks (strictly additive). The boost is
+    `cc + (1-cc)*gain*mean(agreeing confidences)`, so one agreeing Nemotron
+    reproduces the original single-booster rule.
 
-    Nemotron is ALWAYS recorded for display (claude / nemotron / combined are all
-    stored per view). `influence` controls ONLY whether the SIZER uses the boosted
-    confidence: influence=False -> the algorithm ignores Nemotron's input (the
-    sizer sees Claude's confidence), but the combined value is still computed and
-    stored so the panel can show Claude-only / Nemotron-only / Combined over time.
+    EVERY voter is always recorded for the panel + scoring. Influence is gated
+    PER SOURCE: `influence` (Nemotron) and `extra_influence` (the gateway voters,
+    default OFF) decide whether each source affects the value the SIZER uses.
+    `combined` is the full consensus (all agreeing voters) for display regardless
+    of influence; `used` only counts the influence-enabled voters.
 
-    Returns (sizer_views, view_records):
-      sizer_views:  {sym: (dir_int, used_conf)}  -- fed to the sizer
-      view_records: list of dicts in the decision-log `views[]` shape
+    extra_voters: {model_id: {sym: (dir, conf, rationale)}} or None.
+    Returns (sizer_views {sym:(dir,used_conf)}, view_records in the log shape).
     """
+    extra_voters = extra_voters or {}
     available = bool(nemotron_views)
     sizer_views = {}
     records = []
     for sym, (dc, cc) in claude_views.items():
         nv = nemotron_views.get(sym) if available else None
-        combined = cc
-        boosted = False
+        # Nemotron agreement tag (kept verbatim for back-compat / existing panel)
         if not available:
             agreement = "second_opinion_unavailable"
         elif nv is None or nv[0] == 0:
             agreement = "nemotron_flat"
         elif nv[0] == dc and dc != 0:
             agreement = "agree"
-            combined = cc + (1.0 - cc) * gain * nv[1]
-            boosted = True
         else:
             agreement = "disagree"
 
-        combined = max(0.0, min(1.0, combined))
-        used = combined if influence else cc      # what the sizer actually acts on
+        # Collect every second opinion (Nemotron + extra voters)
+        agree_all, agree_used, voters_rec = [], [], {}
+
+        def _consider(name, vv, infl):
+            if vv is None:
+                voters_rec[name] = None
+                return
+            d = int(vv[0]); c = max(0.0, min(1.0, float(vv[1])))
+            r = vv[2] if len(vv) > 2 else ""
+            agrees = (d == dc and dc != 0)
+            if agrees:
+                agree_all.append(c)
+                if infl:
+                    agree_used.append(c)
+            voters_rec[name] = {"direction": _DIR_STR[d], "confidence": c,
+                                "rationale": r, "agrees": agrees,
+                                "influence": bool(infl)}
+
+        _consider("nemotron", nv, influence)
+        for model, ev in extra_voters.items():
+            _consider(model, ev.get(sym), extra_influence)
+
+        def _boost(confs):
+            return (cc + (1.0 - cc) * gain * (sum(confs) / len(confs))) if confs else cc
+
+        combined = max(0.0, min(1.0, _boost(agree_all)))    # full consensus (display)
+        used = max(0.0, min(1.0, _boost(agree_used)))       # what the sizer acts on
+        boosted = bool(agree_all)
         sizer_views[sym] = (dc, used)
         records.append({
             "symbol": sym,
@@ -59,7 +87,8 @@ def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5,
                        "rationale": claude_rationale.get(sym, "")},
             "nemotron": ({"direction": _DIR_STR[nv[0]], "confidence": nv[1],
                           "rationale": nv[2]} if nv is not None else None),
-            # combined direction is always Claude's (Nemotron never sets direction)
+            "voters": voters_rec,                 # per-model incl nemotron (always recorded)
+            # combined direction is always Claude's (voters never set direction)
             "combined": {"direction": _DIR_STR[dc], "confidence": round(combined, 4)},
             "agreement": agreement,
             "boosted": boosted,

@@ -117,6 +117,18 @@ def symbols():
     return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"]}
 
 
+@app.get("/api/model_scores")
+def model_scores():
+    """Per-model directional hit-rates (Claude / Nemotron / DeepSeek) from
+    state/model_scores.json. {} until the engine has scored two refreshes."""
+    import json as _json
+    try:
+        with open(os.path.join(STATE_DIR, "model_scores.json"), encoding="utf-8") as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return {"rates": {}, "n": 0}
+
+
 @app.get("/api/scalper")
 def scalper_state():
     """Per-symbol scalper status (state/scalper.json) for the inline progress
@@ -202,7 +214,7 @@ def get_controls():
 def post_controls(body: dict):
     c = ctrl.load_controls(STATE_DIR)
     for k in ("paused", "aggression", "block", "allow", "active_preset",
-              "second_opinion", "scalper_symbols", "scalper_armed",
+              "second_opinion", "ensemble_input", "scalper_symbols", "scalper_armed",
               "scalper_armed_force"):
         if k in body:
             c[k] = body[k]

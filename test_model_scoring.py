@@ -27,4 +27,18 @@ assert r["nemotron"]["total"] == 1 and r["nemotron"]["hits"] == 0 and r["nemotro
 assert r["nemotron"]["skipped"] == 1
 assert r["deepseek"]["total"] == 0 and r["deepseek"]["rate"] is None and r["deepseek"]["skipped"] == 1
 
+# --- ModelScorer: scores the PREVIOUS refresh against the next price snapshot ---
+from bot.model_scoring import ModelScorer
+sc = ModelScorer()
+# refresh 1: record calls + prices; nothing to score yet
+sc.record({"claude": {"EURUSD": 1, "GBPUSD": -1}, "deepseek": {"EURUSD": 1}},
+          {"EURUSD": 1.0000, "GBPUSD": 1.0000})
+assert sc.rates() == {} and sc.n_samples == 0
+# refresh 2: EURUSD up (claude long ✓, deepseek long ✓), GBPUSD up (claude short ✗)
+sc.record({"claude": {"EURUSD": 1, "GBPUSD": -1}, "deepseek": {"EURUSD": 1}},
+          {"EURUSD": 1.0100, "GBPUSD": 1.0100})
+r2 = sc.rates()
+assert r2["claude"]["total"] == 2 and r2["claude"]["hits"] == 1, r2["claude"]
+assert r2["deepseek"]["total"] == 1 and r2["deepseek"]["hits"] == 1, r2["deepseek"]
+
 print("OK")

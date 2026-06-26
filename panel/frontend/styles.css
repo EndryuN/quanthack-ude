@@ -1,6 +1,6 @@
 :root{
   --canvas:#0D0E12; --surface:#14161D; --lift:#1E2330; --chartreuse:#C8FF00;
-  --claude:#7B61FF; --nemo:#00C8A0; --human:#F5A623; --long:#2ECC71;
+  --claude:#FF8A1E; --nemo:#00C8A0; --deepseek:#7B61FF; --human:#F5A623; --long:#2ECC71;
   --short:#FF4D4D; --flat:#3A3F50; --ink:#E8EAF0; --muted:#6B7080;
 }
 *{box-sizing:border-box}

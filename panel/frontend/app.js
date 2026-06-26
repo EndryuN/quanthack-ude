@@ -1,6 +1,6 @@
 // SIGNAL//LAYER — read-only dashboard. Polls the backend and renders.
 const C = { canvas:"#0D0E12", surface:"#14161D", lift:"#1E2330",
-  chartreuse:"#C8FF00", claude:"#7B61FF", nemo:"#00C8A0", human:"#F5A623",
+  chartreuse:"#C8FF00", claude:"#FF8A1E", nemo:"#00C8A0", deepseek:"#7B61FF", human:"#F5A623",
   long:"#2ECC71", short:"#FF4D4D", flat:"#3A3F50", ink:"#E8EAF0", muted:"#6B7080" };
 const PLOT_BG = { paper_bgcolor:C.surface, plot_bgcolor:C.surface,
   font:{color:C.ink, family:"JetBrains Mono"}, margin:{l:40,r:12,t:8,b:28} };

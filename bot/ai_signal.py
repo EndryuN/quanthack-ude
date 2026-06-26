@@ -98,6 +98,18 @@ def build_context(client: MT5Client, symbols, tf=mt5.TIMEFRAME_M15) -> str:
     return "\n".join(lines)
 
 
+def snapshot_prices(client: MT5Client, symbols, tf=mt5.TIMEFRAME_M15) -> dict:
+    """{symbol: last close} — the entry-price reference used to score each model's
+    directional call against the realized move at the next refresh."""
+    out = {}
+    for s in symbols:
+        bars = client.bars(s, tf, 2)
+        c = _closes(bars)
+        if c is not None and len(c):
+            out[s] = float(c[-1])
+    return out
+
+
 SYSTEM = """You are the signal engine for an algorithmic entry in a simulated \
 multi-day trading competition on forex, metals and crypto. Scoring is ~70% \
 return rank among surviving accounts, with smaller weights on drawdown and \

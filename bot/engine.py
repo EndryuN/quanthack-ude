@@ -107,6 +107,8 @@ class Engine:
         self._last_ai_attempt = 0.0 # epoch of last refresh attempt (any outcome)
         self._ai_backoff = 0.0      # grows on failure so we don't hammer a down API
         self._force_refresh = False # operator "refresh now" one-shot (skip cadence)
+        from .model_scoring import ModelScorer
+        self._scorer = ModelScorer()  # per-model directional hit-rates across refreshes
         self.logger = DecisionLogger(cfg.log_dir) if cfg.log_decisions else None
         self._pending_log = None
         self._second_opinion_off = not bool(os.getenv("NVIDIA_API_KEY"))
@@ -279,6 +281,29 @@ class Engine:
         views = {s: v for s, v in self._views.items() if s in active}
         return build_targets(self.client, views, acct.equity, agg, self.sizer_cfg)
 
+    def _score_models(self, claude_views, nemo_views, extra_voters):
+        """Record each model's per-symbol direction + a price snapshot; the scorer
+        grades the PREVIOUS refresh's calls against the realized move and persists
+        Claude/Nemotron/DeepSeek hit-rates to state/model_scores.json for the panel
+        (and Logfire Evals). Best-effort — never breaks a refresh."""
+        try:
+            from .ai_signal import snapshot_prices
+            prices = snapshot_prices(self.client, self._active_symbols)
+            vbm = {"claude": {s: d for s, (d, _c) in claude_views.items()}}
+            if nemo_views:
+                vbm["nemotron"] = {s: v[0] for s, v in nemo_views.items()}
+            for model, ev in extra_voters.items():
+                vbm[model] = {s: v[0] for s, v in ev.items()}
+            self._scorer.record(vbm, prices)
+            if self.cfg.use_control_panel:
+                from .controls import atomic_write_json
+                atomic_write_json(
+                    os.path.join(self.cfg.state_dir, "model_scores.json"),
+                    {"rates": self._scorer.rates(), "n": self._scorer.n_samples,
+                     "ts": _iso()})
+        except Exception as e:
+            print(f"[{_ts()}] [score] model scoring failed: {e}")
+
     # failure backoff: 30s, then doubling up to a 5-min cap between retries
     _AI_BACKOFF_MIN = 30.0
     _AI_BACKOFF_MAX = 300.0
@@ -307,11 +332,28 @@ class Engine:
                     print(f"        [2nd] Nemotron second opinion failed: {e}")
                     nemo_views, nemo_regime, nemo_usage = {}, None, None
 
+            # Gateway ensemble voters (e.g. DeepSeek) — ALWAYS queried + recorded
+            # + scored when enabled; their INFLUENCE on sizing is gated separately
+            # and OFF by default. Additive only: they never set/flip direction.
+            ens_raw = {}
+            if self.cfg.use_ensemble and self.cfg.ensemble_models:
+                from .gateway_ensemble import get_ensemble_views
+                try:
+                    ens_raw = get_ensemble_views(
+                        context, self._active_symbols, self.cfg.ensemble_models,
+                        timeout=self.cfg.ensemble_timeout)
+                except Exception as e:
+                    print(f"        [ensemble] failed: {e}")
+                    ens_raw = {}
+            extra_voters = {m: vr[0] for m, vr in ens_raw.items()}   # {model: {sym:(d,c,r)}}
+
             from .controls import control_flag
             influence = control_flag(self._controls, "second_opinion", True)
+            extra_influence = control_flag(self._controls, "ensemble_input", False)
             sizer_views, view_records = apply_consensus(
                 claude_views, claude_rationale, nemo_views,
-                gain=self.cfg.nemotron_consensus_gain, influence=influence)
+                gain=self.cfg.nemotron_consensus_gain, influence=influence,
+                extra_voters=extra_voters, extra_influence=extra_influence)
 
             if self._overrides:
                 from .overrides import human_views
@@ -323,11 +365,14 @@ class Engine:
             self._views_ts = time.time()
             self._regime = mv.regime
             self._ai_backoff = 0.0
+            ens_regime = {m: vr[1] for m, vr in ens_raw.items()}     # {model: regime str}
             self._pending_log = {
                 "models": {"primary": "claude-opus-4-8",
                            "second_opinion": (self.cfg.nemotron_model
-                                              if nemo_usage else None)},
-                "regime": {"claude": mv.regime, "nemotron": nemo_regime},
+                                              if nemo_usage else None),
+                           "ensemble": list(ens_raw.keys()) or None},
+                "regime": {"claude": mv.regime, "nemotron": nemo_regime,
+                           **ens_regime},
                 "cost": {"claude": {"in": claude_usage["in_tokens"],
                                     "out": claude_usage["out_tokens"],
                                     "usd": claude_usage["usd"]},
@@ -337,6 +382,7 @@ class Engine:
                                       if nemo_usage else None)},
                 "views": view_records,
             }
+            self._score_models(claude_views, nemo_views, extra_voters)
             active = {s: v for s, v in sizer_views.items() if v[0] != 0 and v[1] > 0}
             print(f"[{_ts()}] AI views refreshed | regime: {mv.regime}")
             for s, (d, c) in sorted(active.items(), key=lambda x: -x[1][1]):
