@@ -86,7 +86,7 @@ def state():
         "gauges": data.risk_gauges(acct),
         "tripwires": data.tripwire_status(acct),
         "consensus": data.consensus_rows(last),
-        "regime": last.get("regime", {}),
+        "regime": data.normalize_regime(last.get("regime", {})),
         "models": last.get("models", {}),
         "cost": last.get("cost", {}),
         "orders": last.get("orders", []),

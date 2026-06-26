@@ -57,6 +57,25 @@ def _slim(side: dict | None) -> dict | None:
     return {"direction": side["direction"], "confidence": side["confidence"]}
 
 
+def _deepseek_of(v: dict) -> dict | None:
+    """Slim view of the first DeepSeek gateway voter in a logged view record
+    (record.views[i].voters = {model_id: {...}}), or None if it didn't vote."""
+    for name, vv in (v.get("voters") or {}).items():
+        if vv and "deepseek" in name.lower():
+            return {"direction": vv["direction"], "confidence": vv["confidence"]}
+    return None
+
+
+def normalize_regime(regime: dict) -> dict:
+    """Map the logged regime (keys: claude, nemotron, <gateway model ids>) to the
+    short labels the panel uses: claude / nemotron / deepseek."""
+    out = {"claude": regime.get("claude"), "nemotron": regime.get("nemotron")}
+    for k, val in (regime or {}).items():
+        if "deepseek" in k.lower():
+            out["deepseek"] = val
+    return out
+
+
 def consensus_rows(record: dict) -> list[dict]:
     """Per-view rows for the snapshot dumbbell, non-flat only, sorted by final
     confidence descending."""
@@ -70,6 +89,7 @@ def consensus_rows(record: dict) -> list[dict]:
             "confidence": v["confidence"],
             "claude": _slim(v.get("claude")),
             "nemotron": _slim(v.get("nemotron")),
+            "deepseek": _deepseek_of(v),
             "agreement": v["agreement"],
             "boosted": v.get("boosted", False),
         })
@@ -98,6 +118,7 @@ def heatmap_matrix(records: list[dict]) -> dict:
                 "direction": v["direction"], "confidence": v["confidence"],
                 "agreement": v["agreement"], "boosted": v.get("boosted", False),
                 "claude": claude, "nemotron": nemo, "combined": combined,
+                "deepseek": _deepseek_of(v),
             }
     return {"symbols": symbols, "timestamps": timestamps, "cells": cells}
 
