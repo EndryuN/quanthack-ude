@@ -158,11 +158,13 @@ function renderOrders(list){
   }).join("");
 }
 
+let _posBySym = {};   // {symbol: {lots, entry, profit, ...}} — for the instrument chart
 function renderPositions(pos){
   const el = document.getElementById("positions");
   if(!el) return;
   if(!pos || !pos.available){ el.innerHTML = '<div style="color:var(--muted)">(MT5 unavailable)</div>'; return; }
   const list = pos.positions || [];
+  _posBySym = {}; list.forEach(p => { _posBySym[p.symbol] = p; });   // for plotSymbol (1s pollSymbol picks it up)
   if(!list.length){ el.innerHTML = '<div style="color:var(--muted)">(flat)</div>'; return; }
   const fmtPL = v => (v>=0?"+$":"-$")+Math.abs(Math.round(v)).toLocaleString();
   const row = p=>{
@@ -365,7 +367,21 @@ async function plotSymbol(symbol, tf){
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
     ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
+  // our OPEN POSITION on this symbol: dashed entry line (green long / red short) + label
+  const _shapes = [], _annos = [];
+  const _p = _posBySym[curSymbol];
+  if(_p && _p.entry){
+    const long = _p.lots > 0, pcol = long ? C.long : C.short;
+    const prof = _p.profit != null ? ((_p.profit>=0?"+$":"-$")+Math.abs(Math.round(_p.profit)).toLocaleString()) : "";
+    const epx = (+_p.entry).toLocaleString(undefined, {maximumFractionDigits: _p.entry>=100?2:5});
+    _shapes.push({type:"line", xref:"paper", x0:0, x1:1, yref:"y", y0:_p.entry, y1:_p.entry,
+      line:{color:pcol, width:1.5, dash:"dashdot"}});
+    _annos.push({xref:"paper", x:0.005, y:_p.entry, yref:"y", xanchor:"left", yanchor:"bottom",
+      text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${epx}  ${prof}`,
+      showarrow:false, font:{size:9, color:pcol, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
+  }
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
+    shapes:_shapes, annotations:_annos,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},

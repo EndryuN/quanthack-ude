@@ -154,6 +154,7 @@ def positions():
         assigned = set(ctrl.scalper_assignments(ctrl.load_controls(STATE_DIR), ALL_SYMBOLS))
         out = [{"symbol": p.symbol, "lots": p.signed_lots,
                 "profit": getattr(p, "profit", 0.0),
+                "entry": getattr(p, "price_open", 0.0),
                 "scalped": p.symbol in assigned or getattr(p, "magic", 0) == SCALPER.magic}
                for p in c.positions(magic=None)]
         return {"available": True, "positions": out}
