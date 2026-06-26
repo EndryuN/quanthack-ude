@@ -109,3 +109,40 @@ python run_ai_backtest.py --mode replay --results results.jsonl --cadence-bars 4
 > `/chat/completions` path injects a `safety_identifier` parameter the Doubleword
 > backend rejects). The exported `batch_requests.jsonl` is still in OpenAI batch
 > format and ready for the native batch tier given direct Doubleword access.
+
+---
+
+## Experiment — does longer-horizon context help the LLM?
+
+A natural intuition is that giving the model more history (a multi-week trend /
+range, not just the last few days) should sharpen its calls. We tested it directly
+rather than assuming. An optional `AI_LONG_HORIZON` flag adds a ~10-day block to the
+snapshot — **10-day return, 10-day H4 trend, 10-day range position** — reusing the
+H4 window `build_context` already fetches. It is **off by default** (live prompts
+unchanged), and the *same* `build_context` drives live and backtest, so flipping the
+flag is a true A/B: re-run inference off vs on, identical replay otherwise.
+
+| | return | max DD | Sharpe | trades | final equity |
+|---|---:|---:|---:|---:|---:|
+| **Baseline** (current context) | **+0.17%** | 5.04% | 0.001 | 960 | 1,001,660 |
+| **+ 10-day horizon** (`AI_LONG_HORIZON=1`) | −0.82% | **3.30%** | −0.006 | 942 | 991,844 |
+
+*Same cache (2026-05-11 → 06-10), warmup 1000 bars, 2-hourly cadence (~150 decision
+points), DeepSeek-V4-Flash via Doubleword, default aggression.*
+
+**Finding: longer-horizon context did not help.** It slightly *lowered* return and
+Sharpe while *reducing* drawdown — i.e. the extra context made the model more
+cautious (lower DD, marginally fewer trades) but gave up the small positive return.
+So the field stays **off by default**; the toggle remains in the code as a
+documented, re-runnable experiment.
+
+Caveats (stated honestly): this is the cheap proxy model (DeepSeek-V4-Flash, which
+shows no real edge either way — both Sharpes are ≈0), and a 31-day window is short
+for a horizon study. It is a directional read, not proof. The takeaway is consistent
+with the broader result above: on this model/period, **more history ≠ better calls**.
+
+```bash
+# reproduce the A/B (each ~150 calls via the gateway):
+python run_ai_backtest.py --mode online --warmup-bars 1000 --cadence-bars 8 --service-tier priority
+AI_LONG_HORIZON=1 python run_ai_backtest.py --mode online --warmup-bars 1000 --cadence-bars 8 --service-tier priority
+```
