@@ -1434,9 +1434,10 @@ function renderVolatility(d){
   if(idx){
     if(!d || !d.available){ idx.innerHTML = `<span class="vol-warn">${_esc((d && d.note) || "unavailable")}</span>`; }
     else {
-      const chip = (lbl, z)=> `<span class="vol-chip"><label>${lbl}</label>`
+      const chip = (lbl, z, lc)=> `<span class="vol-chip"><label style="color:${lc}">${lbl}</label>`
         + `<b style="color:${_volColor(z)}">${z == null ? "—" : (z > 0 ? "+" : "") + z}</b></span>`;
-      idx.innerHTML = chip("Combined", d.combined) + chip("FX", d.fx) + chip("Metals", d.metals) + chip("Crypto", d.crypto);
+      idx.innerHTML = chip("Combined", d.combined, C.chartreuse) + chip("FX", d.fx, C.fx)
+        + chip("Metals", d.metals, C.metal) + chip("Crypto", d.crypto, C.crypto);
     }
   }
   const bars = document.getElementById("vol-bars"); if(!bars) return;

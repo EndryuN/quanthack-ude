@@ -298,8 +298,8 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .vol-note{font-size:10px;color:var(--muted)}
 .vol-index{display:flex;gap:14px;margin-left:auto}
 .vol-chip{display:flex;flex-direction:column;text-align:right;font-family:"JetBrains Mono"}
-.vol-chip label{font-size:9px;letter-spacing:.1em;color:var(--muted)}
-.vol-chip b{font-size:14px;font-weight:600}
+.vol-chip label{font-size:11px;letter-spacing:.08em;font-weight:600}   /* color set inline by category */
+.vol-chip b{font-size:18px;font-weight:700}
 .vol-warn{color:var(--short);font-size:11px}
 .vol-bars{display:flex;flex-direction:column;gap:3px;margin-top:8px;font-family:"JetBrains Mono";font-size:10px}
 .vol-row{display:flex;align-items:center;gap:8px}
