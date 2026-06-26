@@ -146,9 +146,9 @@ The control channel is deliberately constrained: the panel is the *sole writer* 
 
 | Layer | Technology |
 |---|---|
-| **Reasoning / signal (live)** | Claude Opus 4.8 with adaptive extended thinking, via the Anthropic API |
-| **Second opinion (live)** | NVIDIA Nemotron via the OpenAI-compatible NIM endpoint (consensus gate, optional) |
-| **Ensemble voter (live)** | DeepSeek-V4-Pro — a live blind voter via the Pydantic AI Gateway → Doubleword (OpenAI-compatible, optional) |
+| **Reasoning / signal (live)** | Claude Opus 4.8 (`claude-opus-4-8`) with adaptive extended thinking, via the Anthropic API |
+| **Second opinion (live)** | NVIDIA Nemotron (`nvidia/nemotron-3-super-120b-a12b`) via the OpenAI-compatible NIM endpoint (consensus gate, optional) |
+| **Ensemble voter (live)** | DeepSeek-V4-Pro (`deepseek-ai/DeepSeek-V4-Pro`) — a live blind voter via the Pydantic AI Gateway → Doubleword (OpenAI-compatible, optional) |
 | **Reasoning / signal (backtest)** | DeepSeek-V4-Flash via Doubleword tiered inference (batch/async) through the same Pydantic AI Gateway — the cheap backtest model, distinct from the live V4-Pro voter |
 | **Structured output** | Pydantic schema validation (no free-text parsing of trade instructions) |
 | **Market data & execution** | MetaTrader 5 (live tick data, order placement, position management) |

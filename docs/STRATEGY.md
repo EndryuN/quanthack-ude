@@ -114,7 +114,7 @@ Claude does **not** output price targets, entry levels, stop distances, or holdi
 
 After Claude responds, the bot queries one or more **blind co-equal voters** on the **same market context string** and the **same `SYSTEM` prompt** — none of them ever sees Claude's answer:
 
-- **NVIDIA Nemotron-3-Super-120B** via the NVIDIA NIM OpenAI-compatible API (`get_second_opinion`, `second_opinion.py:130-170`). Master switch `use_second_opinion` (`config.py:176`); auto-off if `NVIDIA_API_KEY` is unset.
+- **NVIDIA Nemotron-3-Super-120B** (`nvidia/nemotron-3-super-120b-a12b`, `config.py:177`) via the NVIDIA NIM OpenAI-compatible API (`get_second_opinion`, `second_opinion.py:130-170`). Master switch `use_second_opinion` (`config.py:176`); auto-off if `NVIDIA_API_KEY` is unset.
 - **DeepSeek-V4-Pro** via the Pydantic AI Gateway → Doubleword (`gateway_ensemble.py`, model id at `config.py:188`). Master switch `use_ensemble` (`config.py:186`); no-op if the gateway key is unconfigured.
 
 Key differences from the Claude call:

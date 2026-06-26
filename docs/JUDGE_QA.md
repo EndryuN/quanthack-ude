@@ -94,7 +94,7 @@ No. It's hosted *inside* the engine (own magic, no order races on the netting ac
 ## Tech, validation, limits
 
 **Q. What's the stack?**
-Python 3.13; Claude Opus 4.8 (Anthropic SDK, structured output); NVIDIA Nemotron (OpenAI-compatible NIM); DeepSeek-V4-Pro as a LIVE blind ensemble voter via the Pydantic AI Gateway → Doubleword (`/responses` endpoint), with the same gateway also running cheap backtesting on DeepSeek-V4-Flash; MetaTrader 5; FastAPI + Uvicorn; Plotly.js; Pydantic v2; NumPy/pandas/PyArrow; httpx. 50+ script-style tests.
+Python 3.13; Claude Opus 4.8 (`claude-opus-4-8`, Anthropic SDK, structured output); NVIDIA Nemotron (`nvidia/nemotron-3-super-120b-a12b`, OpenAI-compatible NIM); DeepSeek-V4-Pro (`deepseek-ai/DeepSeek-V4-Pro`) as a LIVE blind ensemble voter via the Pydantic AI Gateway → Doubleword (`/responses` endpoint), with the same gateway also running cheap backtesting on DeepSeek-V4-Flash; MetaTrader 5; FastAPI + Uvicorn; Plotly.js; Pydantic v2; NumPy/pandas/PyArrow; httpx. 50+ script-style tests.
 
 **Q. How did you validate it?**
 Unit tests across engine/risk/sizer/consensus/scalper (pure-logic modules are network-free). The AI signal is backtested over historical bars via the gateway. The honest finding: the *architecture* is survivable (drawdown capped, no liquidation on real data), and the cheap *backtest* model showed no standalone edge — which is why the live edge rests on the frontier model + consensus, not on the backtest model.
