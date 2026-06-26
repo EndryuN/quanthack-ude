@@ -189,8 +189,12 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ov-note{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .ov-note label{font-size:10px;letter-spacing:.1em;color:var(--muted);width:40px}
 .ov-note input{flex:1}
+.ov-label{font-size:10px;letter-spacing:.04em;color:var(--muted);white-space:nowrap;margin-right:2px}
+.ov-row button:disabled{opacity:.4;cursor:default}
 .ov-ai{font-size:11px;color:var(--muted);line-height:1.5}
 .ov-ai .claude{color:var(--claude)} .ov-ai .nemo{color:var(--nemo)}
+.ov-ai .deepseek{color:var(--deepseek)} .ov-ai .human{color:var(--human)}
+.ov-ai .ov-struck{text-decoration:line-through;opacity:.5}
 
 /* RISK as 4 horizontal bars (replaces the doughnut gauges) */
 #gauges{display:flex;flex-direction:column;gap:16px;margin-bottom:6px}

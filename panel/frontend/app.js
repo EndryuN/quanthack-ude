@@ -252,7 +252,7 @@ async function tick(){
   if (window.renderCharts) await window.renderCharts(s);  // added in Tasks 8-9
 }
 tick();
-setInterval(tick, 15000);
+setInterval(() => tick(), 15000);   // late-bound: runs the fully-wrapped tick (controls + overrides refresh)
 
 const dirColor = d => d==="long"? C.long : d==="short"? C.short : C.flat;
 
@@ -1121,11 +1121,26 @@ function renderOverride(){
   const conf = document.getElementById("ov-conf");
   if(conf && document.activeElement !== conf) conf.value = (o.view && o.view.confidence != null) ? o.view.confidence : "";
   // AI rationale for this symbol from the latest state
+  // Cancel only SHOWS when a human override is actively overriding
+  const cancel = document.getElementById("ov-cancel");
+  if(cancel) cancel.style.display = (o.view && o.view.direction) ? "" : "none";
+  // readout: each model's DIRECTION + confidence; + DeepSeek; + Human when overridden
   const ai = document.getElementById("ov-ai");
   if(ai && window._lastState){
     const v = (window._lastState.consensus || []).find(r=>r.symbol===sym);
-    ai.innerHTML = v ? `<span class="claude">Claude:</span> ${v.claude ? v.claude.confidence : "—"} `+
-      `· <span class="nemo">Nemotron:</span> ${v.nemotron ? v.nemotron.confidence : "—"} · ${v.agreement}` : "";
+    if(!v){ ai.innerHTML = ""; }
+    else {
+      const m = (label, cls, mv) => mv && mv.direction
+        ? `<span class="${cls}">${label}:</span> ${mv.direction} ${mv.confidence != null ? Number(mv.confidence).toFixed(2) : "—"}`
+        : `<span class="${cls}">${label}:</span> —`;
+      const models = [m("Claude", "claude", v.claude), m("Nemotron", "nemo", v.nemotron),
+                      m("DeepSeek", "deepseek", v.deepseek), v.agreement].join(" · ");
+      const overridden = !!(o.view && o.view.direction);
+      let html = overridden ? `<span class="ov-struck">${models}</span>` : models;
+      if(overridden) html += ` · <span class="human">Human: ${o.view.direction}`
+        + `${o.view.confidence != null ? " " + Number(o.view.confidence).toFixed(2) : ""}</span>`;
+      ai.innerHTML = html;
+    }
   }
 }
 
@@ -1137,20 +1152,24 @@ async function postOverride(sym, patch){
 
 function wireOverride(){
   const pin = document.getElementById("ov-pin");
-  if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol;
+  if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol; if(!sym) return;
     postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}); }; }   // loadOverrides re-renders the bar
-  // direction/conf override auto-applies on change (no Apply button anymore)
-  const postView = ()=>{
+  // Human input: Override applies the forced view (sized + risk-capped like an AI
+  // trade); Cancel clears it back to the AI view. No auto-apply on dropdown change.
+  const apply = document.getElementById("ov-apply");
+  if(apply && !apply.dataset.w){ apply.dataset.w="1"; apply.onclick=()=>{
     const sym = curSymbol; if(!sym) return;
     const dir = document.getElementById("ov-dir").value;
     const conf = parseFloat(document.getElementById("ov-conf").value);
-    postOverride(sym, {view: dir ? {direction: dir, confidence: isNaN(conf)?0.5:conf} : null})
-      .then(()=> setStatus(dir ? `${sym} forced ${dir.toUpperCase()}` : `${sym} override cleared`));
-  };
-  const dir = document.getElementById("ov-dir");
-  if(dir && !dir.dataset.w){ dir.dataset.w="1"; dir.onchange = postView; }
-  const conf = document.getElementById("ov-conf");
-  if(conf && !conf.dataset.w){ conf.dataset.w="1"; conf.onchange = postView; }
+    if(!dir){ setStatus("pick a direction (Force LONG/SHORT/FLAT) to override"); return; }
+    postOverride(sym, {view: {direction: dir, confidence: isNaN(conf) ? 0.6 : conf}})
+      .then(()=> setStatus(`${sym} HUMAN OVERRIDE: ${dir.toUpperCase()} @ ${isNaN(conf)?0.6:conf} — sized within the preset's risk caps`));
+  }; }
+  const cancel = document.getElementById("ov-cancel");
+  if(cancel && !cancel.dataset.w){ cancel.dataset.w="1"; cancel.onclick=()=>{
+    const sym = curSymbol; if(!sym) return;
+    postOverride(sym, {view: null}).then(()=> setStatus(`${sym} human override cancelled — back to AI view`));
+  }; }
 }
 
 // capture last state for the AI-rationale line, and hook into the loop

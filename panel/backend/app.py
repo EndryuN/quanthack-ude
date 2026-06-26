@@ -360,6 +360,19 @@ def post_override(symbol: str, body: dict):
     o = ov_mod.load_overrides(STATE_DIR)
     entry = dict(o.get(symbol) or {"pinned": False, "view": None,
                                    "take_profit": None, "stop_loss": None, "note": ""})
+    # sanitize a human view so a malformed body can never reach the engine loop
+    if body.get("view") is not None:
+        vw = body["view"] or {}
+        d = str(vw.get("direction", "flat")).lower()
+        if d not in ("long", "short", "flat"):
+            d = "flat"
+        try:
+            c = float(vw.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            c = 0.5
+        if c != c or c in (float("inf"), float("-inf")):   # NaN / inf guard
+            c = 0.5
+        body["view"] = {"direction": d, "confidence": max(0.0, min(1.0, c))}
     for k in ("pinned", "view", "take_profit", "stop_loss", "note"):
         if k in body:
             entry[k] = body[k]

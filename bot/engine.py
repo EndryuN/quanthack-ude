@@ -249,9 +249,10 @@ class Engine:
             if self._controls:
                 targets = self._clamp_blocked(targets)
             if self._overrides:
-                from .overrides import pinned_set
+                from .overrides import pinned_set, human_views
                 _pinned = pinned_set(self._overrides)
-                targets = {s: t for s, t in targets.items() if s not in _pinned}
+                _human = set(human_views(self._overrides))   # an explicit override beats a pin
+                targets = {s: t for s, t in targets.items() if s not in _pinned or s in _human}
             orders = self._reconcile(targets)
             self._last_acted_ts = self._views_ts
         n_orders = len(orders)
