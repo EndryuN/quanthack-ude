@@ -383,6 +383,7 @@ let curSymbol = null, curTF = "15m", _tfWired = false, _chartType = "line";
 let _pendingTP = {}, _pendingSL = {};   // {sym: price} STAGED TP/SL (dragged, not yet Applied)
 let _editLine = null;                   // "sl" | "tp" while a line edit awaits Apply/✕
 let _focusSL = false, _focusTP = false; // include the SL/TP line in the y-range (locate it)
+let _chartRev = 0;                      // bump to force the chart view back to default (reset zoom)
 let _refreshAtTs = null, _refreshTimer = null;   // header refresh-icon progress spinner
 
 async function plotSymbol(symbol, tf){
@@ -479,7 +480,7 @@ async function plotSymbol(symbol, tf){
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
-    uirevision: curSymbol + "|" + curTF,   // keep the user's zoom across refreshes; reset on switch
+    uirevision: curSymbol + "|" + curTF + "|" + _chartRev,   // keep zoom across refreshes; reset on switch / reset-button
     margin:{l:10, r:58, t:22, b:26},       // fill the card edge-to-edge; price axis on the right
     xaxis:{type:"date", tickformat:"%H:%M", hoverformat:"%b %d  %H:%M", rangeslider:{visible:false},
       gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
@@ -660,6 +661,8 @@ function buildSymbolList(symbols){
       document.querySelectorAll(".chart-type .ct").forEach(b=>b.classList.toggle("active", b===btn));
       plotSymbol(curSymbol, curTF);
     });
+    const rst = document.getElementById("chart-reset");
+    if(rst) rst.onclick = ()=>{ _chartRev++; _focusSL = false; _focusTP = false; plotSymbol(curSymbol, curTF); };
     _tfWired = true;
   }
 }
