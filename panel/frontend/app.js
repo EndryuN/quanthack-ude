@@ -493,13 +493,10 @@ let _symList = [];
 function buildSymbolList(symbols){
   _symList = symbols || _symList;            // remembered so pin toggles can rebuild now
   const el = document.getElementById("symbol-list");
-  const blocked = new Set((_ctl && _ctl.block) || []);
   const pinned = new Set(Object.keys(_ov).filter(k => _ov[k] && _ov[k].pinned));
-  const sig = symbols.join(",") + "|" + [...blocked].join(",") + "|P" + [...pinned].sort().join(",");
-  const row = s => `<div class="sym${s===curSymbol?" active":""}${blocked.has(s)?" blocked":""}" data-sym="${s}">`+
-      `<span class="sym-name">${s}</span>`+
-      `<span class="sym-pin${pinned.has(s)?" on":""}" data-pin="${s}" title="pin to top">&#128204;</span>`+
-      `<span class="sym-block" data-block="${s}" title="block / allow">${blocked.has(s)?"⊘":"·"}</span></div>`;
+  const sig = symbols.join(",") + "|P" + [...pinned].sort().join(",");
+  const row = s => `<div class="sym${s===curSymbol?" active":""}" data-sym="${s}">`+
+      `<span class="sym-name">${s}</span></div>`;
   if(el && el.dataset.sig !== sig){
     el.dataset.sig = sig;
     const sorted = [...symbols].sort((a,b)=> _GRP_ORDER[_grpOf(a)] - _GRP_ORDER[_grpOf(b)]); // stable within group
@@ -513,22 +510,7 @@ function buildSymbolList(symbols){
       html += row(s);
     }
     el.innerHTML = html;
-    el.querySelectorAll(".sym").forEach(node=> node.onclick = (ev)=>{
-      if(ev.target.classList.contains("sym-pin")){       // toggle pin-to-top (live)
-        const sym = ev.target.dataset.pin;
-        postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)})
-          .then(()=> buildSymbolList(_symList));          // re-sort now, no page refresh
-        return;
-      }
-      if(ev.target.classList.contains("sym-block")){
-        const sym = ev.target.dataset.block;
-        const cur = new Set((_ctl && _ctl.block) || []);
-        cur.has(sym) ? cur.delete(sym) : cur.add(sym);
-        postControls({block: [...cur]});
-        return;
-      }
-      selectSymbol(node.dataset.sym);
-    });
+    el.querySelectorAll(".sym").forEach(node=> node.onclick = ()=> selectSymbol(node.dataset.sym));
   } else if(el){
     el.querySelectorAll(".sym").forEach(x=>x.classList.toggle("active", x.dataset.sym===curSymbol));
   }
@@ -938,6 +920,8 @@ async function loadOverrides(){ _ov = (await getJSON("/api/overrides")) || {}; r
 function renderOverride(){
   const sym = curSymbol; if(!sym) return;
   const o = _ov[sym] || {};
+  const pin = document.getElementById("ov-pin");
+  if(pin){ const on = !!o.pinned; pin.classList.toggle("on", on); pin.innerHTML = on ? "📌 Pinned" : "📌 Pin"; }
   const dir = document.getElementById("ov-dir");
   if(dir && document.activeElement !== dir) dir.value = (o.view && o.view.direction) || "";
   const conf = document.getElementById("ov-conf");
@@ -963,6 +947,9 @@ async function postOverride(sym, patch){
 }
 
 function wireOverride(){
+  const pin = document.getElementById("ov-pin");
+  if(pin && !pin.dataset.w){ pin.dataset.w="1"; pin.onclick=()=>{ const sym = curSymbol;
+    postOverride(sym, {pinned: !(_ov[sym] && _ov[sym].pinned)}).then(()=> buildSymbolList(_symList)); }; }
   const save = document.getElementById("ov-save");
   if(save && !save.dataset.w){ save.dataset.w="1"; save.onclick=()=>{
     const dir = document.getElementById("ov-dir").value;
