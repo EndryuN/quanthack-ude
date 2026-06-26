@@ -13,7 +13,7 @@ echo(
 REM --- Q1: Live trading or Dry-run? ---
 set "LIVEARG="
 set "MODE=DRY-RUN (no orders sent)"
-choice /c LD /n /m "Mode  -  [L]ive trading   [D]ry-run : "
+choice /c 12 /n /m "Mode  -  [1] Live trading   [2] Dry-run : "
 if errorlevel 2 (
     set "MODE=DRY-RUN (no orders sent)"
 ) else (
@@ -23,7 +23,7 @@ if errorlevel 2 (
 
 REM --- Q2: With or without the operator panel? ---
 set "PANEL=0"
-choice /c WN /n /m "Panel -  [W]ith panel   [N]o panel : "
+choice /c 12 /n /m "Panel -  [1] With panel   [2] No panel : "
 if errorlevel 2 (
     set "PANEL=0"
 ) else (
