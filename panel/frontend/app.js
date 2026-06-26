@@ -255,7 +255,7 @@ function plotDumbbell(allRows){
   // one row per instrument: up to THREE markers — Claude (orange), Nemotron (teal),
   // DeepSeek (violet) — at x = sign(direction)*confidence, models that are null are
   // skipped. A connector spans each row's present markers. Filtered to the active
-  // asset-class tab (FX / Crypto / Metals). The Hit-rate line above is the color key.
+  // asset-class tab (FX / Crypto / Metals). Legend names the three model colors.
   _lastConsensus = allRows || [];
   const rows = _lastConsensus.filter(r => _grpOf(r.symbol) === _dumbTab);
   const ys = rows.map(r=>r.symbol);
@@ -278,13 +278,11 @@ function plotDumbbell(allRows){
     marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
   const deepPts = {x:dx, y:ys, type:"scatter", mode:"markers", name:"DeepSeek",
     marker:{color:C.deepseek, size:11}, hovertemplate:"DeepSeek %{y}: %{x:.2f}<extra></extra>"};
-  // No Plotly legend — the color-coded Hit-rate line above the chart already
-  // names Claude/Nemotron/DeepSeek in their colors (avoids a duplicate legend).
   Plotly.react("dumbbell", [...lines, claudePts, nemoPts, deepPts],
-    {...PLOT_BG, height: Math.max(120, ys.length*30+40),
-     margin:{l:66, r:14, t:10, b:30}, yaxis:{automargin:true, color:C.muted},
+    {...PLOT_BG, height: Math.max(120, ys.length*30+52),
+     margin:{l:66, r:14, t:26, b:30}, yaxis:{automargin:true, color:C.muted},
      xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
-     showlegend:false},
+     showlegend:true, legend:{orientation:"h", x:0, y:1.1, font:{size:9}, bgcolor:"rgba(0,0,0,0)"}},
     {displayModeBar:false});
 }
 
@@ -486,13 +484,23 @@ function renderHitRates(ms){
   const el = document.getElementById("hitrates"); if(!el) return;
   const rates = (ms && ms.rates) || {};
   const n = (ms && ms.n != null) ? ms.n : 0;
+  // "directional accuracy" = how often each model's long/short call was right
+  // (price moved the way it predicted), measured over the last n scored reads.
+  el.title = "Directional accuracy: how often each model's long/short call was "
+    + "right (price moved its way) over the last " + n + " scored market reads.";
+  if(!n){   // no scored samples yet (needs two market reads to grade the first)
+    el.innerHTML = `<span class="hr-label">accuracy</span> `+
+      `<span style="color:var(--muted)">— scoring starts after 2 market reads</span>`;
+    return;
+  }
   const pct = r => (r && r.rate != null) ? Math.round(r.rate*100)+"%" : "—";
   const dsKey = Object.keys(rates).find(k=>/deepseek/i.test(k));
   const ds = dsKey ? rates[dsKey] : null;
-  el.innerHTML = `<span class="hr-label">Hit-rate (n=${n})</span> — `+
+  el.innerHTML = `<span class="hr-label">accuracy</span> `+
     `<span class="hr claude">Claude ${pct(rates.claude)}</span> · `+
     `<span class="hr nemo">Nemotron ${pct(rates.nemotron)}</span> · `+
-    `<span class="hr deepseek">DeepSeek ${pct(ds)}</span>`;
+    `<span class="hr deepseek">DeepSeek ${pct(ds)}</span> `+
+    `<span style="color:var(--muted)">(last ${n})</span>`;
 }
 window.renderConsensus = async function(s){
   plotDumbbell(s.consensus || []);
