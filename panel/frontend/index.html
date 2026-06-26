@@ -37,6 +37,7 @@
   <nav id="navmenu" hidden>
     <button class="navitem active" data-view="dashboard">Dashboard</button>
     <button class="navitem" data-view="history">History</button>
+    <button class="navitem" data-view="context">Context Control</button>
   </nav>
   <main id="view-dashboard" class="view">
     <section class="col-left">
@@ -187,6 +188,36 @@
       <div id="hist-chart"></div>
       <h2 style="margin-top:14px">Order history</h2>
       <div id="hist-orders"></div>
+    </div>
+  </section>
+  <section id="view-context" class="view" hidden>
+    <div class="card">
+      <div class="hist-head">
+        <h2>Context Control — what every model is fed</h2>
+        <button id="ctx-back" class="ctl-btn">&larr; Dashboard</button>
+      </div>
+      <p class="ctx-intro">Every <b id="ctx-cadence">15&nbsp;min</b> the engine sends all three LLMs
+        (<span class="claude">Claude</span>, <span class="nemo">Nemotron</span>, <span class="deepseek">DeepSeek</span>)
+        the <b>identical</b> SYSTEM prompt and the <b>identical</b> market snapshot below — a token-cheap
+        multi-timeframe digest, not raw bars. The models return only <b>direction + calibrated confidence</b>;
+        sizing, risk and execution are the engine's job. <span id="ctx-meta" class="ctx-meta"></span></p>
+
+      <details class="ctx-block" open><summary>SYSTEM prompt (shared by all models)</summary>
+        <pre id="ctx-system" class="ctx-pre"></pre></details>
+      <details class="ctx-block"><summary>User message template</summary>
+        <pre id="ctx-user" class="ctx-pre"></pre>
+        <div class="ctx-note"><code>{CONTEXT}</code> is replaced by the per-instrument lines below; <code>{N}</code> is the instrument count.</div></details>
+
+      <h2 style="margin-top:14px">Per-instrument snapshot <span class="ctx-tabs">
+        <button class="ctx-tab active" data-ctxv="raw">Raw</button>
+        <button class="ctx-tab" data-ctxv="table">Table</button></span></h2>
+      <div id="ctx-raw" class="ctx-pre ctx-rawbox"></div>
+      <div id="ctx-table" hidden></div>
+
+      <h2 style="margin-top:14px">Field reference</h2>
+      <div id="ctx-fields" class="ctx-fields"></div>
+      <h2 style="margin-top:14px">Not fed to the models</h2>
+      <div id="ctx-notfed" class="ctx-notfed"></div>
     </div>
   </section>
   <div id="regime-modal" class="modal-backdrop" hidden>

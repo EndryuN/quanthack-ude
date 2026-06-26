@@ -1019,11 +1019,12 @@ function wireRegimeModal(){
 }
 let _histSym = null, _navWired = false;
 function showView(name){
-  ["dashboard","history"].forEach(v=>{
+  ["dashboard","history","context"].forEach(v=>{
     const el = document.getElementById("view-"+v); if(el) el.hidden = v !== name; });
   const nm = document.getElementById("navmenu"); if(nm) nm.hidden = true;
   document.querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   if(name === "history") initHistory();
+  if(name === "context") initContext();
 }
 
 function wireNav(){
@@ -1039,6 +1040,70 @@ function wireNav(){
   document.addEventListener("click", (e)=>{ const nm=document.getElementById("navmenu");
     if(nm && !nm.hidden && e.target.id!=="hamburger" && !nm.contains(e.target)) nm.hidden = true; });
   _navWired = true;
+}
+
+// Context Control — informational page: the EXACT LLM input (SYSTEM prompt +
+// per-instrument snapshot) the engine feeds every AI-views refresh. Read-only.
+let _ctxTimer = null, _ctxWired = false;
+function _esc(s){ return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function renderContext(d){
+  if(!d) return;
+  const set = (id, t)=>{ const e = document.getElementById(id); if(e) e.textContent = t; };
+  set("ctx-system", d.system || "");
+  set("ctx-user", (d.user_template || "").replace("{N}", (d.symbols || []).length));
+  const cad = document.getElementById("ctx-cadence"); if(cad && d.cadence_secs) cad.textContent = Math.round(d.cadence_secs/60) + " min";
+  const meta = document.getElementById("ctx-meta");
+  if(meta) meta.innerHTML = d.available
+    ? `model <b>${_esc(d.model)}</b> · ${(d.symbols||[]).length} instruments · snapshot ${_esc(d.ts||"")}`
+    : `<span class="ctx-warn">${_esc(d.note||"live snapshot unavailable")}</span>`;
+  const raw = document.getElementById("ctx-raw");
+  if(raw){
+    if(d.available && d.raw){
+      raw.innerHTML = d.raw.split("\n").filter(Boolean).map(l=>{
+        const sym = (l.split(":",1)[0]||"").trim();
+        return `<div class="ctx-line ${_grpOf(sym)}">${_esc(l)}</div>`; }).join("");
+    } else {
+      raw.innerHTML = `<div class="ctx-line">${_esc(d.example_line||"")}</div>`
+        + `<div class="ctx-note">(example — ${_esc(d.note||"live snapshot needs the running engine")})</div>`;
+    }
+  }
+  const tbl = document.getElementById("ctx-table");
+  if(tbl){
+    const rows = d.rows || [];
+    if(rows.length){
+      const tr = r => `<tr><td>${_esc(r.symbol)}</td><td>${_esc(r.px)}</td>`
+        + ["1h","4h","1d","3d"].map(k=>`<td>${_esc((r.ret||{})[k])}</td>`).join("")
+        + ["M15","H1","H4"].map(k=>`<td class="${(r.trend||{})[k]==='up'?'dir-long':'dir-short'}">${_esc((r.trend||{})[k])}</td>`).join("")
+        + `<td>${_esc(r.mom_z)}</td><td>${_esc(r.vol_bar)}</td><td>${_esc(r.range_5d)}</td></tr>`;
+      tbl.innerHTML = `<table class="ctx-tbl"><thead><tr><th>Sym</th><th>px</th><th>1h</th><th>4h</th><th>1d</th><th>3d</th>`
+        + `<th>M15</th><th>H1</th><th>H4</th><th>mom_z</th><th>vol/bar</th><th>5d-rng</th></tr></thead><tbody>`
+        + rows.map(tr).join("") + `</tbody></table>`;
+    } else { tbl.innerHTML = `<div class="ctx-note">the field table needs a live snapshot (engine running)</div>`; }
+  }
+  const fr = document.getElementById("ctx-fields");
+  if(fr) fr.innerHTML = (d.field_reference||[]).map(f=>`<div class="ctx-fr"><code>${_esc(f.field)}</code> <span>${_esc(f.desc)}</span></div>`).join("");
+  const nf = document.getElementById("ctx-notfed");
+  if(nf) nf.innerHTML = (d.not_fed||[]).map(x=>`<div class="ctx-nf">✕ ${_esc(x)}</div>`).join("");
+}
+function _ctxSetView(v){
+  document.querySelectorAll(".ctx-tab").forEach(b=>b.classList.toggle("active", b.dataset.ctxv===v));
+  const raw = document.getElementById("ctx-raw"), tbl = document.getElementById("ctx-table");
+  if(raw) raw.hidden = v !== "raw";
+  if(tbl) tbl.hidden = v !== "table";
+}
+async function initContext(){
+  if(!_ctxWired){
+    _ctxWired = true;
+    document.querySelectorAll(".ctx-tab").forEach(b=> b.onclick = ()=> _ctxSetView(b.dataset.ctxv));
+    const back = document.getElementById("ctx-back"); if(back) back.onclick = ()=> showView("dashboard");
+  }
+  renderContext(await getJSON("/api/context"));
+  clearInterval(_ctxTimer);
+  _ctxTimer = setInterval(async ()=>{           // live-ish refresh only while the page is open
+    const v = document.getElementById("view-context");
+    if(v && !v.hidden) renderContext(await getJSON("/api/context"));
+    else { clearInterval(_ctxTimer); _ctxTimer = null; }
+  }, 30000);
 }
 async function initHistory(){
   const d = await getJSON("/api/decisions");

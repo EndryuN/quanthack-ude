@@ -121,6 +121,83 @@ def symbols():
     return {"symbols": [s for s in ALL_SYMBOLS if s != "BARUSD"]}
 
 
+# static field reference + example — always available (incl. offline). Mirrors
+# bot/ai_signal.build_context and docs/DECISION_FLOW.md (appendix) / STRATEGY.md §2.
+_CTX_FIELDS = [
+    {"field": "px", "desc": "last close of the most recent M15 bar"},
+    {"field": "ret 1h / 4h / 1d", "desc": "% return over 4 / 16 / 96 M15 bars"},
+    {"field": "ret 3d", "desc": "% return over 72 H1 bars"},
+    {"field": "trend M15 / H1 / H4", "desc": "up/dn from an EMA cross (20/80, 10/40, 6/24)"},
+    {"field": "mom_z", "desc": "32-bar momentum z-score (return / per-bar σ·√n)"},
+    {"field": "vol/bar", "desc": "per-bar return volatility over 48 M15 bars (%)"},
+    {"field": "5d-range", "desc": "price position in the last 120 H1 bars' high-low band (0=low, 100=high)"},
+]
+_CTX_EXAMPLE = ("EURUSD: px=1.08423 | ret 1h=-0.04 4h=+0.11 1d=-0.23 3d=+0.87% | "
+                "trend M15=up H1=up H4=dn | mom_z=+0.41 vol/bar=0.06% | 5d-range=61%")
+_CTX_NOT_FED = ["raw ticks / candle OHLC / individual bars", "order book, bid/ask spread, volume, open interest",
+                "news, fundamentals, any text/sentiment feed", "account / equity / margin / position state",
+                "one model's answer to another (Nemotron & DeepSeek are blind peers)"]
+
+
+def _parse_ctx_line(line: str) -> dict:
+    """Parse one build_context line into fields (the raw line stays authoritative)."""
+    row = {"symbol": (line.split(":", 1)[0].strip() if ":" in line else "?"), "line": line}
+    try:
+        for seg in (s.strip() for s in line.split(":", 1)[1].split("|")):
+            if seg.startswith("px="):
+                row["px"] = seg[3:]
+            elif seg.startswith("ret "):
+                row["ret"] = {k: v for k, v in (t.split("=", 1) for t in seg[4:].split() if "=" in t)}
+            elif seg.startswith("trend "):
+                row["trend"] = {k: v for k, v in (t.split("=", 1) for t in seg[6:].split() if "=" in t)}
+            elif "mom_z=" in seg:
+                for t in seg.split():
+                    if t.startswith("mom_z="): row["mom_z"] = t[6:]
+                    elif t.startswith("vol/bar="): row["vol_bar"] = t[8:]
+            elif seg.startswith("5d-range="):
+                row["range_5d"] = seg[9:]
+    except Exception:
+        pass
+    return row
+
+
+@app.get("/api/context")
+def context():
+    """Informational: the EXACT context fed to the LLMs each AI-views refresh — the
+    SYSTEM prompt, the user-message template, and the per-instrument snapshot from
+    bot.ai_signal.build_context. Needs MT5 for the live snapshot; degrades offline to
+    the prompt + template + static field reference (so the demo page is never blank)."""
+    import datetime as _dt
+    from bot.ai_signal import SYSTEM, MODEL
+    from bot.config import CONFIG, ALL_SYMBOLS, live_engine_symbols
+    try:
+        assigned = ctrl.scalper_assignments(ctrl.load_controls(STATE_DIR), ALL_SYMBOLS)
+        syms = live_engine_symbols(assigned)
+    except Exception:
+        syms = [s for s in ALL_SYMBOLS if s != "BARUSD"]
+    user_template = ("Instruments and recent action (competition universe = exactly these {N} symbols):"
+                     "\n\n{CONTEXT}\n\nGive a directional view + calibrated confidence for each.")
+    base = {"system": SYSTEM, "user_template": user_template, "model": MODEL,
+            "cadence_secs": CONFIG.ai_refresh_seconds, "symbols": syms,
+            "field_reference": _CTX_FIELDS, "example_line": _CTX_EXAMPLE, "not_fed": _CTX_NOT_FED}
+    c = _mt5()
+    if c is None:
+        return {**base, "available": False, "raw": None, "rows": [],
+                "note": "Live snapshot needs the running engine (MT5). Showing the prompt, template and field reference."}
+    try:
+        from bot.ai_signal import build_context
+        raw = build_context(c, syms)
+        rows = [_parse_ctx_line(l) for l in raw.split("\n") if l.strip()]
+        return {**base, "available": True, "raw": raw, "rows": rows,
+                "ts": _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+    except Exception as e:
+        return {**base, "available": False, "raw": None, "rows": [],
+                "note": f"context build failed: {e}"}
+    finally:
+        try: c.shutdown()
+        except Exception: pass
+
+
 @app.get("/api/model_scores")
 def model_scores():
     """Per-model directional hit-rates (Claude / Nemotron / DeepSeek) from

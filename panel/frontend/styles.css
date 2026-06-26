@@ -268,6 +268,31 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .al-v.long{color:var(--long)} .al-v.short{color:var(--short)} .al-v.flat{color:var(--muted)}
 .al-orders{margin-top:3px}
 .al-o.long{color:var(--long)} .al-o.short{color:var(--short)} .al-o.muted{color:var(--muted)}
+/* Context Control page */
+.ctx-intro{font-size:12px;color:var(--ink);line-height:1.6;max-width:1000px;margin:4px 0 12px}
+.ctx-intro .claude{color:var(--claude)} .ctx-intro .nemo{color:var(--nemo)} .ctx-intro .deepseek{color:var(--deepseek)}
+.ctx-meta{color:var(--muted);font-size:11px}  .ctx-warn{color:var(--short)}
+.ctx-block{margin:8px 0;border:1px solid var(--lift);border-radius:8px;padding:6px 10px}
+.ctx-block summary{cursor:pointer;font-size:12px;color:var(--muted);font-family:"JetBrains Mono"}
+.ctx-pre{font-family:"JetBrains Mono";font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;
+  background:var(--canvas);border-radius:6px;padding:10px;margin:8px 0 0;max-height:340px;overflow:auto}
+.ctx-rawbox{max-height:440px}
+.ctx-line{padding:1px 0;white-space:pre-wrap}
+.ctx-line.metals{color:var(--human)} .ctx-line.crypto{color:var(--deepseek)}
+.ctx-note{font-size:10px;color:var(--muted);margin-top:6px}
+.ctx-note code,.ctx-fr code{background:var(--lift);padding:1px 4px;border-radius:3px;color:var(--chartreuse)}
+.ctx-tabs{margin-left:8px}
+.ctx-tab{background:var(--lift);color:var(--muted);border:1px solid var(--lift);border-radius:5px;
+  padding:2px 9px;font-family:"JetBrains Mono";font-size:10px;cursor:pointer}
+.ctx-tab.active{background:var(--chartreuse);color:var(--canvas)}
+.ctx-tbl{width:100%;border-collapse:collapse;font-family:"JetBrains Mono";font-size:11px;margin-top:6px}
+.ctx-tbl th{color:var(--muted);text-align:right;padding:4px 8px;font-weight:500;border-bottom:1px solid var(--lift)}
+.ctx-tbl td{text-align:right;padding:3px 8px;color:var(--ink)}
+.ctx-tbl td:first-child,.ctx-tbl th:first-child{text-align:left;color:var(--chartreuse)}
+.ctx-tbl .dir-long{color:var(--long)} .ctx-tbl .dir-short{color:var(--short)}
+.ctx-fields{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:11px;color:var(--muted)}
+.ctx-fr{display:flex;gap:6px;align-items:baseline}
+.ctx-notfed{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--short)}
 /* Risk is now a popover off the status bar: hover reveals, click pins, ✕/outside closes */
 #kpis{cursor:pointer}
 #gauges-card{position:fixed;top:48px;right:14px;width:560px;max-width:92vw;max-height:82vh;overflow:auto;
