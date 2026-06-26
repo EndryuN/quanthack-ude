@@ -8,19 +8,20 @@ import math
 
 _DIR = {"long": 1.0, "short": -1.0, "flat": 0.0}
 
-# how far a confidence=1 view projects the mid over `horizon_bars`, as a
-# fraction of price-per-unit-vol. Tuned so a strong call leans visibly but
-# stays within a few vol units (no fabricated magnitude claims).
+# how far a confidence=1 view projects the mid PER 8 BARS, as a fraction of
+# price-per-unit-vol. Tuned so a strong call leans visibly but stays within a few
+# vol units (no fabricated magnitude claims).
 _SLOPE_VOL_UNITS = 6.0
 
 
 def projection_cone(price: float, direction: str, confidence: float,
-                    vol: float, horizon_bars: int = 8) -> dict:
+                    vol: float, horizon_bars: int = 14) -> dict:
     """Returns {mid, upper, lower}, each a list of [step, price]."""
     d = _DIR.get(direction, 0.0)
     vol = max(vol, 1e-6)
-    # total mid drift over the horizon, in price terms
-    drift = d * confidence * _SLOPE_VOL_UNITS * vol * price
+    # total mid drift over the horizon, in price terms. Scaled by the horizon so a
+    # LONGER horizon makes a proportionally longer line at the SAME slope (not flatter).
+    drift = d * confidence * _SLOPE_VOL_UNITS * vol * price * (horizon_bars / 8.0)
     mid, upper, lower = [], [], []
     for i in range(horizon_bars + 1):
         frac = i / horizon_bars if horizon_bars else 1.0
