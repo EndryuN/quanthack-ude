@@ -129,6 +129,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ec-apply{background:var(--chartreuse);color:#0c0d11;font-weight:700}
 .ec-cancel{background:var(--lift);color:var(--muted)}
 .ec-cancel:hover{color:var(--short)}
+.edit-confirm[hidden]{display:none}   /* the display:flex above otherwise beats [hidden] */
 /* timeframe + candle/line toggles pinned to the chart's TOP-right */
 #chart-ctl{position:absolute;top:4px;right:8px;z-index:5;display:flex;gap:6px;align-items:center}
 .chart-type,.tf-toggle{display:flex;border:1px solid var(--lift);border-radius:5px;overflow:hidden}

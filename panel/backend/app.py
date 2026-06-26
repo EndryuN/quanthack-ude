@@ -177,9 +177,9 @@ def bars(symbol: str, tf: str = "15m"):
         import MetaTrader5 as mt5
         _TF = {"1m": mt5.TIMEFRAME_M1, "15m": mt5.TIMEFRAME_M15, "1h": mt5.TIMEFRAME_H1}
         timeframe = _TF.get(tf, mt5.TIMEFRAME_M15)
-        # more back-data per timeframe: 1m ~5h, 15m ~5 days, 1h ~17 days
-        _N = {"1m": 300, "15m": 500, "1h": 400}
-        rates = c.bars(symbol, timeframe, _N.get(tf, 300))
+        # lots of back-data per timeframe: 1m ~20h, 15m ~12.5 days, 1h ~33 days
+        _N = {"1m": 1200, "15m": 1200, "1h": 800}
+        rates = c.bars(symbol, timeframe, _N.get(tf, 600))
         if rates is None or len(rates) < 20:
             return {"available": False}
         closes = [float(x) for x in rates["close"]]

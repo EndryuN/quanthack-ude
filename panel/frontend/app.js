@@ -412,14 +412,11 @@ async function plotSymbol(symbol, tf){
   // Consensus is drawn last (on top) and DASHED so that when no Nemotron is
   // running — consensus == Claude, perfectly overlapping — the solid Claude
   // line shows through the gaps instead of being hidden under it.
-  // our OPEN POSITION: a FIXED entry line (a trace) + a DRAGGABLE take-profit flag
-  // (the only editable shape, so it's the only thing the user can drag — Trading212
-  // style). Releasing the drag POSTs the new TP as a per-symbol override.
-  // our OPEN POSITION as SHAPES (entry / SL / draggable TP). Shapes never drive the
-  // y-axis autorange, so a far stop-loss no longer squashes the price to a sliver —
-  // the axis frames the price+cones, and an out-of-range SL just sits off-screen.
+  // OPEN POSITION: the ENTRY is a fixed TRACE (not draggable). Only the SL and TP
+  // are draggable SHAPES (shapes don't drive autorange, so a far SL never squashes
+  // the price; the explicit y-range below keeps the view on price).
   window._lastBars = b;   // genLevel() reads recent bars to place a generated SL/TP
-  const _shapes = [];
+  const _shapes = [], posTraces = [], _annos = [];
   window._tpIdx = -1; window._slIdx = -1;
   let _slY = null, _tpY = null;
   const _p = _posBySym[curSymbol];
@@ -430,8 +427,15 @@ async function plotSymbol(symbol, tf){
     const hline = (y, color, dash, text, pos) => ({type:"line", xref:"paper", x0:0, x1:1, yref:"y",
       y0:y, y1:y, line:{color, width:1.4, dash},
       label:{text, textposition:pos, font:{size:9, color, family:"JetBrains Mono"}}});
-    _shapes.push(hline(_p.entry, pcol, "dashdot",   // entry (fixed)
-      `${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`, "start"));
+    // ENTRY: fixed line as a TRACE (not editable) + label annotation
+    const coneLens = [b.cones.claude, b.cones.nemotron, b.cones.deepseek, b.cones.consensus]
+      .filter(Boolean).map(c=>c.mid.length);
+    const rx1 = lastT + (coneLens.length ? Math.max(...coneLens) : 1) * dt;
+    posTraces.push({x:[tms[0], rx1], y:[_p.entry, _p.entry], mode:"lines", hoverinfo:"skip",
+      line:{color:pcol, width:1.4, dash:"dashdot"}, showlegend:false});
+    _annos.push({xref:"paper", x:0.005, y:_p.entry, yref:"y", xanchor:"left", yanchor:"bottom",
+      text:`${long?"▲ LONG":"▼ SHORT"} ${Math.abs(_p.lots).toFixed(2)} @ ${_px(_p.entry)}  ${prof}`,
+      showarrow:false, font:{size:9, color:pcol, family:"JetBrains Mono"}, bgcolor:"rgba(13,14,18,0.7)"});
     // STOP-LOSS line (DRAGGABLE): staged drag > manual override > broker SL
     const ovsl = _ov[curSymbol] && _ov[curSymbol].stop_loss;
     _slY = (_pendingSL[curSymbol] != null) ? _pendingSL[curSymbol]
@@ -453,7 +457,8 @@ async function plotSymbol(symbol, tf){
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
     ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
-    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
+    ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash"),
+    ...posTraces];
   // size the chart to the symbol list so the panel has no dead space below it
   const _lst = document.getElementById("symbol-list");
   const chartH = Math.max(340, _lst ? _lst.scrollHeight : 340);
@@ -470,7 +475,7 @@ async function plotSymbol(symbol, tf){
   if((_focusTP || _pendingTP[curSymbol] != null) && _tpY != null){ _lo = Math.min(_lo, _tpY); _hi = Math.max(_hi, _tpY); }
   const _pad = (_hi - _lo) * 0.08 || Math.abs(_hi) * 0.001 || 0.0001;
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:chartH, showlegend:true,
-    shapes:_shapes,
+    shapes:_shapes, annotations:_annos,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
     hoverlabel:{bgcolor:C.surface, bordercolor:C.lift, font:{family:"JetBrains Mono", size:11, color:C.ink}},
     legend:{font:{size:9}, orientation:"h", x:0, y:1.08, bgcolor:"rgba(0,0,0,0)"},
