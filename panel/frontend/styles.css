@@ -295,7 +295,8 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ctx-fr{display:flex;gap:6px;align-items:baseline}
 .ctx-notfed{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--short)}
 /* Volatility card (informational) */
-.vol-note{font-size:10px;color:var(--muted)}
+#vol-card .card-head h2{font-size:15px;letter-spacing:.06em}
+.vol-note{font-size:12px;color:var(--muted)}
 .vol-index{display:flex;gap:14px;margin-left:auto}
 .vol-chip{display:flex;flex-direction:column;text-align:right;font-family:"JetBrains Mono"}
 .vol-chip label{font-size:11px;letter-spacing:.08em;font-weight:600}   /* color set inline by category */
