@@ -13,7 +13,9 @@ let _ribbonModel = "claude";
 let _heatLayer = "claude";
 
 async function getJSON(u){
-  try { const r = await fetch(u); if(!r.ok) return null; return await r.json(); }
+  // no-store: the panel polls LIVE data; a cached /api/bars?tf=1h response (e.g. one
+  // captured before the timeframe was wired) must never be reused across restarts.
+  try { const r = await fetch(u, {cache:"no-store"}); if(!r.ok) return null; return await r.json(); }
   catch(e){ return null; }
 }
 const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
@@ -463,6 +465,8 @@ async function plotSymbol(symbol, tf, reuse){
   // broker UTC offset empirically (newest bar ≈ now) so the hover line lands right.
   if(lastT) _serverOffMs = Math.round((lastT - Date.now()) / 3600000) * 3600000;
   const dt = tms.length > 1 ? (tms[tms.length - 1] - tms[0]) / (tms.length - 1) : 60000;
+  // actual bar interval of the returned data (reveals if 1h really got H1 vs M15)
+  const _stepMin = tms.length > 1 ? Math.round((tms[tms.length - 1] - tms[tms.length - 2]) / 60000) : 0;
   const price = (_chartType === "candle" && b.opens && b.highs && b.lows)
     ? [{x:tms, open:b.opens, high:b.highs, low:b.lows, close:b.closes, type:"candlestick",
         name:curSymbol, showlegend:false,
@@ -594,7 +598,7 @@ async function plotSymbol(symbol, tf, reuse){
       // repeating %H:%M that looked identical to the 15m axis
       gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
       showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
-      title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
+      title:{text:`${curSymbol} · ${curTF}  (${n} bars · ${_stepMin}m)`, font:{size:9, color:C.muted}}},
     yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false,
       autorange:false, range:[_lo - _pad, _hi + _pad]}},
     {displayModeBar:false, displaylogo:false, scrollZoom:true,
