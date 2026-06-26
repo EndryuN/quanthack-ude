@@ -37,7 +37,10 @@ def get_model_view(model: str, context: str, symbols, *, timeout: float = 30.0):
         "messages": [{"role": "system", "content": SYSTEM},
                      {"role": "user", "content": _user_prompt(symbols, context)}],
         "temperature": 0.2,
-        "max_tokens": 4000,
+        # DeepSeek-V4-Pro REASONS before answering: a full-universe call spends
+        # ~4.5k output tokens (CoT + the JSON), so a tight cap truncates the JSON
+        # and the parse fails with "no JSON object". Give it ample headroom.
+        "max_tokens": 12000,
     }
     resp = gateway.complete_responses(chat_body, timeout=timeout)
     content = gateway.content_of_responses(resp)

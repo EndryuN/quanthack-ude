@@ -187,7 +187,7 @@ class EngineConfig:
     ensemble_models: list = field(            # gateway model ids polled each refresh
         default_factory=lambda: ["deepseek-ai/DeepSeek-V4-Pro"])
     ensemble_gain: float = 0.5                # voter agree boost strength, [0,1]
-    ensemble_timeout: float = 60.0            # DeepSeek-V4-Pro reasons; allow slow full-universe calls
+    ensemble_timeout: float = 120.0           # DeepSeek-V4-Pro reasons ~73s on the full universe
 
 
 CONFIG = EngineConfig()
