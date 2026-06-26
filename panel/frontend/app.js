@@ -519,7 +519,7 @@ async function plotSymbol(symbol, tf){
     {displayModeBar:false, displaylogo:false, scrollZoom:true,
      edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
                                       // modebar hidden so the top-right toggles own the corner
-  wireLineDrag(); wireLineButtons(); wireEditConfirm();
+  wireLineDrag(); wireLineButtons(); wireEditConfirm(); wireChartPan();
   // keep the confirm bar glued to its line across live re-renders
   if(_editLine){
     const ec = document.getElementById("edit-confirm");
@@ -544,6 +544,35 @@ function wireLineDrag(){
       _editLine = which; showEditConfirm(which, +y);
     }
   });
+}
+
+// Right-click + drag pans the chart (left-drag still box-zooms). We shift the
+// axis ranges by the pixel delta; uirevision keeps the pan across live re-renders.
+function wireChartPan(){
+  const el = document.getElementById("symbol-chart");
+  if(!el || el._panWired) return;
+  el._panWired = true;
+  el.addEventListener("contextmenu", e=> e.preventDefault());   // no browser menu on right-click
+  let on = false, sx = 0, sy = 0, x0 = null, y0 = null;
+  el.addEventListener("mousedown", (e)=>{
+    if(e.button !== 2) return;                                  // right button only
+    const fl = el._fullLayout; if(!fl || !fl.xaxis || !fl.yaxis) return;
+    on = true; sx = e.clientX; sy = e.clientY;
+    x0 = (fl.xaxis.range || []).slice(); y0 = (fl.yaxis.range || []).slice();
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", (e)=>{
+    if(!on) return;
+    const fl = el._fullLayout; if(!fl) return;
+    const xa = fl.xaxis, ya = fl.yaxis;
+    const xl0 = xa.r2l(x0[0]), xl1 = xa.r2l(x0[1]);
+    const yl0 = ya.r2l(y0[0]), yl1 = ya.r2l(y0[1]);
+    const dxl = -((e.clientX - sx) / (xa._length || 1)) * (xl1 - xl0);   // drag right -> earlier
+    const dyl =  ((e.clientY - sy) / (ya._length || 1)) * (yl1 - yl0);   // drag down -> higher
+    Plotly.relayout(el, {"xaxis.range":[xa.l2r(xl0+dxl), xa.l2r(xl1+dxl)],
+                         "yaxis.range":[ya.l2r(yl0+dyl), ya.l2r(yl1+dyl)]});
+  });
+  window.addEventListener("mouseup", ()=>{ on = false; });
 }
 
 function showEditConfirm(which, y){

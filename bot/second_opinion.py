@@ -77,7 +77,9 @@ def apply_consensus(claude_views, claude_rationale, nemotron_views, *, gain=0.5,
 
         combined = max(0.0, min(1.0, _boost(agree_all)))    # full consensus (display)
         used = max(0.0, min(1.0, _boost(agree_used)))       # what the sizer acts on
-        boosted = bool(agree_all)
+        # "boosted" describes the value the ALGORITHM used: only true when an
+        # INFLUENCE-ENABLED voter agreed (so it's false when all voters are off).
+        boosted = bool(agree_used)
         sizer_views[sym] = (dc, used)
         records.append({
             "symbol": sym,
