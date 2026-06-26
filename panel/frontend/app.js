@@ -19,7 +19,7 @@ const fmt = (n,d=0)=> n==null? "—" : Number(n).toLocaleString(undefined,{maxim
 
 // currency-strength ribbon: aggregate each currency across ALL its pairs
 // (base +, quote -, weighted by confidence) into one net up/down — using the
-// per-symbol view of the SELECTED model (_modelLayer). Symbols where the model
+// per-symbol view of the selector's model (_ribbonModel). Symbols where the model
 // has no view are skipped; "combined" uses the row's top-level direction/confidence.
 function renderRibbon(consensus){
   const _sgn = d => d==="long"?1 : d==="short"?-1 : 0;
@@ -287,7 +287,7 @@ function plotDumbbell(allRows){
 }
 
 let _lastHm = null, _conWired = false;
-// pick which view a cell shows, driven by the global selector _modelLayer:
+// pick which view a heatmap cell shows, driven by its own layer buttons (_heatLayer):
 // combined (used), Claude-only, Nemotron-only, or DeepSeek-only.
 function _cellLayer(c){
   if(c==null) return null;
