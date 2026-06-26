@@ -2096,3 +2096,25 @@
 - (none)
 
 ---
+## 23:52:48 · LIVE
+**Regime (Claude):** Mild risk-off with broad USD firmness on longer horizons; crypto trending lower hard, metals correcting sharply after a selloff
+**Regime (Nemotron):** USD strength mixed with risk-off pressure in metals/crypto, JPY showing strongest aligned momentum
+**Account:** eq=1,004,408 · lev=3.2x · margin=12% · ML=820% · sharpe=-0.03
+**Cost:** Claude in=2391 out=1261 ~$0.043 · Nemotron in=1637 out=774 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| EURCHF | SHORT 0.40 | short 0.28 | short 0.70 | human_override |
+| USDJPY | LONG 0.34 | long 0.34 | long 0.80 | ✅ agree → boosted |
+| ETHUSD | SHORT 0.32 | short 0.32 | short 0.70 | ✅ agree → boosted |
+| XRPUSD | SHORT 0.28 | short 0.28 | short 0.65 | ✅ agree → boosted |
+| SOLUSD | SHORT 0.26 | short 0.26 | short 0.65 | ✅ agree → boosted |
+| XAGUSD | SHORT 0.22 | short 0.22 | short 0.60 | ✅ agree → boosted |
+| EURGBP | SHORT 0.20 | short 0.20 | short 0.60 | ✅ agree → boosted |
+| XAUUSD | SHORT 0.20 | short 0.20 | short 0.55 | ✅ agree → boosted |
+
+**Orders placed:**
+- SELL 0.23 XAGUSD  (+0.00 → -0.23)
+- SELL 0.27 XAUUSD  (+0.00 → -0.27)
+
+---
