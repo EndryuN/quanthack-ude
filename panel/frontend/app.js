@@ -1205,6 +1205,52 @@ const _tick2 = tick;
 tick = async function(){ await _tick2(); await loadOverrides(); wireOverride(); };
 loadOverrides(); wireOverride();
 
+// AI refresh log — the engine's "AI views refreshed" output (regime + per-symbol
+// views + orders with close reasons) surfaced in the page as a scrollable feed.
+function _aiLogEntry(r){
+  const t = r.ts ? r.ts.slice(5, 16).replace("T", " ") : "";
+  const reg = (r.regime && r.regime.claude) || "";
+  const bySym = {}; (r.views || []).forEach(v => bySym[v.symbol] = v);
+  const views = (r.views || []).filter(v => v.direction && v.direction !== "flat")
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+    .map(v => `<span class="al-v ${v.direction}">${v.symbol} ${v.direction} ${Number(v.confidence || 0).toFixed(2)}</span>`)
+    .join("  ");
+  const orders = (r.orders || []).map(o => {
+    const cls = o.side === "close" ? "muted" : (o.side === "buy" ? "long" : "short");
+    let reason = "";
+    if(o.side === "close"){ const v = bySym[o.symbol]; const rat = v && v.claude && v.claude.rationale;
+      reason = rat ? ` · ${rat}` : ""; }
+    return `<div class="al-o ${cls}">${(o.side || "").toUpperCase()} ${o.lots || ""} ${o.symbol}${reason}</div>`;
+  }).join("");
+  return `<div class="al-entry"><div class="al-head"><span class="al-ts">${t}</span> · <span class="al-reg">${reg}</span></div>`
+    + (views ? `<div class="al-views">${views}</div>` : "")
+    + (orders ? `<div class="al-orders">${orders}</div>` : "")
+    + `</div>`;
+}
+function renderAiLog(records){
+  const recs = (records || []).filter(r => r.event !== "refresh_failed" && (r.regime || (r.views && r.views.length)));
+  const bar = document.getElementById("ai-log-bar");
+  if(bar){ const last = recs[recs.length - 1];
+    bar.textContent = last ? ("AI · " + ((last.regime && last.regime.claude) || "views refreshed")) : "AI log"; }
+  const feed = document.getElementById("ai-log-feed");
+  if(feed) feed.innerHTML = recs.length ? [...recs].reverse().slice(0, 80).map(_aiLogEntry).join("")
+                                        : '<div style="color:var(--muted)">no AI refreshes logged yet</div>';
+}
+async function loadAiLog(){ try { renderAiLog(((await getJSON("/api/decisions")) || {}).records); } catch(e){} }
+let _aiLogWired = false;
+function wireAiLog(){
+  if(_aiLogWired) return;
+  const bar = document.getElementById("ai-log-bar"), pop = document.getElementById("ai-log-pop");
+  if(!bar || !pop) return;
+  _aiLogWired = true;
+  bar.addEventListener("click", (e)=>{ e.stopPropagation(); pop.hidden = !pop.hidden; });
+  const x = document.getElementById("ai-log-close"); if(x) x.onclick = (e)=>{ e.stopPropagation(); pop.hidden = true; };
+  document.addEventListener("click", (e)=>{ if(!pop.hidden && !pop.contains(e.target) && e.target !== bar) pop.hidden = true; });
+}
+loadAiLog(); wireAiLog();
+const _tickAi = tick;
+tick = async function(){ await _tickAi(); await loadAiLog(); };
+
 // Positions refresh on a fast ~1s cadence (live P&L), independent of the 15s
 // tick. Self-scheduling (waits for each fetch) so requests never pile up.
 // Also pulls per-symbol scalper status for the inline ·s sub-lines (spec §6.3).

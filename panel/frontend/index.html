@@ -18,8 +18,13 @@
       <button id="refresh-btn" class="market-read-btn refresh-icon" title="Re-query the AI consensus now (skip the 15-min cadence)"><span class="ric">&#8635;</span></button>
       <span id="views-age" class="views-age" title="time until the next scheduled AI refresh">—</span>
     </div>
+    <div id="ai-log-bar" class="ai-log-bar" title="AI refresh log — click to scroll through every refresh"></div>
     <div id="kpis"></div>
   </header>
+  <div id="ai-log-pop" class="ai-log-pop" hidden>
+    <div class="alp-head"><h3>AI refresh log</h3><button id="ai-log-close" class="modal-close" title="close">&times;</button></div>
+    <div id="ai-log-feed" class="ai-log-feed"></div>
+  </div>
   <div id="ribbon-row">
     <div id="model-sel" class="model-sel" title="model layer — drives the currency-strength ribbon">
       <button class="mbtn active" data-layer="claude">Claude</button>

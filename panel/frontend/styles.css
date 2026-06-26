@@ -249,6 +249,24 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .con-pane[hidden]{display:none}
 .con-sub{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .views-age{font-family:"JetBrains Mono";font-size:10px;color:var(--muted);white-space:nowrap;margin-left:8px}
+/* AI refresh log: a one-line indicator in the header + a scrollable popover feed */
+.ai-log-bar{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:"JetBrains Mono";font-size:10px;color:var(--muted);cursor:pointer;padding:0 14px}
+.ai-log-bar:hover{color:var(--ink)}
+.ai-log-pop{position:fixed;top:48px;left:50%;transform:translateX(-50%);width:760px;max-width:94vw;
+  max-height:78vh;overflow:auto;z-index:50;background:var(--surface);border:1px solid var(--lift);
+  border-radius:10px;box-shadow:0 16px 40px rgba(0,0,0,.6);padding:10px 14px}
+.ai-log-pop[hidden]{display:none}
+.alp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;
+  position:sticky;top:0;background:var(--surface)}
+.alp-head h3{margin:0;font-size:13px}
+.ai-log-feed{display:flex;flex-direction:column;gap:10px;font-family:"JetBrains Mono";font-size:11px}
+.al-entry{border-left:2px solid var(--lift);padding:1px 0 6px 10px}
+.al-head .al-ts{color:var(--muted)} .al-head .al-reg{color:var(--chartreuse)}
+.al-views{margin-top:3px;color:var(--muted);line-height:1.6}
+.al-v.long{color:var(--long)} .al-v.short{color:var(--short)} .al-v.flat{color:var(--muted)}
+.al-orders{margin-top:3px}
+.al-o.long{color:var(--long)} .al-o.short{color:var(--short)} .al-o.muted{color:var(--muted)}
 /* Risk is now a popover off the status bar: hover reveals, click pins, ✕/outside closes */
 #kpis{cursor:pointer}
 #gauges-card{position:fixed;top:48px;right:14px;width:560px;max-width:92vw;max-height:82vh;overflow:auto;
