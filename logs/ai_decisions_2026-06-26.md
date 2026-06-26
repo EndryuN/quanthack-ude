@@ -1436,3 +1436,29 @@
 - BUY 2.34 XAUUSD  (+1.35 → +3.69)
 
 ---
+## 17:58:35 · LIVE
+**Regime (Claude):** Mixed USD signals — short-term USD softness vs H4 USD strength; risk assets bouncing with strong metals and SOL momentum, broader crypto still recovering from 3d losses.
+**Regime (Nemotron):** Mixed signals with USD strength in JPY/CHF/CAD, risk-on in SOL, and mixed metals/crypto; no clear dominant macro theme.
+**Account:** eq=977,844 · lev=3.2x · margin=11% · ML=938% · sharpe=-0.05
+**Cost:** Claude in=2481 out=1555 ~$0.051 · Nemotron in=1742 out=922 ~$0.000
+
+| Symbol | Final | Claude | Nemotron | Consensus |
+|--------|-------|--------|----------|-----------|
+| SOLUSD | LONG 0.55 | long 0.55 | long 0.70 | ✅ agree |
+| XAUUSD | LONG 0.50 | long 0.50 | short 0.45 | ❌ disagree → Claude stands |
+| XAGUSD | LONG 0.45 | long 0.45 | short 0.40 | ❌ disagree → Claude stands |
+| USDJPY | LONG 0.30 | long 0.30 | long 0.65 | ✅ agree |
+| AUDUSD | SHORT 0.25 | short 0.25 | short 0.55 | ✅ agree |
+| USDCHF | LONG 0.22 | long 0.22 | long 0.60 | ✅ agree |
+| ETHUSD | LONG 0.22 | long 0.22 | flat 0.30 | ⚪ no boost |
+
+**Orders placed:**
+- SELL 3.7 AUDUSD  (-3.61 → -7.31)
+- CLOSE EURUSD
+- CLOSE GBPUSD
+- CLOSE USDCAD
+- BUY 0.6 XAGUSD  (+0.17 → +0.77)
+- BUY 0.98 XAUUSD  (+0.42 → +1.40)
+- BUY 82.87 ETHUSD  (-33.00 → +49.87)
+
+---

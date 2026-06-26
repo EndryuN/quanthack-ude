@@ -1,1 +1,1 @@
-{"rates": {"claude": {"hits": 1, "total": 10, "skipped": 4, "rate": 0.1}, "nemotron": {"hits": 1, "total": 10, "skipped": 4, "rate": 0.1}}, "n": 28, "ts": "2026-06-26T16:10:38"}
+{"rates": {"claude": {"hits": 6, "total": 15, "skipped": 13, "rate": 0.4}, "nemotron": {"hits": 7, "total": 11, "skipped": 3, "rate": 0.6364}, "deepseek": {"hits": 6, "total": 14, "skipped": 14, "rate": 0.4286}}, "n": 70, "ts": "2026-06-26T17:58:35"}
