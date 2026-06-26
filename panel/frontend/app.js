@@ -455,7 +455,11 @@ async function plotSymbol(symbol, tf, reuse){
   const b = (reuse && _barsCache[_bkey]) ? _barsCache[_bkey] : await getJSON(`/api/bars/${curSymbol}?tf=${curTF}`);
   if(b && b.available) _barsCache[_bkey] = b;
   const el = document.getElementById("symbol-chart");
-  if(!b || !b.available){ el.innerHTML = '<div style="color:var(--muted);padding:24px">live MT5 unavailable — projection needs a running terminal</div>'; return; }
+  if(!b || !b.available){
+    try { Plotly.purge(el); } catch(e){}   // clear Plotly state so a later render recovers
+    el.innerHTML = '<div style="color:var(--muted);padding:24px">live MT5 unavailable — projection needs a running terminal</div>';
+    return;
+  }
   const n = b.closes.length;
   // real timestamps for the x-axis (epoch seconds -> ms). The cones project
   // forward in BAR units, so convert their offset to time via the bar interval dt.

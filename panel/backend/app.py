@@ -321,15 +321,18 @@ def bars(symbol: str, tf: str = "15m"):
                 rates = rr[-n_cap:]
         except Exception:
             rates = None
-        if rates is None or len(rates) < 20:
-            rates = c.bars(symbol, timeframe, n_cap)
-        if rates is None or len(rates) < 20:
-            return {"available": False}
-        live = [(int(rates["time"][i]), float(rates["open"][i]), float(rates["high"][i]),
-                 float(rates["low"][i]), float(rates["close"][i])) for i in range(len(rates))]
+        if rates is None or len(rates) < 5:                       # try the simpler path too
+            r2 = c.bars(symbol, timeframe, n_cap)
+            if r2 is not None and (rates is None or len(r2) > len(rates)):
+                rates = r2
+        # whatever the broker has (may be only a handful of bars on long TFs for a
+        # young account — that's fine, external sources fill the history below)
+        live = ([(int(rates["time"][i]), float(rates["open"][i]), float(rates["high"][i]),
+                  float(rates["low"][i]), float(rates["close"][i])) for i in range(len(rates))]
+                if rates is not None else [])
         # DEEPEN beyond the broker's shallow cache:
         #  - crypto -> Binance (years, free) for the whole series (no broker seam);
-        #  - FX/metals -> prepend the backtest pricer cache (same prices -> seamless).
+        #  - FX/metals 1h+ -> Yahoo (years); shorter TFs -> backtest pricer cache.
         # Best-effort; on any failure we keep the live MT5 series.
         from panel.backend import history as _hist
         from bot.config import asset_class
@@ -351,10 +354,11 @@ def bars(symbol: str, tf: str = "15m"):
             if el:
                 f = bl / el
                 series = [(t, o * f, h * f, l * f, c * f) for (t, o, h, l, c) in series]
-        if series is None:
+        if series is None:                                        # no external -> broker (+cache)
             older = _hist.parquet_history(symbol, tf)             # [] for crypto / missing
-            cutoff = live[0][0]
-            series = [b for b in older if b[0] < cutoff] + live if older else live
+            series = ([b for b in older if not live or b[0] < live[0][0]] + live) if older else live
+        if not series or len(series) < 20:                        # genuinely no data anywhere
+            return {"available": False}
         series = series[-n_cap:]
         times = [b[0] for b in series]
         opens = [b[1] for b in series]
