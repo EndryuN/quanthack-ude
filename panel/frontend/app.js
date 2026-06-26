@@ -1134,8 +1134,12 @@ function renderOverride(){
       const m = (label, cls, mv) => mv && mv.direction
         ? `<span class="${cls}">${label}:</span> ${dir(mv.direction)} ${mv.confidence != null ? Number(mv.confidence).toFixed(2) : "—"}`
         : `<span class="${cls}">${label}:</span> —`;
+      // only surface a clean agree/disagree; hide raw internal tags (nemotron_flat,
+      // second_opinion_unavailable, human_override — the per-model rows already tell the story)
+      const agree = v.agreement === "agree" ? `<span class="dir-long">agree</span>`
+                  : v.agreement === "disagree" ? `<span class="dir-short">disagree</span>` : "";
       const models = [m("Claude", "claude", v.claude), m("Nemotron", "nemo", v.nemotron),
-                      m("DeepSeek", "deepseek", v.deepseek), v.agreement].join(" · ");
+                      m("DeepSeek", "deepseek", v.deepseek)].concat(agree ? [agree] : []).join(" · ");
       const overridden = !!(o.view && o.view.direction);
       let html = overridden ? `<span class="ov-struck">${models}</span>` : models;
       if(overridden) html += ` · <span class="human">Human:</span> ${dir(o.view.direction)}`
