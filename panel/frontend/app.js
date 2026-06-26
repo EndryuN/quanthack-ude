@@ -435,6 +435,14 @@ async function plotSymbol(symbol, tf){
   // size the chart to the symbol list so the panel has no dead space below it
   const _lst = document.getElementById("symbol-list");
   const chartH = Math.max(340, _lst ? _lst.scrollHeight : 340);
+  // Frame the y-axis on the PRICE (+ projection cones) only. Entry/SL/TP are
+  // shapes, but we also pin the range here so a far stop-loss can never pull the
+  // view out — it's still rendered, but the chart stays focused on price.
+  let _lo = Math.min(...b.closes), _hi = Math.max(...b.closes);
+  if(_chartType === "candle" && b.lows && b.highs){ _lo = Math.min(...b.lows); _hi = Math.max(...b.highs); }
+  [b.cones.claude, b.cones.nemotron, b.cones.deepseek, b.cones.consensus].forEach(c=>{
+    if(c && c.mid) c.mid.forEach(p=>{ _lo = Math.min(_lo, p[1]); _hi = Math.max(_hi, p[1]); }); });
+  const _pad = (_hi - _lo) * 0.08 || Math.abs(_hi) * 0.001 || 0.0001;
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:chartH, showlegend:true,
     shapes:_shapes,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
@@ -446,7 +454,8 @@ async function plotSymbol(symbol, tf){
       gridcolor:"rgba(255,255,255,0.04)", showgrid:true, color:C.muted, zeroline:false,
       showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
       title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
-    yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false}},
+    yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false,
+      autorange:false, range:[_lo - _pad, _hi + _pad]}},
     {displayModeBar:false, displaylogo:false, scrollZoom:true,
      edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
                                       // modebar hidden so the top-right toggles own the corner
