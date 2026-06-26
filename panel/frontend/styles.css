@@ -263,6 +263,7 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .ai-log-feed{display:flex;flex-direction:column;gap:10px;font-family:"JetBrains Mono";font-size:11px}
 .al-entry{border-left:2px solid var(--lift);padding:1px 0 6px 10px}
 .al-head .al-ts{color:var(--muted)} .al-head .al-reg{color:var(--chartreuse)}
+.al-head .al-cost{color:var(--human)}
 .al-views{margin-top:3px;color:var(--muted);line-height:1.6}
 .al-v.long{color:var(--long)} .al-v.short{color:var(--short)} .al-v.flat{color:var(--muted)}
 .al-orders{margin-top:3px}

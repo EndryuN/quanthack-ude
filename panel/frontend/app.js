@@ -1210,6 +1210,10 @@ loadOverrides(); wireOverride();
 function _aiLogEntry(r){
   const t = r.ts ? r.ts.slice(5, 16).replace("T", " ") : "";
   const reg = (r.regime && r.regime.claude) || "";
+  // total $ cost of this refresh (sum of each model's captured usd)
+  let usd = 0; const cost = r.cost || {};
+  for(const k in cost){ if(cost[k] && typeof cost[k].usd === "number") usd += cost[k].usd; }
+  const costTxt = usd > 0 ? ` · <span class="al-cost">$${usd.toFixed(4)}</span>` : "";
   const bySym = {}; (r.views || []).forEach(v => bySym[v.symbol] = v);
   const views = (r.views || []).filter(v => v.direction && v.direction !== "flat")
     .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
@@ -1222,7 +1226,7 @@ function _aiLogEntry(r){
       reason = rat ? ` · ${rat}` : ""; }
     return `<div class="al-o ${cls}">${(o.side || "").toUpperCase()} ${o.lots || ""} ${o.symbol}${reason}</div>`;
   }).join("");
-  return `<div class="al-entry"><div class="al-head"><span class="al-ts">${t}</span> · <span class="al-reg">${reg}</span></div>`
+  return `<div class="al-entry"><div class="al-head"><span class="al-ts">${t}</span>${costTxt} · <span class="al-reg">${reg}</span></div>`
     + (views ? `<div class="al-views">${views}</div>` : "")
     + (orders ? `<div class="al-orders">${orders}</div>` : "")
     + `</div>`;
