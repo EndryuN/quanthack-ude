@@ -100,19 +100,14 @@ main{display:grid;grid-template-columns:34% 66%;gap:12px;padding:12px;align-item
 .sym-side{flex:0 0 104px;display:flex;flex-direction:column;gap:8px}
 .sym-pane #chart-wrap{flex:1;min-width:0;position:relative}
 #chart-wrap #symbol-chart{width:100%}
-/* candle/line toggle pinned to the chart's lower-right */
-.chart-type{position:absolute;right:60px;bottom:6px;z-index:5;display:flex;
-  border:1px solid var(--lift);border-radius:5px;overflow:hidden}
-.chart-type .ct{background:rgba(20,22,29,.85);color:var(--muted);border:none;
-  border-right:1px solid var(--lift);padding:3px 9px;font-family:"JetBrains Mono";
-  font-size:10px;cursor:pointer}
-.chart-type .ct:last-child{border-right:none}
-.chart-type .ct.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
-.tf-toggle{display:flex;gap:4px}
-.tf-toggle .tf{flex:1;background:var(--lift);color:var(--muted);border:1px solid var(--lift);
-  border-radius:6px;padding:5px 0;font-family:"JetBrains Mono";font-size:11px;cursor:pointer}
-.tf-toggle .tf.active{color:var(--canvas);background:var(--chartreuse);
-  border-color:var(--chartreuse);font-weight:600}
+/* timeframe + candle/line toggles pinned to the chart's TOP-right */
+#chart-ctl{position:absolute;top:4px;right:8px;z-index:5;display:flex;gap:6px;align-items:center}
+.chart-type,.tf-toggle{display:flex;border:1px solid var(--lift);border-radius:5px;overflow:hidden}
+.chart-type .ct,.tf-toggle .tf{background:rgba(20,22,29,.85);color:var(--muted);border:none;
+  border-right:1px solid var(--lift);padding:3px 8px;font-family:"JetBrains Mono";font-size:10px;
+  cursor:pointer;display:flex;align-items:center}
+.chart-type .ct:last-child,.tf-toggle .tf:last-child{border-right:none}
+.chart-type .ct.active,.tf-toggle .tf.active{background:var(--chartreuse);color:var(--canvas);font-weight:600}
 #symbol-list{display:flex;flex-direction:column;gap:2px;max-height:280px;overflow-y:auto}
 #symbol-list .sym{padding:5px 8px;border-radius:5px;font-family:"JetBrains Mono";
   font-size:12px;cursor:pointer;color:var(--ink);border-left:2px solid transparent}

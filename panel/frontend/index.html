@@ -72,18 +72,27 @@
       <div class="card" id="symbol-card"><h2>Instrument &amp; projection</h2>
         <div class="sym-pane">
           <div class="sym-side">
-            <div class="tf-toggle">
-              <button class="tf" data-tf="1m">1m</button>
-              <button class="tf active" data-tf="15m">15m</button>
-              <button class="tf" data-tf="1h">1h</button>
-            </div>
             <div id="symbol-list"></div>
           </div>
           <div id="chart-wrap">
             <div id="symbol-chart"></div>
-            <div id="chart-type" class="chart-type">
-              <button class="ct active" data-ct="line">Line</button>
-              <button class="ct" data-ct="candle">Candles</button>
+            <div id="chart-ctl">
+              <div class="tf-toggle">
+                <button class="tf" data-tf="1m">1m</button>
+                <button class="tf active" data-tf="15m">15m</button>
+                <button class="tf" data-tf="1h">1h</button>
+              </div>
+              <div id="chart-type" class="chart-type">
+                <button class="ct active" data-ct="line" title="Line">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><polyline points="3 15 9 9 13 12 21 5"
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="ct" data-ct="candle" title="Candles">
+                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="1.6">
+                    <line x1="8" y1="3" x2="8" y2="21"/><rect x="5.5" y="8" width="5" height="8" fill="currentColor" stroke="none"/>
+                    <line x1="16" y1="5" x2="16" y2="19"/><rect x="13.5" y="10" width="5" height="6" fill="currentColor" stroke="none"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>

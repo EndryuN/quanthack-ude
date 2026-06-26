@@ -411,9 +411,9 @@ async function plotSymbol(symbol, tf){
       showspikes:true, spikemode:"across", spikethickness:1, spikecolor:C.muted, spikedash:"dot", spikesnap:"cursor",
       title:{text:`${curSymbol} · ${curTF}`, font:{size:9, color:C.muted}}},
     yaxis:{side:"right", gridcolor:"rgba(255,255,255,0.06)", color:C.muted, zeroline:false}},
-    {displayModeBar:true, displaylogo:false, scrollZoom:true,
-     edits:{shapePosition:true},   // lets the user DRAG the take-profit flag
-     modeBarButtonsToRemove:["select2d","lasso2d"]});
+    {displayModeBar:false, displaylogo:false, scrollZoom:true,
+     edits:{shapePosition:true}});   // scroll to zoom, drag to pan, double-click to reset;
+                                      // modebar hidden so the top-right toggles own the corner
   wireTpDrag();
 }
 
