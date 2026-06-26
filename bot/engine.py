@@ -293,9 +293,12 @@ class Engine:
             if nemo_views:
                 vbm["nemotron"] = {s: v[0] for s, v in nemo_views.items()}
             for model, ev in extra_voters.items():
-                vbm[model] = {s: v[0] for s, v in ev.items()}
+                label = "deepseek" if "deepseek" in model.lower() else model
+                vbm[label] = {s: v[0] for s, v in ev.items()}
             self._scorer.record(vbm, prices)
-            if self.cfg.use_control_panel:
+            # write only once we actually have scored samples, so a restart (which
+            # resets the in-memory scorer) doesn't clobber the file with empty {}
+            if self.cfg.use_control_panel and self._scorer.n_samples > 0:
                 from .controls import atomic_write_json
                 atomic_write_json(
                     os.path.join(self.cfg.state_dir, "model_scores.json"),

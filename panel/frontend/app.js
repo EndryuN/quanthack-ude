@@ -302,7 +302,8 @@ function plotHeatmap(hm){
   const z = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
     return c==null? null : sign(c)*Math.max(lum(c),0.05); }));
   const text = hm.cells.map(row=> row.map(raw=>{ const c=_cellLayer(raw);
-    return c==null? "" : `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_modelLayer==="combined"?" ★":""}`; }));
+    if(c==null || c.confidence==null) return "";
+    return `${c.direction} ${c.confidence.toFixed(2)}${raw&&raw.boosted&&_modelLayer==="combined"?" ★":""}`; }));
   // Each refresh is ONE evenly-spaced column (a heatmap must be categorical) —
   // a continuous date axis distorts widths/gaps when refreshes are irregular
   // (15-min cadence + manual "Refresh views"). x = column index; the real
