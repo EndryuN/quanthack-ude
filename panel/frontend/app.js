@@ -255,7 +255,7 @@ function plotDumbbell(allRows){
   // one row per instrument: up to THREE markers — Claude (orange), Nemotron (teal),
   // DeepSeek (violet) — at x = sign(direction)*confidence, models that are null are
   // skipped. A connector spans each row's present markers. Filtered to the active
-  // asset-class tab (FX / Crypto / Metals). Legend names the three model colors.
+  // asset-class tab (FX / Crypto / Metals). The Hit-rate line above is the color key.
   _lastConsensus = allRows || [];
   const rows = _lastConsensus.filter(r => _grpOf(r.symbol) === _dumbTab);
   const ys = rows.map(r=>r.symbol);
@@ -278,11 +278,13 @@ function plotDumbbell(allRows){
     marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
   const deepPts = {x:dx, y:ys, type:"scatter", mode:"markers", name:"DeepSeek",
     marker:{color:C.deepseek, size:11}, hovertemplate:"DeepSeek %{y}: %{x:.2f}<extra></extra>"};
+  // No Plotly legend — the color-coded Hit-rate line above the chart already
+  // names Claude/Nemotron/DeepSeek in their colors (avoids a duplicate legend).
   Plotly.react("dumbbell", [...lines, claudePts, nemoPts, deepPts],
-    {...PLOT_BG, height: Math.max(120, ys.length*30+52),
-     margin:{l:66, r:14, t:26, b:30}, yaxis:{automargin:true, color:C.muted},
+    {...PLOT_BG, height: Math.max(120, ys.length*30+40),
+     margin:{l:66, r:14, t:10, b:30}, yaxis:{automargin:true, color:C.muted},
      xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
-     showlegend:true, legend:{orientation:"h", x:0, y:1.1, font:{size:9}, bgcolor:"rgba(0,0,0,0)"}},
+     showlegend:false},
     {displayModeBar:false});
 }
 
