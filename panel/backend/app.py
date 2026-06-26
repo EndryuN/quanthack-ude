@@ -192,6 +192,9 @@ def bars(symbol: str, tf: str = "15m"):
                 cones["claude"] = projection.projection_cone(price, view["claude"]["direction"], view["claude"]["confidence"], vol)
             if view.get("nemotron"):
                 cones["nemotron"] = projection.projection_cone(price, view["nemotron"]["direction"], view["nemotron"]["confidence"], vol)
+            ds = data._deepseek_of(view)   # DeepSeek gateway voter (from views[].voters)
+            if ds:
+                cones["deepseek"] = projection.projection_cone(price, ds["direction"], ds["confidence"], vol)
         return {"available": True, "symbol": symbol, "times": times,
                 "closes": closes, "vol": vol, "cones": cones}
     finally:

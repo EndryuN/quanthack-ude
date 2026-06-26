@@ -358,6 +358,7 @@ async function plotSymbol(symbol, tf){
   const traces = [...price,
     ...coneTrace(b.cones.claude, C.claude, "Claude"),
     ...coneTrace(b.cones.nemotron, C.nemo, "Nemotron"),
+    ...coneTrace(b.cones.deepseek, C.deepseek, "DeepSeek"),
     ...coneTrace(b.cones.consensus, C.chartreuse, "Consensus", "dash")];
   Plotly.react("symbol-chart", traces, {...PLOT_BG, height:340, showlegend:true,
     hovermode:"x unified",   // one box tracking the cursor, all series' prices at that x
