@@ -277,14 +277,38 @@ function plotDumbbell(allRows){
     return {x:[lo, hi], y:[r.symbol,r.symbol], type:"scatter", mode:"lines",
       line:{color: col, width:2, dash:"dot"}, showlegend:false, hoverinfo:"skip"};
   });
-  const claudePts = {x:cx, y:ys, type:"scatter", mode:"markers", name:"Claude",
-    marker:{color:C.claude, size:11}, hovertemplate:"Claude %{y}: %{x:.2f}<extra></extra>"};
-  const nemoPts = {x:nx, y:ys, type:"scatter", mode:"markers", name:"Nemotron",
-    marker:{color:C.nemo, size:11}, hovertemplate:"Nemotron %{y}: %{x:.2f}<extra></extra>"};
-  const deepPts = {x:dx, y:ys, type:"scatter", mode:"markers", name:"DeepSeek",
-    marker:{color:C.deepseek, size:11}, hovertemplate:"DeepSeek %{y}: %{x:.2f}<extra></extra>"};
+  // Markers: when two models land on the same point, SPLIT the ball into colored
+  // halves (left/right half-circle glyphs) so neither is hidden; three coinciding
+  // models fall back to concentric rings. Single dots are normal circles.
+  const TOL = 0.045;   // x-distance counted as "overlapping" (≈ one marker width)
+  const M = [["Claude", C.claude, cx], ["Nemotron", C.nemo, nx], ["DeepSeek", C.deepseek, dx]];
+  const GLYPHFONT = "Segoe UI Symbol, Arial, sans-serif";
+  const fx = [], fy = [], fc = [], overlap = [];   // single dots + overlap traces
+  rows.forEach((r, i) => {
+    const pts = M.map(([m, col, arr]) => ({m, col, x: arr[i]})).filter(p => p.x != null);
+    const used = pts.map(() => false);
+    for(let a = 0; a < pts.length; a++){
+      if(used[a]) continue;
+      const grp = [pts[a]]; used[a] = true;
+      for(let b = a + 1; b < pts.length; b++)
+        if(!used[b] && Math.abs(pts[b].x - pts[a].x) <= TOL){ grp.push(pts[b]); used[b] = true; }
+      const mxv = grp.reduce((s, p) => s + p.x, 0) / grp.length;
+      if(grp.length === 1){ fx.push(grp[0].x); fy.push(r.symbol); fc.push(grp[0].col); continue; }
+      if(grp.length === 2){   // split the ball: left half + right half
+        ["◖", "◗"].forEach((g, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"text",
+          text:[g], textposition:"middle center", textfont:{color:grp[gi].col, size:19, family:GLYPHFONT},
+          hovertemplate:`${grp[gi].m} ${r.symbol}: ${mxv.toFixed(2)}<extra></extra>`, showlegend:false}));
+      } else {                // 3-way: concentric rings, decreasing size
+        grp.forEach((p, gi) => overlap.push({x:[mxv], y:[r.symbol], type:"scatter", mode:"markers",
+          marker:{color:p.col, size:[15,10,6][gi] || 6},
+          hovertemplate:`${p.m} ${r.symbol}: ${mxv.toFixed(2)}<extra></extra>`, showlegend:false}));
+      }
+    }
+  });
+  const fullDots = {x:fx, y:fy, type:"scatter", mode:"markers", marker:{color:fc, size:11},
+    hovertemplate:"%{y}: %{x:.2f}<extra></extra>", showlegend:false};
   // Legend lives in the card-head (renderHitRates) — no Plotly legend overlapping row 1.
-  Plotly.react("dumbbell", [...lines, claudePts, nemoPts, deepPts],
+  Plotly.react("dumbbell", [...lines, fullDots, ...overlap],
     {...PLOT_BG, height: Math.max(120, ys.length*30+36),
      margin:{l:66, r:14, t:10, b:30}, yaxis:{automargin:true, color:C.muted},
      xaxis:{range:[-1.05,1.05], zeroline:true, zerolinecolor:C.muted, title:{text:"short ◀  confidence  ▶ long", font:{size:9}}},
