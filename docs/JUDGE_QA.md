@@ -18,6 +18,9 @@ The LLM *is* the signal source, not a sentiment add-on. We built and backtested 
 
 ---
 
+**Q. How is this more than just "asking ChatGPT to trade"?**
+A naive "LLM, place a trade" has no calibration, no risk floor, no accountability. Here the LLM only emits *direction + calibrated confidence* into a deterministic pipeline: it's cross-checked by two blind peers, schema-validated (malformed = dropped), sized by a risk-aware dial, capped by a hard floor it can't touch, graded against realized moves *by category*, and fully logged. The model decides; everything that keeps it safe, sized, and honest is engineered around it. That gap — calibration + blind ensemble + risk cage + self-grading + audit trail — *is* the project.
+
 ## The AI / LLM specifics
 
 **Q. What exactly do you feed the models?**
@@ -46,6 +49,12 @@ Output is schema-constrained (Pydantic). Invalid output raises and the engine de
 
 ---
 
+**Q. Why these three models, and why is Claude the primary?**
+Claude Opus 4.8 is the decider because it's the strongest cross-asset reasoner and the only one we bind to a Pydantic schema (structured, validated output). Nemotron (NVIDIA NIM) and DeepSeek-V4-Pro (via the gateway) are *independent, diverse* second opinions — different vendors and training, so agreement is genuine signal, not an echo chamber. They're blind (never see Claude's answer) and additive (can only raise conviction on agreement, never flip/veto), and we grade all three — so the roster is justified by evidence, not faith.
+
+**Q. LLM outputs are non-deterministic — doesn't that make this unreliable?**
+We design around it, not against it. Voters run at low temperature (0.2); the output is *direction + calibrated confidence*, not precise prices, so small wording variance doesn't move the book; the three-model consensus averages out idiosyncrasy; and the deterministic sizing/risk/execution layer bounds any single call. Backtests replay *cached* model outputs deterministically. So variance lives only in the slow (15-min, ensembled) opinion layer — never in risk or execution.
+
 ## Architecture & execution
 
 **Q. How is a single trade decided, start to finish?**
@@ -68,6 +77,12 @@ Yes. This broker **rejects market orders carrying an inline stop-loss** (retcode
 
 ---
 
+**Q. Is it fully autonomous, or does it need someone driving it?**
+Fully autonomous — the loop assesses risk, refreshes views, sizes, and executes on its own with no human in the path. The console is **read-only supervision** plus *optional* steering (preset/aggression, force-refresh, human override, panic-flatten); nothing requires a human, and the panel can't place an order or weaken the floor. It runs hands-off — a human can nudge posture, not babysit.
+
+**Q. Can an LLM possibly react fast enough to trade?**
+It doesn't need to — that's the two-clock design. The macro/multi-timeframe story doesn't change in seconds, so opinions refresh every ~15 min (LLM latency is irrelevant there). The fast loop — risk checks, the kill-switch, broker stops, trailing stops, reconciliation — is *deterministic code on a ~5-second tick* with no LLM in it. The slow part is judgment; the fast part is safety + execution.
+
 ## Risk & safety
 
 **Q. The rule is "liquidation = elimination." How do you guarantee you don't blow up?**
@@ -89,6 +104,9 @@ No. The risk floor runs *before* strategy and operator controls every tick and i
 The console is **read-only over the broker** — it can never place or modify an order directly. Every action is a *gated write* to a controls file the engine reads each tick, then applied through the sizer + risk floor: switch **preset / aggression**; force or boost a **direction** (human input); **block** symbols (clamp toward flat) or set an **allow**-list (everything else clamped flat); toggle each **second opinion's influence** on sizing (Nemotron `second_opinion` default on, DeepSeek `ensemble_input` default off); **assign up to 2 symbols to the scalper** (ceded from the engine, and only live after clearing a walk-forward backtest gate); **flatten now**; or **force an AI refresh** off-cadence. None of it can weaken the floor or exceed the caps — the human steers *posture and conviction*, the engine still owns *execution and safety* (`bot/controls.py`).
 
 ---
+
+**Q. What happens if the AI API or your connection drops mid-session?**
+It degrades safely. An AI-call failure backs off (30s → … → 300s) and the system holds the last good views or drops a voter to Claude-only — and crucially the **risk + execution loop keeps running every ~5s regardless** (kill-switch, stops, trailing, reconcile), because safety never depends on the AI. Decision/state writes are atomic, so a crash/restart resumes cleanly (the scalper disarms on restart so nothing auto-fires). If the broker/MT5 link itself drops, no new orders go out and the guaranteed broker-side stop already on every position protects the book.
 
 ## The scalper
 
@@ -122,6 +140,15 @@ Keys live in a gitignored `.env`, never committed. The dashboard is read-only ov
 
 **Q. Could this generalize beyond this contest?**
 Yes — the judgment/execution split, schema-constrained multi-model consensus, self-grading, and the deterministic risk cage are broker- and asset-agnostic patterns. Swapping MT5 or the instrument universe is localized to the client/config.
+
+**Q. Are you actually making money right now?**
+Honest answer: it's a sandbox competition and short-horizon P&L is regime-dependent — we optimize for *surviving and ranking*, not a flashy number on any given hour. What we stand behind: the architecture is survivable on real data (drawdown capped, no liquidation), and the system *shows* its own per-model accuracy by category, so we never overclaim edge. We'd rather demo a system that's honest about its edge than a cherry-picked curve.
+
+**Q. How do you avoid overfitting / lookahead in the backtests?**
+Bars are processed chronologically, closed-bars-only (the forming bar is dropped, so no peeking), and the aggression dial is *swept* rather than fit to one lucky value. The cheap backtest model showed ~no edge — the opposite of an overfit result — so we're validating that the *architecture* survives, not selling a curve fit to noise; real edge is measured live, by category.
+
+**Q. Could the model be prompt-injected or gamed?**
+Almost no surface: the models only ever see our own *computed numeric snapshot* (prices/returns/trend/vol) and a fixed system prompt — no news, no free text, no user input, no other model's answer. There's nothing external to inject. And any malformed/garbage reply fails schema validation and is dropped before it can reach trade logic.
 
 **Q. What's the single most impressive thing to remember?**
 Frontier-LLM judgment driving real (simulated) capital, **cross-checked by a blind multi-model ensemble (Nemotron + DeepSeek) and graded by the system itself**, inside a risk cage that makes blow-up structurally impossible — with every decision fully auditable.
